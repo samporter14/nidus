@@ -291,7 +291,7 @@ struct FocusWrapUpCard: View {
         HStack(alignment: .center, spacing: DroppySpacing.md) {
             // The island has no room for the mark; the title says it.
             if !last {
-                SolanumTile(symbol: completed ? "checkmark" : "stop.fill", quiet: !completed)
+                SettingsTile(symbol: completed ? "checkmark" : "stop.fill", size: 28, color: completed ? FocusPalette.clay : .gray)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
@@ -306,7 +306,7 @@ struct FocusWrapUpCard: View {
             .fixedSize(horizontal: !last, vertical: false)
             Spacer(minLength: DroppySpacing.sm)
             Button(button, action: again)
-                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                .buttonStyle(.bordered)
                 .fixedSize()
                 .accessibilityLabel(button == "Again" ? "Start the same session again" : "Skip the break and start the next session")
         }
@@ -325,11 +325,12 @@ extension FocusWrapUpCard {
                 .fixedSize(horizontal: !last, vertical: false)
             Spacer(minLength: DroppySpacing.sm)
             Button("Not yet") { answer(false) }
-                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                .buttonStyle(.bordered)
                 .fixedSize()
                 .accessibilityLabel("Not finished yet")
             Button("Yes") { answer(true) }
-                .buttonStyle(DroppyAccentButtonStyle(size: .small))
+                .buttonStyle(.borderedProminent)
+                .tint(FocusPalette.clay)
                 .fixedSize()
                 .accessibilityLabel("Yes, finished")
         }
@@ -363,7 +364,7 @@ struct FocusWelcomeCard: View {
     private func row(_ detail: String, glyph: Bool) -> some View {
         HStack(alignment: .center, spacing: DroppySpacing.md) {
             if glyph {
-                SolanumTile(image: Self.glyph)
+                SettingsTile(image: Self.glyph, size: 28)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: "Nidus is ready")
@@ -377,7 +378,7 @@ struct FocusWelcomeCard: View {
             .fixedSize()
             Spacer(minLength: DroppySpacing.sm)
             Button("Show me", action: showMe)
-                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                .buttonStyle(.bordered)
                 .fixedSize()
                 .accessibilityLabel("Show how to use Nidus, in Settings")
         }
@@ -413,7 +414,7 @@ struct FocusNoticeCard: View {
     private func row(_ v: Variant, last: Bool) -> some View {
         HStack(alignment: .center, spacing: DroppySpacing.md) {
             if v.showsSymbol {
-                SolanumTile(symbol: symbol)
+                SettingsTile(symbol: symbol, size: 28)
             }
             VStack(alignment: .leading, spacing: 2) {
                 v.title
@@ -428,7 +429,7 @@ struct FocusNoticeCard: View {
             .fixedSize(horizontal: !last, vertical: false)
             Spacer(minLength: DroppySpacing.sm)
             Button(v.button, action: action)
-                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                .buttonStyle(.bordered)
                 .fixedSize()
         }
     }
@@ -485,7 +486,7 @@ struct FocusBlockedCard: View {
     /// The short row truncates a long name rather than overflowing.
     private func row(detail: String, button: String?, last: Bool) -> some View {
         HStack(alignment: .center, spacing: DroppySpacing.md) {
-            if !last { SolanumTile(symbol: "nosign") }
+            if !last { SettingsTile(symbol: "nosign", size: 28) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
                     .font(.system(size: 14, weight: .medium))
@@ -499,7 +500,7 @@ struct FocusBlockedCard: View {
             Spacer(minLength: DroppySpacing.sm)
             if let button {
                 Button(button, action: snooze)
-                    .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                    .buttonStyle(.bordered)
                     .fixedSize()
                     .accessibilityLabel(snoozeTitle ?? button)
             }

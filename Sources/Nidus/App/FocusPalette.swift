@@ -3,7 +3,7 @@
 //  Nidus
 //
 //  Clay, Solanum's one accent, and the stats graph's shades of it. The rest
-//  of the palette is in Solanum.swift.
+//  of the palette is the system's own.
 //
 
 import SwiftUI
@@ -15,7 +15,7 @@ enum FocusPalette {
     /// The stats graph's five shades: none, then clay at rising strength.
     static func graphShade(level: Int) -> Color {
         switch level {
-        case 0: return Solanum.segmentWell
+        case 0: return Color.primary.opacity(0.08)
         case 1: return clay.opacity(0.3)
         case 2: return clay.opacity(0.5)
         case 3: return clay.opacity(0.75)

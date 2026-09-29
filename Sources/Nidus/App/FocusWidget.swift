@@ -53,13 +53,14 @@ struct FocusWidget: View {
         HStack(spacing: DroppySpacing.sm) {
             Image(nsImage: FocusGlyph.image(model.isActive ? .brain : .particle, pointSize: 15))
                 .renderingMode(.template)
-                .foregroundStyle(model.isActive && !model.isPaused ? Solanum.clayText : Solanum.inkFaint)
+                .foregroundStyle(model.isActive && !model.isPaused ? AnyShapeStyle(FocusPalette.clay) : AnyShapeStyle(.tertiary))
                 .accessibilityHidden(true)
-            Overline(stateWord)
+            Text(stateWord)
+                .font(.headline)
             if model.isStrict || (model.strictMode && !model.isActive && !model.isOnBreak) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(Solanum.inkFaint)
+                    .foregroundStyle(.tertiary)
                     .help(model.isStrict ? "Strict session: no snooze or pause" : "Strict mode is on")
                     .accessibilityLabel(model.isStrict ? "Strict session" : "Strict mode on")
             }
@@ -67,8 +68,9 @@ struct FocusWidget: View {
             if !model.isActive, !model.isOnBreak {
                 Button(action: model.openSettings) {
                     Image(systemName: "gearshape")
+                        .font(.system(size: 14))
                 }
-                .buttonStyle(DroppyCircleButtonStyle(size: 26))
+                .buttonStyle(.borderless)
                 .help("Nidus settings")
                 .accessibilityLabel("Nidus settings")
             }
@@ -92,14 +94,8 @@ struct FocusWidget: View {
         VStack(alignment: .leading, spacing: DroppySpacing.md) {
             HStack(spacing: DroppySpacing.sm) {
                 TextField("What are you working on?", text: $model.goalDraft)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 15))
-                    .foregroundStyle(Solanum.ink)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 9)
-                    .background(Solanum.raised, in: .rect(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Solanum.strong, lineWidth: goalFocused ? 2 : 1))
+                    .textFieldStyle(.roundedBorder)
+                    .controlSize(.extraLarge)
                     .focused($goalFocused)
                     .onSubmit(model.startSession)
                     .onKeyPress(.upArrow) { stepRecentGoal(1) }
@@ -146,14 +142,10 @@ struct FocusWidget: View {
             }
         } label: {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Solanum.ink)
-                .frame(width: 36, height: 36)
-                .background(Solanum.raised, in: .rect(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Solanum.strong))
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .buttonStyle(.bordered)
+        .controlSize(.extraLarge)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Recent goals")
@@ -178,7 +170,9 @@ struct FocusWidget: View {
 
     private var startButton: some View {
         Button("Start", action: model.startSession)
-            .buttonStyle(DroppyAccentButtonStyle(size: .small))
+            .buttonStyle(.borderedProminent)
+            .tint(FocusPalette.clay)
+            .controlSize(.large)
             .keyboardShortcut(.defaultAction)
             .disabled(model.selectedCategories.allSatisfy(\.isEmpty) && model.mode == .block)
             .help("Start a focus session")
@@ -196,8 +190,8 @@ struct FocusWidget: View {
             menuLabel(FocusFormat.duration(minutes: model.durationMinutes), symbol: "timer")
         }
         .menuStyle(.button)
-        .buttonStyle(DroppyQuietButtonStyle(size: .small))
-        .menuIndicator(.hidden)
+        .buttonStyle(.bordered)
+        .controlSize(.large)
         .fixedSize()
         .accessibilityLabel("Length")
     }
@@ -221,8 +215,8 @@ struct FocusWidget: View {
             )
         }
         .menuStyle(.button)
-        .buttonStyle(DroppyQuietButtonStyle(size: .small))
-        .menuIndicator(.hidden)
+        .buttonStyle(.bordered)
+        .controlSize(.large)
         .fixedSize()
         .accessibilityLabel(model.mode == .allow ? "Allowed categories" : "Blocked categories")
     }
@@ -231,9 +225,6 @@ struct FocusWidget: View {
         HStack(spacing: DroppySpacing.xs) {
             Image(systemName: symbol)
             Text(verbatim: title).lineLimit(1)
-            Image(systemName: "chevron.up.chevron.down")
-                .font(.system(size: 8, weight: .semibold))
-                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
         }
     }
 
@@ -263,7 +254,7 @@ struct FocusWidget: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: model.goal.isEmpty ? "Blocking \(model.runningSummary)" : model.goal)
                     .font(.system(size: model.goal.isEmpty ? 13 : 15, weight: model.goal.isEmpty ? .regular : .medium))
-                    .foregroundStyle(model.goal.isEmpty ? Solanum.inkMuted : Solanum.ink)
+                    .foregroundStyle(model.goal.isEmpty ? .secondary : .primary)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 clock(size: 44)
@@ -275,7 +266,7 @@ struct FocusWidget: View {
                     Button(action: model.addTime) {
                         Image(systemName: "plus")
                     }
-                    .buttonStyle(DroppyCircleButtonStyle(size: 30))
+                    .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
                     .help("Add 5 minutes")
                     .accessibilityLabel("Add 5 minutes")
                 }
@@ -284,7 +275,7 @@ struct FocusWidget: View {
                 } label: {
                     Image(systemName: "stop.fill")
                 }
-                .buttonStyle(DroppyCircleButtonStyle(size: 30))
+                .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
                 .help(model.isStrict ? "End early" : "End session")
                 .accessibilityLabel(model.isStrict ? "End early" : "End session")
             }
@@ -307,10 +298,10 @@ struct FocusWidget: View {
                 .onSubmit(confirmStrictEnd)
                 .accessibilityLabel("Type \(Self.strictEndPhrase) to end the session early")
             Button("Keep going", action: cancelStrictEnd)
-                .buttonStyle(DroppyQuietButtonStyle(size: .small))
+                .buttonStyle(.bordered)
                 .fixedSize()
             Button("End", action: confirmStrictEnd)
-                .buttonStyle(DroppyAccentButtonStyle(size: .small))
+                .buttonStyle(.borderedProminent)
                 .fixedSize()
                 .disabled(!strictPhraseMatches)
         }
@@ -342,7 +333,7 @@ struct FocusWidget: View {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(verbatim: model.nextGoal.isEmpty ? "Next: another session" : "Next: \(model.nextGoal)")
                         .font(.system(size: 13))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                         .lineLimit(1)
                     breakClock(size: 44)
                 }
@@ -352,13 +343,13 @@ struct FocusWidget: View {
                     Button(action: model.endBreak) {
                         Image(systemName: "stop.fill")
                     }
-                    .buttonStyle(DroppyCircleButtonStyle(size: 30))
+                    .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
                     .help("Stop here: no session follows")
                     .accessibilityLabel("End the break")
                 }
                 .padding(.bottom, 8)
             }
-            ProgressTrack(progress: model.breakProgress, fill: Solanum.inkFaint)
+            ProgressTrack(progress: model.breakProgress, tint: .gray)
         }
     }
 
@@ -374,7 +365,7 @@ struct FocusWidget: View {
 
     private func breakClock(size: CGFloat) -> some View {
         Text(verbatim: model.clockText)
-            .font(Solanum.serif(size))
+            .font(.system(size: size, weight: .light))
             .monospacedDigit()
             .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
             .accessibilityLabel("Break, \(FocusFormat.spoken(model.breakRemaining))")
@@ -384,7 +375,7 @@ struct FocusWidget: View {
         Button(action: model.skipBreak) {
             Image(systemName: "play.fill")
         }
-        .buttonStyle(DroppyCircleButtonStyle(size: size))
+        .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
         .help("Start the next session now")
         .accessibilityLabel("Start the next session now")
     }
@@ -401,7 +392,7 @@ struct FocusWidget: View {
 
     private func clock(size: CGFloat) -> some View {
         Text(verbatim: model.clockText)
-            .font(Solanum.serif(size))
+            .font(.system(size: size, weight: .light))
             .monospacedDigit()
             .foregroundStyle(model.isPaused ? AdaptiveColors.notchSurfaceTertiaryText : AdaptiveColors.notchSurfacePrimaryText)
             .accessibilityLabel(model.isOpenEnded
@@ -415,33 +406,26 @@ struct FocusWidget: View {
                 .id(model.isPaused)
                 .transition(DroppyTransition.element)
         }
-        .buttonStyle(DroppyCircleButtonStyle(size: context.isCompact ? 20 : 30))
+        .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
         .help(model.isPaused ? "Resume" : "Pause")
         .accessibilityLabel(model.isPaused ? "Resume" : "Pause")
     }
 
     private var progressBar: some View {
-        ProgressTrack(progress: model.progress, fill: model.isPaused ? Solanum.inkFaint : Solanum.clay)
+        ProgressTrack(progress: model.progress, tint: model.isPaused ? .gray : FocusPalette.clay)
     }
 }
 
-/// A session's progress: a hairline well, filled in clay.
+/// A session's progress: the system's bar, in clay.
 struct ProgressTrack: View {
     let progress: Double
-    let fill: Color
+    let tint: Color
 
     var body: some View {
-        GeometryReader { proxy in
-            ZStack(alignment: .leading) {
-                Capsule().fill(Solanum.segmentWell)
-                Capsule().strokeBorder(Solanum.hairline)
-                Capsule()
-                    .fill(fill)
-                    .frame(width: max(6, proxy.size.width * min(1, max(0, progress))))
-            }
-        }
-        .frame(height: 6)
-        .accessibilityHidden(true)
+        ProgressView(value: min(1, max(0, progress)))
+            .progressViewStyle(.linear)
+            .tint(tint)
+            .accessibilityHidden(true)
     }
 }
 

@@ -27,8 +27,9 @@ A *nidus* is the place where something takes hold and grows.
   Between sessions it does nothing at all. During one it checks your apps and
   tabs once a second, at about 50 MB of memory and a fraction of a percent of
   one core.
-- **Native.** SwiftUI, AppKit and Core Animation. It quits apps the way the
-  Dock does, reaches browser tabs through Apple Events, and turns Focus modes
+- **Native.** SwiftUI, AppKit and Core Animation, with the Mac's own controls:
+  a Liquid Glass popover and cards, and Settings laid out like System
+  Settings. It quits apps the way the Dock does, reaches browser tabs through Apple Events, and turns Focus modes
   on and off through Shortcuts. It follows Light and Dark mode, and Reduce
   Motion stills the menu bar glyph.
 
@@ -49,8 +50,6 @@ and the categories to block, and press Start. Until the session ends:
 - **The menu bar glyph keeps time.** At rest it is a virus particle; when a
   session starts it becomes a brain, and fills as the session runs. Settings
   can show the minutes beside it.
-
-  <img src="docs/popover-running.png" width="440" alt="The popover during a session: Focusing, Write the launch post, 25:00 in a serif clock, pause, add five minutes and stop buttons, and a clay progress bar">
 - **You stay in charge.** Pause or add five minutes from the popover or the
   right-click menu, and snooze one app or site for a few minutes from its card
   or the block page.

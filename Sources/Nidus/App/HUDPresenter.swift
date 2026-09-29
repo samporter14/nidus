@@ -4,7 +4,7 @@
 //
 //  The cards: something was blocked, a session ended, a break is ending.
 //  They drop in at the top of the screen, in the middle, where the notch is,
-//  stay a few seconds, and go. Solanum's raised card, in the Mac's theme. One at a time; a new card replaces the one
+//  stay a few seconds, and go. Liquid Glass, like the Mac's own banners. One at a time; a new card replaces the one
 //  showing. They never take focus from what you are doing, but their
 //  buttons work, and a card stays while the pointer is over it.
 //
@@ -15,6 +15,8 @@ import SwiftUI
 @MainActor
 final class HUDPresenter {
     private var panel: CardPanel?
+    /// The card's window, for `--capture-surfaces`.
+    var windowNumber: Int? { panel?.windowNumber }
     private var shownID: String?
     private var dismissTask: Task<Void, Never>?
     /// The last card asked for, for `--render-surfaces`.
@@ -32,8 +34,11 @@ final class HUDPresenter {
         let card = HUDCardView(content: request.content)
         let hosting = NSHostingView(rootView: card)
         hosting.sizingOptions = []
-        hosting.frame = NSRect(x: 0, y: 0, width: Self.width, height: 10)
-        let size = NSSize(width: Self.width, height: hosting.fittingSize.height)
+        // Measured on a second view: with no sizing options this one has no
+        // fitting size, and the card would open 0 by 0.
+        let probe = NSHostingView(rootView: card)
+        probe.frame = NSRect(x: 0, y: 0, width: Self.width, height: 10)
+        let size = NSSize(width: Self.width, height: ceil(probe.fittingSize.height))
         hosting.frame = NSRect(origin: .zero, size: size)
         panel.contentView = hosting
 
@@ -107,13 +112,14 @@ final class HUDPresenter {
     private func makePanel() -> CardPanel {
         let panel = CardPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel],
                               backing: .buffered, defer: true)
+        // After isFloatingPanel, which sets its own level.
+        panel.isFloatingPanel = true
         panel.level = .statusBar
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
-        panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
+        panel.hasShadow = false
         panel.isReleasedWhenClosed = false
         panel.becomesKeyOnlyIfNeeded = true
         return panel
@@ -135,8 +141,7 @@ struct HUDCardView: View {
             .padding(.horizontal, HUDPresenter.inset + 4)
             .padding(.vertical, HUDPresenter.inset)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            // Solanum: a raised card, its edge a hairline.
-            .background(Solanum.raised, in: .rect(cornerRadius: 12, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Solanum.hairline))
+            // Liquid Glass, as the Mac's own notifications.
+            .glassEffect(.regular, in: .rect(cornerRadius: 22, style: .continuous))
     }
 }

@@ -16,15 +16,16 @@ struct FocusStatsPage: View {
     var body: some View {
         let stats = model.stats
         DropletSettingsPage {
-            HStack(spacing: 0) {
-                figure("This week", FocusFormat.long(stats.focusedThisWeek))
-                Rectangle().fill(Solanum.hairline).frame(width: 1)
-                figure("Streak", FocusFormat.days(stats.currentStreak))
-                Rectangle().fill(Solanum.hairline).frame(width: 1)
-                figure("Sessions", stats.isEmpty ? "None" : "\(stats.sessionCount)")
+            Section {
+                HStack(spacing: 0) {
+                    figure("This week", FocusFormat.long(stats.focusedThisWeek))
+                    Divider()
+                    figure("Streak", FocusFormat.days(stats.currentStreak))
+                    Divider()
+                    figure("Sessions", stats.isEmpty ? "None" : "\(stats.sessionCount)")
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            .solanumCard()
 
             DropletSettingsCard {
                 DropletStackedRow(title: "Last six months") {
@@ -65,7 +66,7 @@ struct FocusStatsPage: View {
                     settingsSectionHeader("Where you focused")
                     Text("The apps in front while a session ran.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -84,7 +85,7 @@ struct FocusStatsPage: View {
                     settingsSectionHeader("History")
                     Text("Kept on this Mac only. Nothing is sent anywhere.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -93,7 +94,7 @@ struct FocusStatsPage: View {
                                      isOn: model.binding(\.recordsHistory))
                     DropletControlRow(title: "Clear history") {
                         Button("Clear…", role: .destructive) { confirmingClear = true }
-                            .buttonStyle(SolanumButtonStyle())
+                            .buttonStyle(.bordered)
                             .disabled(stats.isEmpty)
                     }
                 }
@@ -106,21 +107,20 @@ struct FocusStatsPage: View {
         }
     }
 
-    /// A number in the serif, under its mono label.
+    /// A number, large, under its label.
     private func figure(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label.uppercased())
-                .font(.system(size: 11, design: .monospaced))
-                .tracking(0.9)
-                .foregroundStyle(Solanum.inkMuted)
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.callout)
+                .foregroundStyle(.secondary)
             Text(verbatim: value)
-                .font(Solanum.serif(28))
-                .foregroundStyle(Solanum.ink)
+                .font(.system(size: 24, weight: .semibold))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 16)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
     }
@@ -162,7 +162,7 @@ struct ContributionGraph: View {
                         // Mon, Wed, Fri when weeks start on Sunday.
                         Text(verbatim: row % 2 == 1 ? weekday(row) : "")
                             .font(.system(size: 9))
-                            .foregroundStyle(Solanum.inkMuted)
+                            .foregroundStyle(.secondary)
                             .frame(height: cell)
                     }
                 }
@@ -171,7 +171,7 @@ struct ContributionGraph: View {
                     VStack(alignment: .leading, spacing: gap) {
                         Text(verbatim: month(index))
                             .font(.system(size: 9))
-                            .foregroundStyle(Solanum.inkMuted)
+                            .foregroundStyle(.secondary)
                             .fixedSize()
                             .frame(width: cell, height: labelHeight, alignment: .bottomLeading)
                         ForEach(week) { day in
@@ -195,7 +195,7 @@ struct ContributionGraph: View {
                 Text("More").padding(.leading, 2)
             }
             .font(.system(size: 11))
-            .foregroundStyle(Solanum.inkMuted)
+            .foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .ignore)

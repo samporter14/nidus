@@ -208,7 +208,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// A field that has just appeared takes keystrokes only while Nidus is
     /// the active app; the popover makes it so when it opens.
-    func requestKeyboardFocus() { NSApp.activate() }
+    func requestKeyboardFocus() { if !CaptureSurfaces.isActive { NSApp.activate() } }
 
     func runHarnessScenario(_ scenario: String) {
         guard let controller else { return }

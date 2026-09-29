@@ -235,10 +235,13 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
         self.popover = popover
         // A menu bar app is not active until it is asked to be; without this
         // the goal field shows a caret but takes no typing.
-        NSApp.activate()
+        if !CaptureSurfaces.isActive { NSApp.activate() }
         popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
         popover.contentViewController?.view.window?.makeKey()
     }
+
+    /// The popover's window, for `--capture-surfaces`.
+    var popoverWindowNumber: Int? { popover?.contentViewController?.view.window?.windowNumber }
 
     func closePopover() {
         popover?.performClose(nil)
@@ -346,14 +349,14 @@ struct FocusMenuHeader: View {
                 .font(.system(size: 13, weight: .medium))
                 .lineLimit(1)
             Text(verbatim: model.clockText)
-                .font(Solanum.serif(28))
+                .font(.system(size: 28, weight: .light))
                 .monospacedDigit()
                 .foregroundStyle(model.isPaused || model.isOnBreak ? .secondary : .primary)
             if model.isOnBreak || !model.isOpenEnded {
                 GeometryReader { proxy in
                     ZStack(alignment: .leading) {
                         Capsule().fill(.quaternary)
-                        Capsule().fill(model.isPaused || model.isOnBreak ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Solanum.clay))
+                        Capsule().fill(model.isPaused || model.isOnBreak ? AnyShapeStyle(.tertiary) : AnyShapeStyle(FocusPalette.clay))
                             .frame(width: max(3, proxy.size.width * (model.isOnBreak ? model.breakProgress : model.progress)))
                     }
                 }

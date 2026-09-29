@@ -35,6 +35,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         if !Demo.isActive, handOffToRunningCopy() { return }
         if RenderSurfaces.isActive { return RenderSurfaces.run() }
+        if CaptureSurfaces.isActive { return CaptureSurfaces.run() }
 
         let settings = SettingsWindowController()
         let host = NidusHost(settings: settings)
@@ -106,7 +107,6 @@ struct NidusPopover: View {
             .padding(.bottom, 20)
             .frame(width: 440)
             .fixedSize(horizontal: false, vertical: true)
-            .background(Solanum.page)
     }
 }
 
@@ -145,7 +145,7 @@ enum Demo {
     }
 
     static let scenario = value(after: "--demo")
-    static var isActive: Bool { scenario != nil || RenderSurfaces.isActive }
+    static var isActive: Bool { scenario != nil || RenderSurfaces.isActive || CaptureSurfaces.isActive }
 
     @MainActor
     static func openRequestedSurfaces(model: NidusModel, settings: SettingsWindowController) {

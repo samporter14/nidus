@@ -3,7 +3,7 @@
 //  Nidus
 //
 //  Settings: the main page, and a page per category, Stats and Apps to
-//  open. Built from the rows in Kit.swift, in Solanum.
+//  open. Built from the rows in Kit.swift: a grouped form, as System Settings.
 //
 
 import AppKit
@@ -60,13 +60,24 @@ struct FocusSettingsPane: View {
 
     var body: some View {
         DropletSettingsPane {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Block what pulls you away")
-                    .font(Solanum.serif(28))
-                    .foregroundStyle(Solanum.ink)
-                Text("For as long as you say, and not a minute more. Nothing leaves this Mac.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Solanum.inkMuted)
+            Section {
+                HStack(spacing: 14) {
+                    Image(nsImage: NSApp.applicationIconImage)
+                        .resizable()
+                        .frame(width: 56, height: 56)
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Nidus")
+                            .font(.title2.weight(.semibold))
+                        Text("Blocks what pulls you away, for as long as you say. Nothing leaves this Mac.")
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 0)
+                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                }
+                .padding(.vertical, 4)
             }
 
             DropletSettingsCard {
@@ -81,7 +92,7 @@ struct FocusSettingsPane: View {
                         settingsSectionHeader("Get started")
                         Text("Where Nidus lives, and how to begin.")
                             .font(.system(size: 12))
-                            .foregroundStyle(Solanum.inkMuted)
+                            .foregroundStyle(.secondary)
                     }
                 } content: {
                     DropletSettingsCard {
@@ -99,7 +110,7 @@ struct FocusSettingsPane: View {
                         }
                         DropletControlRow(title: "This guide goes after your first session") {
                             Button("Hide now", action: model.hideGettingStarted)
-                                .buttonStyle(SolanumButtonStyle())
+                                .buttonStyle(.bordered)
                         }
                     }
                 }
@@ -135,17 +146,21 @@ struct FocusSettingsPane: View {
                 settingsSectionHeader("Blocking")
             } content: {
                 DropletSettingsCard {
-                    SettingsRow(title: "What to block",
-                                hint: "Block the categories you pick, or block everything except them.") {
-                        SolanumSegmented(selection: model.binding(\.mode), options: [.block, .allow],
-                                         label: { Text($0 == .block ? "Block list" : "Allow list") },
-                                         accessibilityName: "Blocking")
+                    DropletGroupedPickerRow(title: "What to block",
+                                            subtitle: "Block the categories you pick, or block everything except them.") {
+                        Picker("What to block", selection: model.binding(\.mode)) {
+                            Text("Block list").tag(SessionPlan.Mode.block)
+                            Text("Allow list").tag(SessionPlan.Mode.allow)
+                        }
+                        .pickerStyle(.segmented)
                     }
-                    SettingsRow(title: "When a blocked app opens",
-                                hint: "Quitting asks the app to close normally, so it can save your work.") {
-                        SolanumSegmented(selection: model.binding(\.hidesInsteadOfQuitting), options: [false, true],
-                                         label: { Text($0 ? "Hide it" : "Quit it") },
-                                         accessibilityName: "When a blocked app opens")
+                    DropletGroupedPickerRow(title: "When a blocked app opens",
+                                            subtitle: "Quitting asks the app to close normally, so it can save your work.") {
+                        Picker("When a blocked app opens", selection: model.binding(\.hidesInsteadOfQuitting)) {
+                            Text("Quit it").tag(false)
+                            Text("Hide it").tag(true)
+                        }
+                        .pickerStyle(.segmented)
                     }
                     DropletGroupedPickerRow(title: "Snooze length",
                                             subtitle: "How long Snooze lets one app or website through.") {
@@ -181,7 +196,7 @@ struct FocusSettingsPane: View {
                     settingsSectionHeader("When a session starts")
                     Text("Open what you work in, and quiet the rest of your Mac.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -201,7 +216,7 @@ struct FocusSettingsPane: View {
                     settingsSectionHeader("Categories")
                     Text("Pick one or more when you start a session.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -216,7 +231,7 @@ struct FocusSettingsPane: View {
                     }
                     DropletControlRow(title: "New category") {
                         Button("Add", action: model.addCategory)
-                            .buttonStyle(SolanumButtonStyle())
+                            .buttonStyle(.bordered)
                     }
                 }
             }
@@ -226,7 +241,7 @@ struct FocusSettingsPane: View {
                     settingsSectionHeader("Browsers")
                     Text("Blocked websites are redirected in these browsers. Nidus needs permission to control each one.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -241,7 +256,7 @@ struct FocusSettingsPane: View {
                     settingsSectionHeader("Privacy")
                     Text("Nidus collects nothing and never connects to the internet. What it keeps stays on this Mac.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -281,7 +296,7 @@ struct CategoryTile: View {
     init(image: Image) { self.image = image }
 
     var body: some View {
-        SolanumTile(image: image, size: DropletSettingsPageLink<EmptyView>.tileSize)
+        SettingsTile(image: image, size: DropletSettingsPageLink<EmptyView>.tileSize)
     }
 }
 
@@ -300,11 +315,9 @@ struct FocusStepRow<Tile: View>: View {
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(Solanum.ink)
                 detail
-                    .font(.system(size: 12))
-                    .foregroundStyle(Solanum.inkMuted)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .layoutPriority(1)
@@ -340,15 +353,15 @@ struct BrowserAccessRow: View {
         DropletControlRow(title: browser.name) {
             HStack(spacing: DroppySpacing.sm) {
                 Text(label)
-                    .foregroundStyle(Solanum.inkMuted)
+                    .foregroundStyle(.secondary)
                 switch status {
                 case .notAsked:
                     Button("Allow…", action: ask)
-                        .buttonStyle(SolanumButtonStyle())
+                        .buttonStyle(.bordered)
                         .disabled(isAsking)
                 case .denied:
                     Button("Open System Settings…", action: openAutomationSettings)
-                        .buttonStyle(SolanumButtonStyle())
+                        .buttonStyle(.bordered)
                 default:
                     EmptyView()
                 }
@@ -412,7 +425,7 @@ struct FocusCategoryPage: View {
                 DropletSettingsCard {
                     DropletControlRow(title: "Name") {
                         TextField("Name", text: nameBinding)
-                            .solanumField()
+                            .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
                             .labelsHidden()
                     }
@@ -431,7 +444,7 @@ struct FocusCategoryPage: View {
                         }
                         DropletControlRow(title: category.apps.isEmpty ? "No apps yet" : "Add more") {
                             Button("Choose apps…", action: chooseApps)
-                                .buttonStyle(SolanumButtonStyle())
+                                .buttonStyle(.bordered)
                         }
                     }
                 }
@@ -441,7 +454,7 @@ struct FocusCategoryPage: View {
                         settingsSectionHeader("Websites")
                         Text("Each one also covers its subdomains, so youtube.com includes m.youtube.com.")
                             .font(.system(size: 12))
-                            .foregroundStyle(Solanum.inkMuted)
+                            .foregroundStyle(.secondary)
                     }
                 } content: {
                     DropletSettingsCard {
@@ -455,12 +468,12 @@ struct FocusCategoryPage: View {
                         DropletControlRow(title: "Add a website") {
                             HStack(spacing: DroppySpacing.sm) {
                                 TextField("example.com", text: $newWebsite)
-                                    .solanumField()
+                                    .textFieldStyle(.roundedBorder)
                                     .frame(width: 180)
                                     .labelsHidden()
                                     .onSubmit(addWebsite)
                                 Button("Add", action: addWebsite)
-                                    .buttonStyle(SolanumButtonStyle())
+                                    .buttonStyle(.bordered)
                                     .disabled(FocusCategory.domain(from: newWebsite) == nil)
                             }
                         }
@@ -470,7 +483,7 @@ struct FocusCategoryPage: View {
                 DropletSettingsCard {
                     DropletControlRow(title: "Delete this category") {
                         Button("Delete", role: .destructive) { model.deleteCategory(categoryID) }
-                            .buttonStyle(SolanumButtonStyle())
+                            .buttonStyle(.bordered)
                     }
                 }
             }
@@ -523,7 +536,7 @@ struct FocusLaunchAppsPage: View {
                     settingsSectionHeader("Apps to open")
                     Text("Opened when a session starts, the first one in front. A session never blocks the apps it opened.")
                         .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
+                        .foregroundStyle(.secondary)
                 }
             } content: {
                 DropletSettingsCard {
@@ -546,7 +559,7 @@ struct FocusLaunchAppsPage: View {
                             for app in chosen where !apps.contains(where: { $0.bundleID == app.bundleID }) { apps.append(app) }
                             model.launchApps = apps
                         }
-                        .buttonStyle(SolanumButtonStyle())
+                        .buttonStyle(.bordered)
                     }
                 }
             }

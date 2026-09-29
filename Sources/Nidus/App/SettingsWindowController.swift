@@ -15,15 +15,16 @@ import SwiftUI
 final class SettingsWindowController {
     let router = SettingsRouter()
     weak var model: NidusModel?
-    private var window: NSWindow?
+    private(set) var window: NSWindow?
 
     func show(page: String? = nil, title: String = "") {
         guard let model else { return }
         if let page { router.reset(to: page, title: title) }
         let window = window ?? makeWindow(model: model)
         self.window = window
-        NSApp.activate()
         if !window.isVisible { window.center() }
+        if CaptureSurfaces.isActive { return window.orderFrontRegardless() }
+        NSApp.activate()
         window.makeKeyAndOrderFront(nil)
     }
 
@@ -54,60 +55,42 @@ struct SettingsRoot: View {
         VStack(spacing: 0) {
             if let page = router.path.last {
                 pageHeader(page)
-                Rectangle().fill(Solanum.hairline).frame(height: 1)
+                Divider()
                 (model.makeSettingsPage(id: page.id) ?? AnyView(missing))
                     .id(page)
             } else {
                 FocusSettingsPane(model: model)
-                footer
             }
         }
         .frame(minWidth: 560, minHeight: 480)
-        .background(Solanum.page)
         .environment(router)
     }
 
+    /// Back and the page's title, where System Settings puts them.
     private func pageHeader(_ page: SettingsRouter.Page) -> some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Button(action: router.back) {
-                Label(router.path.count > 1 ? router.path[router.path.count - 2].title : "Settings",
-                      systemImage: "chevron.left")
-                    .font(.system(size: 13, weight: .medium))
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 14, weight: .semibold))
+                    .frame(width: 24, height: 24)
+                    .contentShape(.rect)
             }
-            .buttonStyle(SolanumButtonStyle())
+            .buttonStyle(.borderless)
             .keyboardShortcut("[", modifiers: .command)
+            .help("Back to \(router.path.count > 1 ? router.path[router.path.count - 2].title : "Settings")")
+            .accessibilityLabel("Back")
             Text(page.title)
-                .font(Solanum.serif(20))
-                .foregroundStyle(Solanum.ink)
+                .font(.title3.weight(.semibold))
                 .lineLimit(1)
             Spacer()
         }
-        .padding(.horizontal, 32)
-        .padding(.vertical, 12)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
     }
 
     private var missing: some View {
         Text("This page is gone.")
-            .foregroundStyle(Solanum.inkMuted)
+            .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-
-    private var footer: some View {
-        HStack(spacing: 12) {
-            Text("Nidus")
-                .font(Solanum.serif(20))
-                .foregroundStyle(Solanum.ink)
-            Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
-                .font(.system(size: 11, design: .monospaced))
-                .tracking(0.9)
-                .foregroundStyle(Solanum.inkFaint)
-            Spacer()
-            Text("A Solanum product.")
-                .font(.system(size: 12))
-                .foregroundStyle(Solanum.inkMuted)
-        }
-        .padding(.horizontal, 32)
-        .frame(height: 56)
-        .overlay(alignment: .top) { Rectangle().fill(Solanum.hairline).frame(height: 1).padding(.horizontal, 32) }
     }
 }

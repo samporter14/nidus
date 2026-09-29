@@ -96,3 +96,74 @@ enum RenderSurfaces {
         }
     }
 }
+
+/// `Nidus --capture-surfaces <dir>`: shows the real popover, cards and
+/// Settings window one at a time, in each theme, and for each prints
+/// `CAPTURE <name> <window number>`, then waits for `<dir>/<name>.done`. A
+/// script beside it runs `screencapture -l` on the window (materials and
+/// Liquid Glass draw only on screen), then touches the file. Nidus never
+/// becomes the active app, so the keyboard stays where it was.
+@MainActor
+enum CaptureSurfaces {
+    nonisolated static var isActive: Bool { ProcessInfo.processInfo.arguments.contains("--capture-surfaces") }
+
+    static func run() {
+        let arguments = ProcessInfo.processInfo.arguments
+        guard let index = arguments.firstIndex(of: "--capture-surfaces"), index + 1 < arguments.count else {
+            return NSApp.terminate(nil)
+        }
+        let directory = URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let settings = SettingsWindowController()
+        let host = NidusHost(settings: settings)
+        let model = NidusModel()
+        model.harnessScenario = "idle"
+        settings.model = model
+        model.activate(host: host)
+
+        Task { @MainActor in
+            // The first popover takes a moment to make its window.
+            model.showPopover()
+            try? await Task.sleep(for: .milliseconds(800))
+            model.menuBarItem?.closePopover()
+            try? await Task.sleep(for: .milliseconds(300))
+            for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+                NSApp.appearance = NSAppearance(named: appearance)
+                for scenario in ["idle", "running", "break"] {
+                    model.runHarnessScenario(scenario)
+                    if scenario == "idle" { model.goalDraft = "" }
+                    model.showPopover()
+                    try? await Task.sleep(for: .milliseconds(700))
+                    await capture("popover-\(scenario)-\(theme)", model.menuBarItem?.popoverWindowNumber, in: directory)
+                    model.menuBarItem?.closePopover()
+                    try? await Task.sleep(for: .milliseconds(300))
+                }
+                for scenario in ["blocked", "finish", "browser"] {
+                    model.runHarnessScenario(scenario)
+                    try? await Task.sleep(for: .milliseconds(700))
+                    await capture("card-\(scenario)-\(theme)", host.hud.windowNumber, in: directory)
+                }
+                model.runHarnessScenario("idle")
+                for (page, title) in [(nil, ""), ("stats", "Stats")] as [(String?, String)] {
+                    settings.router.reset(to: page, title: title)
+                    settings.show()
+                    try? await Task.sleep(for: .milliseconds(700))
+                    await capture("settings-\(page ?? "main")-\(theme)", settings.window?.windowNumber, in: directory)
+                }
+                settings.window?.orderOut(nil)
+            }
+            model.deactivate()
+            NSApp.terminate(nil)
+        }
+    }
+
+    private static func capture(_ name: String, _ window: Int?, in directory: URL) async {
+        guard let window else { return print("MISSING \(name)") }
+        let done = directory.appendingPathComponent("\(name).done")
+        print("CAPTURE \(name) \(window)")
+        fflush(stdout)
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: done.path) {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+    }
+}
