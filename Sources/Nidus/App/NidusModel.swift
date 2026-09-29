@@ -139,6 +139,7 @@ final class NidusModel: NSObject, ObservableObject {
         controller.start(plan)
         rememberGoal(plan.goal)
         host?.feedback.play(.success)
+        askBrowsersNeedingConsent()
     }
 
     /// Starts the last session again, from the wrap-up card.
@@ -146,6 +147,7 @@ final class NidusModel: NSObject, ObservableObject {
         guard let controller, let last = controller.engine.lastPlan else { return startSession() }
         controller.start(last)
         host?.feedback.play(.success)
+        askBrowsersNeedingConsent()
     }
 
     /// The shortcut: ends a running session, or starts the last one again.
@@ -162,6 +164,7 @@ final class NidusModel: NSObject, ObservableObject {
         } else if let last = controller.engine.lastPlan {
             controller.start(last)
             host?.feedback.play(.success)
+            askBrowsersNeedingConsent()
         } else {
             startSession()
         }
@@ -546,12 +549,33 @@ extension NidusModel {
 
     /// Mid-session, the first time a running browser refuses Focus, say so.
     private func browserAccessDidChange(_ access: [String: AppleEventError]) {
+        for browser in BrowserProfile.known {
+            let state = access[browser.bundleID].map { "\($0)" } ?? "ok or not running"
+            host?.log.notice("Browser \(browser.bundleID, privacy: .public): \(state, privacy: .public)")
+        }
         guard isActive else { return }
         for browser in BrowserProfile.known where !warnedBrowsers.contains(browser.bundleID) {
             guard let error = access[browser.bundleID], error == .notPermitted || error == .needsConsent else { continue }
             warnedBrowsers.insert(browser.bundleID)
             presentBrowserAccessHUD(for: browser, needsConsent: error == .needsConsent)
             return
+        }
+    }
+
+    /// Starting a session is a click, so it is the moment to ask macOS, once,
+    /// for each open browser Nidus has never been allowed or refused: until
+    /// then, websites in it can't be blocked. The prompts come from macOS,
+    /// one at a time, off the main thread.
+    func askBrowsersNeedingConsent() {
+        let log = host?.log
+        Task.detached(priority: .userInitiated) {
+            for browser in BrowserProfile.known {
+                guard let target = AppleEventTarget(runningBundleID: browser.bundleID),
+                      target.automationPermission(ask: false) == .needsConsent else { continue }
+                log?.notice("Asking macOS to let Nidus control \(browser.bundleID, privacy: .public)")
+                let answer = target.automationPermission(ask: true)
+                log?.notice("\(browser.bundleID, privacy: .public) answered: \(answer.map { "\($0)" } ?? "allowed", privacy: .public)")
+            }
         }
     }
 
