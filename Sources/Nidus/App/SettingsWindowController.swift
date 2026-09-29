@@ -33,7 +33,10 @@ final class SettingsWindowController {
                               styleMask: [.titled, .closable, .miniaturizable, .resizable],
                               backing: .buffered, defer: false)
         window.title = "Nidus"
-        window.contentViewController = NSHostingController(rootView: root)
+        let hosting = NSHostingController(rootView: root)
+        // The window keeps the size it is given; the page scrolls inside it.
+        hosting.sizingOptions = []
+        window.contentViewController = hosting
         window.setContentSize(NSSize(width: 640, height: 720))
         window.contentMinSize = NSSize(width: 560, height: 480)
         window.isReleasedWhenClosed = false

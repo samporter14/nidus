@@ -226,7 +226,10 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             let popover = NSPopover()
             popover.behavior = .transient
             popover.animates = true
-            popover.contentViewController = NSHostingController(rootView: NidusPopover(model: model))
+            let hosting = NSHostingController(rootView: NidusPopover(model: model))
+            // Idle and running differ in height; the popover follows.
+            hosting.sizingOptions = [.preferredContentSize]
+            popover.contentViewController = hosting
             return popover
         }()
         self.popover = popover
