@@ -40,7 +40,17 @@ if [ -d "$ICON" ]; then
     rm -rf "$WORK"
 fi
 
-codesign --force --sign - "$APP" >/dev/null
+# Signed with "Solanum Code Signing" when this Mac has that certificate (a
+# self-signed one in the login keychain): the signature then names the
+# certificate rather than this exact build, so macOS keeps the permissions it
+# granted (microphone, browser control) across updates. Without it, ad-hoc,
+# as anyone building from source gets.
+IDENTITY=$(security find-certificate -c "Solanum Code Signing" -Z 2>/dev/null | awk '/SHA-1/ {print $3; exit}' || true)
+if [[ -n "$IDENTITY" ]]; then
+    codesign --force --sign "$IDENTITY" "$APP" >/dev/null
+else
+    codesign --force --sign - "$APP" >/dev/null
+fi
 echo "Built $APP"
 [[ "${1:-}" == "--open" ]] && open "$APP"
 exit 0
