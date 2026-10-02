@@ -21,6 +21,8 @@ final class NidusModel: NSObject, ObservableObject {
     private var subscriptions: Set<AnyCancellable> = []
     private var menuBar: FocusMenuBar?
     var menuBarItem: FocusMenuBar? { menuBar }
+    /// The last focus state written, so a write happens only on a change.
+    fileprivate var lastPublishedFocus: FocusFile?
 
     /// The goal typed into the popover, kept while it closes and opens.
     @Published var goalDraft = ""
@@ -68,7 +70,12 @@ final class NidusModel: NSObject, ObservableObject {
             // @Published sends before the value changes; wait a turn so
             // what the menu bar reads is the new second, as the views do.
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.menuBar?.sync() }
+            .sink { [weak self] _ in
+                self?.menuBar?.sync()
+                // Adding time moves the end without a session event; this
+                // writes only when the end or the state changed.
+                self?.publishFocus()
+            }
             .store(in: &subscriptions)
         controller.$browserAccess
             .receive(on: DispatchQueue.main)
@@ -83,6 +90,7 @@ final class NidusModel: NSObject, ObservableObject {
             .store(in: &subscriptions)
 
         controller.start()
+        publishFocus()
 
         if host.isGranted(.menuBar) {
             let menuBar = FocusMenuBar(model: self)
@@ -104,6 +112,7 @@ final class NidusModel: NSObject, ObservableObject {
     }
 
     func deactivate() {
+        publishFocus(quitting: true)
         // Everything activate() started is torn down here, before Nidus quits.
         welcomeTask?.cancel()
         welcomeTask = nil
@@ -275,6 +284,7 @@ final class NidusModel: NSObject, ObservableObject {
     // MARK: Session events
 
     private func sessionDidChange(_ event: SessionEvent) {
+        defer { publishFocus() }
         switch event {
         case .started:
             warnedBrowsers.removeAll()
@@ -633,3 +643,36 @@ enum FocusFormat {
         return "\(minutes) \(minutes == 1 ? "minute" : "minutes") left"
     }
 }
+
+// MARK: - Telling other apps
+
+extension NidusModel {
+    /// Writes `focus.json` beside the session and says so on this Mac
+    /// (`local.sam.nidus.focus`), for other Solanum apps: Bench holds its
+    /// "Finished" cards while a session runs. Only whether one runs and until
+    /// when; never the goal or what is blocked. Paused or on a break is not
+    /// focusing. Demos and captures publish nothing.
+    func publishFocus(quitting: Bool = false) {
+        guard !Demo.isActive, let host else { return }
+        let focusing = !quitting && isActive && !isPaused
+        let until: Double? = focusing && !isOpenEnded
+            ? Date().addingTimeInterval(remaining).timeIntervalSince1970.rounded()
+            : nil
+        let state = FocusFile(version: 1, focusing: focusing, until: until)
+        guard state != lastPublishedFocus else { return }
+        lastPublishedFocus = state
+        let url = host.environment.containerDirectory.appendingPathComponent("focus.json")
+        if let data = try? JSONEncoder().encode(state) { try? data.write(to: url, options: .atomic) }
+        DistributedNotificationCenter.default().postNotificationName(
+            Notification.Name("local.sam.nidus.focus"), object: nil, userInfo: nil, deliverImmediately: true)
+    }
+}
+
+/// What `focus.json` holds.
+struct FocusFile: Codable, Equatable {
+    var version: Int
+    var focusing: Bool
+    /// Seconds since 1970; nil for an open-ended session or when not focusing.
+    var until: Double?
+}
+

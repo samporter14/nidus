@@ -69,6 +69,14 @@ and the categories to block, and press Start. Until the session ends:
 
 <img src="docs/settings.png" width="520" alt="Nidus Settings: Block what pulls you away, with Stats, and sections for sessions and blocking">
 
+## Works with Bench
+
+While a session runs, Nidus writes `focus.json` in its folder (whether a
+focus session is on and until when, never your goal or what's blocked) and
+says so on this Mac with the local notification `local.sam.nidus.focus`.
+[Bench](https://github.com/samporter14/bench) uses it to hold "Finished"
+cards until the session ends. Nothing leaves your Mac.
+
 ## Install
 
 You need a Mac with Apple silicon (M1 or later) on macOS 27.
