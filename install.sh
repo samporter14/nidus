@@ -36,17 +36,22 @@ if [[ ! -d "$TMP/Nidus.app" ]]; then
     exit 1
 fi
 
-# Only the copy being replaced is quit, by its path; any other Nidus is left
-# alone. Nidus takes the signal as ⌘Q: a session in progress is saved and
-# carries on when the new one opens.
-if pgrep -f "$APP/Contents/MacOS/Nidus" >/dev/null; then
+# Only the copy being replaced is quit: processes whose executable is
+# exactly this copy's, compared as text. (pgrep -f would read the path as a
+# pattern over whole command lines, so another copy could match.) Nidus
+# takes the signal as ⌘Q.
+EXE="$APP/Contents/MacOS/Nidus"
+target_pids() {
+    ps -axo pid=,comm= | awk -v exe="$EXE" '{ pid = $1; sub(/^ *[0-9]+ /, ""); if ($0 == exe) print pid }'
+}
+if [[ -n "$(target_pids)" ]]; then
     echo "Quitting the running Nidus…"
-    pkill -TERM -f "$APP/Contents/MacOS/Nidus" || true
+    kill -TERM $(target_pids) 2>/dev/null || true
     for _ in {1..20}; do
-        pgrep -f "$APP/Contents/MacOS/Nidus" >/dev/null || break
+        [[ -z "$(target_pids)" ]] && break
         sleep 0.5
     done
-    if pgrep -f "$APP/Contents/MacOS/Nidus" >/dev/null; then
+    if [[ -n "$(target_pids)" ]]; then
         echo "Nidus is still running. Quit it with ⌘Q, then run this again." >&2
         exit 1
     fi
