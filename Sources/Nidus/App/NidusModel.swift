@@ -132,23 +132,40 @@ final class NidusModel: NSObject, ObservableObject {
     var isActive: Bool { engine?.session != nil }
     var isPaused: Bool { engine?.isPaused ?? false }
 
+    /// Starts a session from the popover: its goal, length and categories.
     func startSession() {
-        guard let controller else { return }
+        startSession(SessionRequest())
+    }
+
+    /// Starts a session from anywhere: the popover, a nidus:// link, a
+    /// Shortcuts action, a saved setup or a schedule. What the request leaves
+    /// nil comes from the popover's current choices and Settings. Returns
+    /// false, starting nothing, while a session or break is already on, or
+    /// when a block list session would block nothing.
+    @discardableResult
+    func startSession(_ request: SessionRequest) -> Bool {
+        guard let controller, !isActive, !isOnBreak else { return false }
+        let mode = request.mode ?? mode
+        let ids = request.categoryIDs ?? selectedCategoryIDs
+        let chosen = categories.filter { ids.contains($0.id) }
+        guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
+        let minutes = request.minutes ?? durationMinutes
         var plan = SessionPlan(
-            goal: goalDraft.trimmingCharacters(in: .whitespacesAndNewlines),
-            duration: defaultDuration,
+            goal: (request.goal ?? goalDraft).trimmingCharacters(in: .whitespacesAndNewlines),
+            duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
             mode: mode,
-            categories: selectedCategories,
+            categories: chosen,
             reopensQuitApps: reopensQuitApps,
             launchApps: launchApps.map(\.bundleID),
             startShortcut: startShortcut,
             endShortcut: endShortcut
         )
-        plan.strict = strictMode
+        plan.strict = request.strict ?? strictMode
         controller.start(plan)
         rememberGoal(plan.goal)
         host?.feedback.play(.success)
         askBrowsersNeedingConsent()
+        return true
     }
 
     /// Starts the last session again, from the wrap-up card.
@@ -666,6 +683,18 @@ extension NidusModel {
         DistributedNotificationCenter.default().postNotificationName(
             Notification.Name("local.sam.nidus.focus"), object: nil, userInfo: nil, deliverImmediately: true)
     }
+}
+
+/// A session to start. Anything nil is taken from the popover's current
+/// choices (goal, length, categories) and Settings (mode, strict).
+struct SessionRequest: Equatable, Sendable {
+    var goal: String?
+    /// 0 means open-ended.
+    var minutes: Int?
+    /// FocusCategory ids.
+    var categoryIDs: [String]?
+    var mode: SessionPlan.Mode?
+    var strict: Bool?
 }
 
 /// What `focus.json` holds.
