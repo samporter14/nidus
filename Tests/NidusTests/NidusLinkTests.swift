@@ -34,10 +34,12 @@ private func rejection(_ text: String) -> NidusLink.Rejection? {
 struct NidusLinkParsingTests {
     @Test func theBlockPagesSnoozeLinkReadsAsBefore() {
         #expect(parse("nidus://snooze?site=youtube.com") == .success(.snooze(site: "youtube.com")))
-        // The block page writes it with encodeURIComponent, over the blocked
-        // address, and a link was always cleaned to a bare domain.
+        #expect(parse("nidus://snooze?site=youtube.com%2Fshorts") == .success(.snooze(site: "youtube.com/shorts")))
+        // The block page writes it with encodeURIComponent. A full address is
+        // cleaned to a rule as typing it in Settings would be: scheme, www.
+        // and query go, the path stays, since a rule can name part of a site.
         #expect(parse("nidus://snooze?site=https%3A%2F%2Fwww.YouTube.com%2Fwatch%3Fv%3D1")
-                == .success(.snooze(site: "youtube.com")))
+                == .success(.snooze(site: "youtube.com/watch")))
     }
 
     @Test(arguments: ["nidus://snooze", "nidus://snooze?site=", "nidus://snooze?site=localhost",
