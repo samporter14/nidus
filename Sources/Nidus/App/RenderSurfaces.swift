@@ -59,9 +59,108 @@ enum RenderSurfaces {
                 let name = "settings-" + (page.map { $0.hasPrefix("category:") ? "category" : $0 } ?? "main")
                 await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900, name: name, in: directory)
             }
+            // After Settings, so the Stats page above is drawn without them.
+            await shootPopoverVariants(model: model, settings: settings, in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }
+    }
+
+    /// The popover's states beyond the six above: the running line, the idle
+    /// footer, the custom length. Every session here blocks nothing; a
+    /// blocked count is set on the session's own state, as the finish card's
+    /// is. Settings it changes are the demo's own, and are put back.
+    private static func shootPopoverVariants(model: NidusModel, settings: SettingsWindowController, in directory: URL) async {
+        guard let controller = model.controller else { return }
+        let popover = NidusPopover(model: model)
+
+        func blocked(_ times: Int) {
+            for _ in 0..<times { controller.engine.recordBlock("youtube.com", name: "youtube.com") }
+        }
+        func start(goal: String, minutes: Double?) {
+            controller.start(SessionPlan(goal: goal, duration: minutes.map { $0 * 60 }, mode: .block, apps: [], websites: []))
+        }
+
+        // Running: a goal and two blocks, one block, no goal, a long goal.
+        model.runHarnessScenario("running")
+        blocked(2)
+        await shoot(popover, width: 440, name: "popover-running-blocks", in: directory)
+        model.runHarnessScenario("running")
+        blocked(1)
+        await shoot(popover, width: 440, name: "popover-running-blocked-once", in: directory)
+        start(goal: "", minutes: 25)
+        blocked(2)
+        await shoot(popover, width: 440, name: "popover-running-nogoal", in: directory)
+        start(goal: "Finish the methods section and rerun every figure for the revision", minutes: 90)
+        blocked(14)
+        await shoot(popover, width: 440, name: "popover-running-longgoal", in: directory)
+        model.runHarnessScenario("open-ended")
+        blocked(2)
+        await shoot(popover, width: 440, name: "popover-open-ended-blocks", in: directory)
+        model.runHarnessScenario("paused")
+        blocked(2)
+        await shoot(popover, width: 440, name: "popover-paused-blocks", in: directory)
+
+        // Idle, with the history it reads.
+        model.runHarnessScenario("idle")
+        model.goalDraft = ""
+        func entry(daysAgo: Int, minutes: Double, minuteOfDay: Int) -> SessionEntry {
+            let calendar = Calendar.current
+            let day = calendar.date(byAdding: .day, value: -daysAgo, to: calendar.startOfDay(for: Date()))!
+            let start = day.addingTimeInterval(TimeInterval(minuteOfDay * 60))
+            return SessionEntry(start: start, end: start.addingTimeInterval(minutes * 60), focused: minutes * 60,
+                                planned: minutes * 60, outcome: .completed)
+        }
+        for sample in [entry(daysAgo: 2, minutes: 25, minuteOfDay: 600), entry(daysAgo: 1, minutes: 45, minuteOfDay: 600),
+                       entry(daysAgo: 0, minutes: 45, minuteOfDay: 10), entry(daysAgo: 0, minutes: 25, minuteOfDay: 20)] {
+            controller.history.append(sample)
+        }
+        await shoot(popover, width: 440, name: "popover-idle-footer", in: directory)
+        model.recordsHistory = false
+        await shoot(popover, width: 440, name: "popover-idle-history-off", in: directory)
+        model.recordsHistory = true
+        controller.clearHistory()
+        // A streak waiting, nothing focused yet today.
+        for sample in [entry(daysAgo: 3, minutes: 25, minuteOfDay: 600), entry(daysAgo: 2, minutes: 25, minuteOfDay: 600),
+                       entry(daysAgo: 1, minutes: 45, minuteOfDay: 600)] {
+            controller.history.append(sample)
+        }
+        await shoot(popover, width: 440, name: "popover-idle-streak-waiting", in: directory)
+        controller.clearHistory()
+
+        // The custom length field: open, typed, and not understood.
+        model.openCustomLength()
+        await shoot(popover, width: 440, name: "popover-idle-custom", in: directory)
+        model.customLengthDraft?.text = "1h30"
+        await shoot(popover, width: 440, name: "popover-idle-custom-hours", in: directory)
+        model.customLengthDraft?.text = "until 3:30pm"
+        await shoot(popover, width: 440, name: "popover-idle-custom-until", in: directory)
+        model.customLengthDraft?.text = "banana"
+        model.commitCustomLength()
+        await shoot(popover, width: 440, name: "popover-idle-custom-error", in: directory)
+        model.cancelCustomLength()
+
+        // An "until" time chosen, with a block list and with an allow list
+        // (whose button is wider), and a saved length of 40 minutes.
+        model.untilTarget = Calendar.current.nextDate(after: Date(), matching: DateComponents(hour: 15, minute: 30),
+                                                      matchingPolicy: .nextTime)
+        await shoot(popover, width: 440, name: "popover-idle-until", in: directory)
+        model.mode = .allow
+        await shoot(popover, width: 440, name: "popover-idle-until-allow", in: directory)
+        model.untilTarget = nil
+        model.durationMinutes = 40
+        await shoot(popover, width: 440, name: "popover-idle-custom-minutes", in: directory)
+        model.openCustomLength()
+        model.customLengthDraft?.text = "1h30"
+        await shoot(popover, width: 440, name: "popover-idle-custom-allow", in: directory)
+        model.cancelCustomLength()
+        model.mode = .block
+
+        // Settings' Session length with that 40 in it.
+        settings.router.reset(to: nil, title: "")
+        await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900,
+                    name: "settings-main-custom-length", in: directory)
+        model.durationMinutes = 25
     }
 
     private static func shoot<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, name: String,

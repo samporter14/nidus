@@ -27,6 +27,15 @@ final class NidusModel: NSObject, ObservableObject {
     /// The goal typed into the popover, kept while it closes and opens.
     @Published var goalDraft = ""
 
+    /// A time of day to work until ("until 3:30"), for the next Start only.
+    /// Never saved: as a number of minutes it would be wrong tomorrow. A
+    /// Start, or choosing any saved length, clears it; see FocusLength.swift.
+    /// Whatever else offers an end time ("Until next meeting") sets this.
+    @Published var untilTarget: Date?
+
+    /// The popover's "Custom…" length field: nil while it is closed.
+    @Published var customLengthDraft: CustomLengthDraft?
+
     /// Demo only (`--demo <scenario>`): a state to open in (`running`,
     /// `paused`, `open-ended`, `blocked`, `wrapup`), so every surface can be
     /// seen with a session. Its sample session blocks nothing. `welcome`
@@ -150,7 +159,7 @@ final class NidusModel: NSObject, ObservableObject {
         let ids = request.categoryIDs ?? selectedCategoryIDs
         let chosen = categories.filter { ids.contains($0.id) }
         guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
-        let minutes = request.minutes ?? durationMinutes
+        let minutes = request.minutes ?? minutesForNextStart()
         var plan = SessionPlan(
             goal: (request.goal ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
@@ -235,7 +244,9 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// A field that has just appeared takes keystrokes only while Nidus is
     /// the active app; the popover makes it so when it opens.
-    func requestKeyboardFocus() { if !CaptureSurfaces.isActive { NSApp.activate() } }
+    /// Not for a render, which draws off-screen and must not take the
+    /// keyboard from whatever is being typed in.
+    func requestKeyboardFocus() { if !CaptureSurfaces.isActive, !RenderSurfaces.isActive { NSApp.activate() } }
 
     func runHarnessScenario(_ scenario: String) {
         guard let controller else { return }
@@ -307,6 +318,9 @@ final class NidusModel: NSObject, ObservableObject {
         case .started:
             warnedBrowsers.removeAll()
             pendingFinish = nil
+            // A one-off belongs to the Start it was set for, however it came.
+            untilTarget = nil
+            customLengthDraft = nil
             host?.hud.dismiss(id: Self.breakHUDID)
             menuBar?.closePopover()
             menuBar?.sessionDidStart()
@@ -417,7 +431,11 @@ extension NidusModel {
 
     var durationMinutes: Int {
         get { preference(Key.durationMinutes, default: 25) }
-        set { setPreference(newValue, Key.durationMinutes) }
+        set {
+            setPreference(newValue, Key.durationMinutes)
+            // Another length was chosen, here or in Settings.
+            untilTarget = nil
+        }
     }
 
     var defaultDuration: TimeInterval? {

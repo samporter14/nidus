@@ -123,7 +123,9 @@ struct FocusSettingsPane: View {
                     DropletGroupedPickerRow(title: "Session length",
                                             subtitle: "What a new session starts with. You can add time while it runs.") {
                         Picker("Session length", selection: model.binding(\.durationMinutes)) {
-                            ForEach(NidusModel.durationChoices, id: \.self) { minutes in
+                            // A length typed into the popover's "Custom…" is
+                            // listed too, so the picker never shows a blank.
+                            ForEach(model.durationChoicesIncludingCurrent, id: \.self) { minutes in
                                 Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
                             }
                         }
