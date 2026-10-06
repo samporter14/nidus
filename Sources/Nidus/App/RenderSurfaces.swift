@@ -300,11 +300,19 @@ enum CaptureSurfaces {
             try? await Task.sleep(for: .milliseconds(800))
             model.menuBarItem?.closePopover()
             try? await Task.sleep(for: .milliseconds(300))
+            // What the README shows off: a few setups in the popover, and a
+            // filled Stats page. The demo's own settings and folder only.
+            model.runHarnessScenario("setups")
+            model.seedSampleHistory()
             for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
                 NSApp.appearance = NSAppearance(named: appearance)
                 for scenario in ["idle", "running", "break"] {
                     model.runHarnessScenario(scenario)
                     if scenario == "idle" { model.goalDraft = "" }
+                    // Counted on the session's own state; it blocks nothing.
+                    if scenario == "running" {
+                        for _ in 0..<2 { model.controller?.engine.recordBlock("youtube.com", name: "youtube.com") }
+                    }
                     model.showPopover()
                     try? await Task.sleep(for: .milliseconds(700))
                     await capture("popover-\(scenario)-\(theme)", model.menuBarItem?.popoverWindowNumber, in: directory)
@@ -317,7 +325,7 @@ enum CaptureSurfaces {
                     await capture("card-\(scenario)-\(theme)", host.hud.windowNumber, in: directory)
                 }
                 model.runHarnessScenario("idle")
-                for (page, title) in [("general", "General"), ("stats", "Stats")] {
+                for (page, title) in [("general", "General"), ("blocking", "Blocking"), ("setups", "Setups"), ("stats", "Stats")] {
                     settings.show(page: page, title: title)
                     try? await Task.sleep(for: .milliseconds(700))
                     await capture("settings-\(page)-\(theme)", settings.window?.windowNumber, in: directory)
