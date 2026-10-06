@@ -112,7 +112,100 @@ final class FocusHistory {
 
     private func save() {
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(File(sessions: sessions)).write(to: url, options: .atomic)
+        try? Self.encode(sessions).write(to: url, options: .atomic)
+    }
+
+    /// The file's bytes. Saving and exporting both come through here, so what
+    /// "Export as JSON" writes is always what the file itself holds, and
+    /// stays readable by Bench and Agent Day. `pretty` only adds line breaks
+    /// and sorts the keys, for a file a person may open.
+    nonisolated static func encode(_ sessions: [SessionEntry], pretty: Bool = false) throws -> Data {
+        let encoder = JSONEncoder()
+        if pretty { encoder.outputFormatting = [.prettyPrinted, .sortedKeys] }
+        return try encoder.encode(File(sessions: sessions))
+    }
+}
+
+// MARK: - Export
+
+/// The history as files other tools can open. Pure, so the tests can pin the
+/// time zone and feed it awkward goals.
+enum HistoryExport {
+    enum Format: CaseIterable, Sendable {
+        case csv, json
+
+        var fileExtension: String { self == .csv ? "csv" : "json" }
+    }
+
+    static let csvColumns = ["start", "end", "planned_minutes", "focused_minutes", "completed",
+                             "goal", "finished", "blocked_count", "most_blocked"]
+
+    /// One row per session, oldest first as stored, under a header row.
+    /// Times carry their offset (`2026-09-28T09:15:00-07:00`) so a session
+    /// means the same moment wherever the file is opened. Rows end in CRLF,
+    /// as RFC 4180 has it, which also keeps a newline inside a quoted goal
+    /// unambiguous.
+    ///
+    /// `completed` is yes only when the countdown reached zero, the same
+    /// sessions the Stats page counts as completed: one that ran out while
+    /// Nidus was not running is no.
+    static func csv(_ sessions: [SessionEntry], timeZone: TimeZone = .current) -> String {
+        let stamp = DateFormatter()
+        stamp.locale = Locale(identifier: "en_US_POSIX")
+        stamp.calendar = Calendar(identifier: .gregorian)
+        stamp.timeZone = timeZone
+        // xxx writes +hh:mm, never Z, so the offset is always visible.
+        stamp.dateFormat = "yyyy-MM-dd'T'HH:mm:ssxxx"
+
+        var lines = [csvColumns.map(field).joined(separator: ",")]
+        for s in sessions {
+            let cells = [
+                stamp.string(from: s.start),
+                stamp.string(from: s.end),
+                s.planned.map(minutes) ?? "",
+                minutes(s.focused),
+                s.outcome == .completed ? "yes" : "no",
+                s.goal,
+                s.finished.map { $0 ? "yes" : "no" } ?? "",
+                String(s.blocks.values.reduce(0, +)),
+                mostBlocked(in: s),
+            ]
+            lines.append(cells.map(field).joined(separator: ","))
+        }
+        return lines.joined(separator: "\r\n") + "\r\n"
+    }
+
+    /// The entries as the history file stores them, so what is exported can
+    /// be read back by Nidus itself. Dates are the file's own, seconds since
+    /// 2001; the CSV is the one with readable times.
+    static func json(_ sessions: [SessionEntry]) throws -> Data {
+        try FocusHistory.encode(sessions, pretty: true)
+    }
+
+    /// A field as RFC 4180 writes it: in quotes when it holds a comma, a
+    /// quote or a line break, with quotes doubled. Scalars, not characters:
+    /// Swift reads CR LF as one character that equals neither.
+    static func field(_ value: String) -> String {
+        let needsQuotes = value.unicodeScalars.contains { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }
+        guard needsQuotes else { return value }
+        return "\"" + value.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+    }
+
+    /// "25", "24.5": one decimal at most, with no locale's separator.
+    static func minutes(_ seconds: TimeInterval) -> String {
+        let value = (seconds / 60 * 10).rounded() / 10
+        return value == value.rounded() ? String(Int(value)) : String(value)
+    }
+
+    /// The most-blocked item's display name; the first alphabetically when
+    /// two tie, since a dictionary has no order of its own. Empty when
+    /// nothing was blocked.
+    static func mostBlocked(in entry: SessionEntry) -> String {
+        entry.blocks
+            .filter { $0.value > 0 }
+            .map { (name: entry.names[$0.key] ?? $0.key, count: $0.value) }
+            .min { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }?
+            .name ?? ""
     }
 }
 
