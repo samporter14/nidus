@@ -314,6 +314,8 @@ final class NidusModel: NSObject, ObservableObject {
             warnedBrowsers.removeAll()
             pendingFinish = nil
             host?.hud.dismiss(id: Self.breakHUDID)
+            // Last week's recap can wait; this session is now.
+            host?.hud.dismiss(id: Self.recapHUDID)
             menuBar?.closePopover()
             menuBar?.sessionDidStart()
         case .ended(let reason, let final):
