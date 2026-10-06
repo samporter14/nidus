@@ -1,0 +1,153 @@
+#!/bin/zsh
+# nidus-focus — asks Nidus, on this Mac, to report, start, extend or end a
+# focus session, and prints Nidus's answer: one JSON object (contract in
+# docs/automation.md). It goes through the "Nidus Command" shortcut, which
+# runs Nidus's own Run Nidus Command action, so every rule Nidus has (strict
+# sessions, a session already on, the 24-hour limit) applies.
+#
+#   nidus-focus status                       what's on; changes nothing
+#   nidus-focus setups                       saved setups, with their ids
+#   nidus-focus start [--setup NAME_OR_ID] [--goal TEXT | --goal-file PATH]
+#                     [--minutes N] [--id ID] [--no-default]
+#   nidus-focus add MINUTES [--id ID]        add time to the session that's on
+#   nidus-focus end [--id ID]                end it (never a strict one)
+#   nidus-focus check                        is everything in place? runs nothing
+#
+#   --dry-run       print the request instead of sending it
+#   --shortcut NAME the wrapper's name if it isn't "Nidus Command"
+#                   (or set NIDUS_SHORTCUT)
+#
+# --id: any string, made once per request. Sent again after a timeout, the
+# same id gets Nidus's first answer back rather than doing it twice.
+#
+# A plain `start` uses the choices in Nidus's popover, unless a file named
+# `default-setup` beside this script's folder names a setup (by name or
+# id); --no-default skips it.
+#
+# Values reach the request through plutil as data, never as shell text, so a
+# goal can hold any characters. Exit status: 0 when Nidus answered (read
+# "ok" and "outcome"), 1 when it couldn't be reached, 2 for a usage mistake.
+setopt no_unset pipe_fail
+
+SHORTCUT="${NIDUS_SHORTCUT:-Nidus Command}"
+HERE="${0:A:h}"
+DEFAULT_SETUP_FILE="${HERE:h}/default-setup"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/nidus-focus.XXXXXX")" || exit 1
+trap 'rm -rf "$WORK"' EXIT
+
+action="${1:-}"
+[[ $# -gt 0 ]] && shift
+
+dry_run=0 no_default=0
+setup="" goal="" goal_set=0 minutes="" add_minutes="" request_id=""
+
+usage() {
+    print -u2 "usage: nidus-focus status | setups | start [--setup S] [--goal G | --goal-file F] [--minutes N] [--id ID] [--no-default] | add MINUTES [--id ID] | end [--id ID] | check   [--dry-run] [--shortcut NAME]"
+    exit 2
+}
+
+# One JSON answer of our own, for when Nidus couldn't give one.
+answer() { # outcome message [ok]
+    local f="$WORK/answer.plist"
+    plutil -create xml1 "$f" &&
+        plutil -insert version -integer 1 "$f" &&
+        plutil -insert ok -bool "${3:-false}" "$f" &&
+        plutil -insert action -string "$action" "$f" &&
+        plutil -insert outcome -string "$1" "$f" &&
+        plutil -insert message -string "$2" "$f" &&
+        plutil -convert json -o - "$f"
+    print
+}
+
+case "$action" in
+    status|setups|start|end|check) ;;
+    add) action=addTime ;;
+    *) usage ;;
+esac
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --dry-run) dry_run=1 ;;
+        --no-default) no_default=1 ;;
+        --shortcut) [[ $# -ge 2 ]] || usage; SHORTCUT="$2"; shift ;;
+        --setup) [[ $# -ge 2 ]] || usage; setup="$2"; shift ;;
+        --goal) [[ $# -ge 2 ]] || usage; goal="$2"; goal_set=1; shift ;;
+        --goal-file) [[ $# -ge 2 && -r "$2" ]] || usage; goal="$(<"$2")"; goal_set=1; shift ;;
+        --minutes) [[ $# -ge 2 ]] || usage; minutes="$2"; shift ;;
+        --id) [[ $# -ge 2 ]] || usage; request_id="$2"; shift ;;
+        # add's minutes, wherever they come among the options.
+        *) [[ "$action" == addTime && -z "$add_minutes" && "$1" != --* ]] || usage
+           add_minutes="$1" ;;
+    esac
+    shift
+done
+
+digits() { [[ "$1" =~ '^[0-9]+$' ]] }
+[[ -z "$minutes" ]] || digits "$minutes" || { answer invalidMinutes "Minutes must be a whole number."; exit 2 }
+if [[ "$action" == addTime ]]; then
+    digits "$add_minutes" || { answer invalidMinutes "Say how many minutes to add, as a whole number."; exit 2 }
+fi
+
+if ! command -v shortcuts >/dev/null; then
+    answer unavailable "This Mac has no shortcuts command, so Nidus can't be reached from here."
+    exit 1
+fi
+# The list is read whole first: grep -q stopping early would make a long
+# list's writer fail, and pipe_fail would call that "missing".
+has_wrapper() {
+    local names
+    names="$(shortcuts list 2>/dev/null)" || return 1
+    print -r -- "$names" | grep -Fxq -- "$SHORTCUT"
+}
+
+if [[ "$action" == check ]]; then
+    if [[ ! -d /Applications/Nidus.app && ! -d "$HOME/Applications/Nidus.app" ]]; then
+        answer nidusMissing "Nidus isn't in Applications. Install it from github.com/samporter14/nidus."
+    elif ! has_wrapper; then
+        answer wrapperMissing "There's no shortcut called \"$SHORTCUT\". Make it as docs/automation.md says."
+    else
+        answer ready "Nidus and the \"$SHORTCUT\" shortcut are in place. Nothing was run." true
+    fi
+    exit 0
+fi
+
+# The request, built as data.
+if [[ "$action" == start && -z "$setup" && $no_default -eq 0 && -r "$DEFAULT_SETUP_FILE" ]]; then
+    setup="$(head -n 1 "$DEFAULT_SETUP_FILE")"
+fi
+req="$WORK/request.plist"
+plutil -create xml1 "$req" &&
+    plutil -insert version -integer 1 "$req" &&
+    plutil -insert action -string "$action" "$req" || { answer internalError "Couldn't write the request."; exit 1 }
+[[ -n "$request_id" ]] && plutil -insert id -string "$request_id" "$req"
+if [[ "$action" == start ]]; then
+    [[ -n "$setup" ]] && plutil -insert setup -string "$setup" "$req"
+    [[ $goal_set -eq 1 ]] && plutil -insert goal -string "$goal" "$req"
+    [[ -n "$minutes" ]] && plutil -insert minutes -integer "$minutes" "$req"
+elif [[ "$action" == addTime ]]; then
+    plutil -insert minutes -integer "$add_minutes" "$req"
+fi
+json="$WORK/request.json"
+plutil -convert json -o "$json" "$req" || { answer internalError "Couldn't write the request."; exit 1 }
+
+if [[ $dry_run -eq 1 ]]; then
+    cat "$json"; print
+    exit 0
+fi
+
+if ! has_wrapper; then
+    answer wrapperMissing "There's no shortcut called \"$SHORTCUT\". Make it as docs/automation.md says, then try again."
+    exit 1
+fi
+
+reply="$(shortcuts run "$SHORTCUT" --input-path "$json" 2>"$WORK/error")"
+code=$?
+if [[ $code -ne 0 ]]; then
+    answer shortcutFailed "The \"$SHORTCUT\" shortcut didn't finish: $(head -n 1 "$WORK/error")"
+    exit 1
+fi
+if [[ "$reply" != \{* ]]; then
+    answer unexpectedAnswer "The shortcut answered, but not with Nidus's JSON. Check that it ends with Run Nidus Command's result."
+    exit 1
+fi
+print -r -- "$reply"

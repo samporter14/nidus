@@ -300,26 +300,50 @@ struct OutsideCommandTests {
 // MARK: - Status
 
 struct FocusStatusTests {
+    private func running(_ seconds: TimeInterval, open: Bool = false) -> FocusStatus {
+        FocusStatus(state: .running, isOpenEnded: open, isBlocking: true, remaining: seconds)
+    }
+
     @Test func minutesLeftRoundUpAsTheCardsDo() {
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: 18 * 60).minutesLeft == 18)
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: 17 * 60 + 1).minutesLeft == 18)
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: 5).minutesLeft == 1)
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: 0).minutesLeft == 0)
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: -3).minutesLeft == 0)
+        #expect(running(18 * 60).minutesLeft == 18)
+        #expect(running(17 * 60 + 1).minutesLeft == 18)
+        #expect(running(5).minutesLeft == 1)
+        #expect(running(0).minutesLeft == 0)
+        #expect(running(-3).minutesLeft == 0)
     }
 
     @Test func noMinutesWithoutATimedSession() {
-        #expect(FocusStatus(isActive: false, isOpenEnded: false, remaining: 600) == FocusStatus(isActive: false, isOpenEnded: true, remaining: 0))
-        #expect(FocusStatus(isActive: false, isOpenEnded: false, remaining: 600).minutesLeft == nil)
-        let open = FocusStatus(isActive: true, isOpenEnded: true, remaining: 0)
-        #expect(open.isOn && open.minutesLeft == nil)
+        // Idle says nothing about open-ended or strict, whatever it's handed:
+        // an idle app must never read as an open-ended session.
+        let idle = FocusStatus(state: .idle, isOpenEnded: true, isStrict: true, remaining: 600)
+        #expect(!idle.isOn && !idle.isOpenEnded && !idle.isStrict && idle.minutesLeft == nil)
+        let open = running(0, open: true)
+        #expect(open.isOn && open.isOpenEnded && open.minutesLeft == nil && open.endsAt == nil)
+    }
+
+    @Test func pausedIsOnButNotFocusing() {
+        let paused = FocusStatus(state: .paused, remaining: 600)
+        #expect(paused.isOn && !paused.isBlocking)
+        #expect(paused.minutesLeft == 10)
+        #expect(paused.endsAt == nil, "a paused clock has no end time")
+    }
+
+    @Test func aBreakHasItsOwnTimeAndIsNotASession() {
+        let pause = FocusStatus(state: .onBreak, isOpenEnded: true, remaining: 240)
+        #expect(!pause.isOn && !pause.isOpenEnded && pause.minutesLeft == 4)
+        #expect(pause.endsAt == pause.observedAt.addingTimeInterval(240))
     }
 
     @Test func itSaysItInPlainWords() {
-        #expect(FocusStatus(isActive: false, isOpenEnded: true, remaining: 0).sentence == "Focus is off.")
-        #expect(FocusStatus(isActive: true, isOpenEnded: true, remaining: 0).sentence == "Focus is on, open-ended.")
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: 18 * 60).sentence == "Focus is on, 18 minutes left.")
-        #expect(FocusStatus(isActive: true, isOpenEnded: false, remaining: 30).sentence == "Focus is on, 1 minute left.")
+        #expect(FocusStatus(state: .idle).sentence == "Focus is off.")
+        #expect(running(0, open: true).sentence == "Focus is on, open-ended.")
+        #expect(running(18 * 60).sentence == "Focus is on, 18 minutes left.")
+        #expect(running(30).sentence == "Focus is on, 1 minute left.")
+        #expect(running(90 * 60).sentence == "Focus is on, 1 hour 30 minutes left.")
+        #expect(FocusStatus(state: .paused, remaining: 600).sentence == "Focus is paused, 10 minutes left.")
+        #expect(FocusStatus(state: .paused, isBlocking: true, remaining: 600).sentence
+                == "Focus is paused while your Mac is locked, 10 minutes left. Blocking stays on.")
+        #expect(FocusStatus(state: .onBreak, remaining: 240).sentence == "On a break, 4 minutes left.")
     }
 }
 
@@ -339,10 +363,12 @@ struct ShortcutsActionTests {
         await #expect(throws: FocusIntentError.notReady) { _ = try await NidusModel.forIntent(timeout: .milliseconds(50)) }
     }
 
-    @Test func fourActionsAreOfferedToSiriAndSpotlight() {
+    @Test func everyActionButTheJSONOneHasPhrases() {
         // The phrases themselves (each must say the app's name) are checked
-        // by appintentsmetadataprocessor, which Scripts/appintents-metadata.sh runs.
-        #expect(NidusShortcuts.appShortcuts.count == 4)
+        // by appintentsmetadataprocessor, which Scripts/appintents-metadata.sh
+        // runs. Apple doesn't offer App Shortcuts on macOS; the actions are
+        // in Shortcuts either way.
+        #expect(NidusShortcuts.appShortcuts.count == 5)
     }
 
     @Test func theMinutesOfAnActionShareTheLinksRange() {

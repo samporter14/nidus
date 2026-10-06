@@ -69,6 +69,7 @@ struct FocusSetupsBar: View {
         .accessibilityHint(problem?.reason ?? setup.planSummary(categories: model.categories))
         .contextMenu {
             Button("Edit…") { model.openSetupPage(setup) }
+            Button("Copy Launch Link") { model.copyLaunchLink(for: setup) }
         }
     }
 

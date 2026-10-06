@@ -259,7 +259,13 @@ final class NidusModel: NSObject, ObservableObject {
         isPaused ? controller?.resume() : controller?.pause()
     }
 
-    func addTime() { controller?.extend(by: 5 * 60) }
+    /// +5, from the popover and the menu: the same add as Shortcuts and the
+    /// JSON command. The button is only there when there's an end to move.
+    func addTime() { _ = addTimeFromOutside(minutes: 5) }
+
+    /// Answers to recent JSON commands, so a retried one isn't done twice.
+    var commandLedger: FocusCommandLedger { Self.ledger }
+    private static let ledger = FocusCommandLedger()
     func endSession() { controller?.end() }
 
     func snooze(_ key: String) {

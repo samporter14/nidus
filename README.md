@@ -87,10 +87,10 @@ and the categories to block, and press Start. Until the session ends:
 
 ## Start it from anywhere
 
-**Shortcuts.** Nidus adds Start Focus, End Focus, Toggle Focus and Get Focus
-Status to the Shortcuts app. For a keyboard shortcut, make a shortcut that
-runs Toggle Focus (or opens `nidus://toggle`) and give it a key in its
-details.
+**Shortcuts.** Nidus adds Start Focus (with a setup, if you like), Add Focus
+Time, Get Focus Status, End Focus and Toggle Focus to the Shortcuts app. For a
+keyboard shortcut, make a shortcut that runs Start Focus or Toggle Focus and
+give it a key in its details.
 
 **Links.** Any app, script or launcher can open these:
 
@@ -103,7 +103,15 @@ details.
 | `nidus://popover` | Opens the popover |
 
 A strict session can't be ended by a link or a shortcut, only from the menu
-bar, behind its phrase.
+bar, behind its phrase. Right-click a setup in the popover and choose Copy
+Launch Link for a link that starts just that setup.
+
+**Launchers and assistants.** Raycast Quicklinks are ready to import from
+[integrations/raycast](integrations/raycast), and an optional skill in
+[integrations/assistant-skill](integrations/assistant-skill/nidus-focus) lets
+an assistant on your Mac start a setup, add time or say how long is left,
+through a one-step shortcut. [docs/automation.md](docs/automation.md) has the
+details, including Alfred and BetterTouchTool.
 
 ## Works with Bench
 

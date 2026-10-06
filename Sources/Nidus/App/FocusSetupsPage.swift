@@ -145,6 +145,11 @@ struct FocusSetupPage: View {
                                        enabled: (index ?? 0) < model.setups.count - 1)
                         }
                     }
+                    DropletControlRow(title: "Launch link",
+                                      infoTip: "Starts this setup from Raycast, Alfred or any app that opens links. It names the setup by id, so renaming it doesn't break the link, and leaves the goal out.") {
+                        Button("Copy") { model.copyLaunchLink(for: setup) }
+                            .buttonStyle(.bordered)
+                    }
                     DropletControlRow(title: "Delete this setup") {
                         Button("Delete", role: .destructive) { model.deleteSetup(setupID) }
                             .buttonStyle(.bordered)

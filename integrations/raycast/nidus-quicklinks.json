@@ -1,0 +1,6 @@
+[
+  { "name": "Nidus: Start Focus", "link": "nidus://start" },
+  { "name": "Nidus: Focus for 45 Minutes", "link": "nidus://start?minutes=45" },
+  { "name": "Nidus: Open Controls", "link": "nidus://popover" },
+  { "name": "Nidus: End Focus", "link": "nidus://end" }
+]
