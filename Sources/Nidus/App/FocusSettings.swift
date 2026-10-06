@@ -171,6 +171,15 @@ struct FocusSettingsPane: View {
                         }
                     }
                     .disabled(model.strictMode)
+                    DropletGroupedPickerRow(title: "Before a snooze",
+                                            subtitle: "A short wait gets you past the impulse.") {
+                        Picker("Before a snooze", selection: model.binding(\.snoozeWaitSeconds)) {
+                            ForEach(SnoozeWait.choices, id: \.self) { seconds in
+                                Text(SnoozeWait.choiceLabel(seconds)).tag(seconds)
+                            }
+                        }
+                    }
+                    .disabled(model.strictMode)
                     DropletToggleRow(title: "Reopen quit apps",
                                      subtitle: "When a session ends, opens the apps it quit, in the background.",
                                      isOn: model.binding(\.reopensQuitApps))
