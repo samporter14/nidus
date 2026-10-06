@@ -3,8 +3,8 @@
 //  Nidus
 //
 //  The cards at the top of the screen (something was blocked, a session
-//  ended, a break is ending), and the nidus:// URL the block page's Snooze
-//  link opens. The menu bar item is FocusMenuBar.
+//  ended, a break is ending). The menu bar item is FocusMenuBar; nidus://
+//  links are NidusLinkRouting.
 //
 
 import Combine
@@ -505,23 +505,5 @@ struct FocusBlockedCard: View {
                     .accessibilityLabel(snoozeTitle ?? button)
             }
         }
-    }
-}
-
-// MARK: - URLs
-
-extension NidusModel {
-    /// `nidus://snooze?site=youtube.com`, from the block page's Snooze link.
-    /// Any page can open a nidus:// URL, so this is the only one, and it does
-    /// nothing outside a session.
-    func handle(_ url: URL) {
-        let items = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-        guard url.host() == "snooze", isActive,
-              let site = items.first(where: { $0.name == "site" })?.value,
-              let domain = FocusCategory.domain(from: site) else {
-            host?.log.debug("ignored URL \(url.host() ?? "", privacy: .public)")
-            return
-        }
-        snooze(domain)
     }
 }
