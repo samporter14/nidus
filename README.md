@@ -24,12 +24,13 @@ A *nidus* is the place where something takes hold and grows.
   its code ever reaches for the network. What it keeps stays on your
   Mac, and Settings can stop the history or clear it.
 - **Light.** A menu bar app in Swift, with no Electron and no web views.
-  Between sessions it does nothing at all. During one it checks your apps and
-  tabs once a second, at about 50 MB of memory and a fraction of a percent of
-  one core.
+  Between sessions it does nothing at all, except keep one timer for the next
+  schedule if you've made one. During a session it checks your apps and tabs
+  once a second, at about 50 MB of memory and a fraction of a percent of one
+  core.
 - **Native.** SwiftUI, AppKit and Core Animation, with the Mac's own controls:
-  a Liquid Glass popover and cards, and Settings laid out like System
-  Settings. It quits apps the way the Dock does, reaches browser tabs through Apple Events, and turns Focus modes
+  a Liquid Glass popover and cards, and Settings in toolbar tabs like any
+  Mac app's. It quits apps the way the Dock does, reaches browser tabs through Apple Events, and turns Focus modes
   on and off through Shortcuts. It follows Light and Dark mode, and Reduce
   Motion stills the menu bar glyph.
 
@@ -41,9 +42,11 @@ and the categories to block, and press Start. Until the session ends:
 - **Blocked apps quit the moment they open.** They're asked to quit the normal
   way, so anything unsaved gets its usual prompt. Settings can hide them
   instead.
-- **Blocked websites are replaced with a quiet page** in Safari, Google Chrome
-  and Opera Air, which reminds you what you're working on. When the session
-  ends, every tab goes back to where it was. Firefox isn't supported: it
+- **Blocked websites are replaced with a quiet page** in Safari, Google
+  Chrome, Brave, Chromium and Opera Air, which reminds you what you're working
+  on. When the session ends, every tab goes back to where it was. A website
+  can be a whole site (`youtube.com`, subdomains included) or just part of one
+  (`youtube.com/shorts`, `reddit.com/r/all`). Firefox isn't supported: it
   offers no way to script its tabs.
 
   <img src="docs/block-page.png" width="480" alt="The block page: Stay with it. youtube.com is blocked until your session ends. Your goal: Write the launch post. A Snooze for 3 minutes button">
@@ -53,21 +56,51 @@ and the categories to block, and press Start. Until the session ends:
 - **You stay in charge.** Pause or add five minutes from the popover or the
   right-click menu, and snooze one app or site for a few minutes from its card
   or the block page.
-  Or turn on strict mode, which takes snooze and pause away, and asks you to
-  type "stop early" to end a session before its time.
+  Settings can make Snooze wait 10 or 30 seconds first, to get you past the
+  impulse. Or turn on strict mode, which takes snooze and pause away, and asks
+  you to type "stop early" to end a session before its time.
 - **A card says what happened**, at the top of your screen: what was blocked,
   a snooze about to run out, and how the session went.
 
   <img src="docs/card-blocked.png" width="420" alt="A card: Slack quit. Write the launch post, 25 min left. Snooze 3 min"> <img src="docs/card-finish.png" width="420" alt="A card: Session complete. 25 min focused, blocked 4 times. Did you finish Write the launch post? Not yet, Yes">
+- **Any length.** Pick one, or type it: "40", "1h30", "until 3:30". With
+  your permission, "Until next meeting" ends a session when your next calendar
+  event starts.
+- **Setups.** Save what you start often, like "Deep work: 90 minutes, only
+  Xcode, strict", and start it in one click from the popover or the
+  right-click menu.
+- **Schedules.** "Weekdays, 9 to 12" starts a session on its own, with a card
+  a minute before that lets you skip it or start now.
 - **Breaks, Focus modes and apps to open.** Breaks can run between sessions,
   Pomodoro style. A session can open the apps you work in, and turn on Do Not
   Disturb or any other Focus mode, then off again at the end.
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
-  session, how many goals you finished and what you blocked most. Categories
-  for social media, messaging, video, news and mail are ready to use, and you
-  can make your own.
+  session, how many goals you finished and what you blocked most. On Monday a
+  card sums up last week. Export your history as CSV or JSON whenever you
+  like. Categories for social media, messaging, video, news and mail are
+  ready to use, and you can make your own.
 
 <img src="docs/settings.png" width="520" alt="Nidus Settings: Block what pulls you away, with Stats, and sections for sessions and blocking">
+
+## Start it from anywhere
+
+**Shortcuts.** Nidus adds Start Focus, End Focus, Toggle Focus and Get Focus
+Status to the Shortcuts app, so Siri, Spotlight and your own shortcuts can
+use them. For a keyboard shortcut, make a shortcut that runs Toggle Focus and
+give it a key in its details.
+
+**Links.** Any app, script or launcher can open these:
+
+| Link | Does |
+| --- | --- |
+| `nidus://start` | Starts a session with the popover's choices |
+| `nidus://start?goal=Write&minutes=45&categories=social,video` | Starts one with these. Also `mode=allow`, `strict=1`, and `preset=Deep work` for a setup |
+| `nidus://toggle` | Ends a session, or starts the last one again |
+| `nidus://end` | Ends a session |
+| `nidus://popover` | Opens the popover |
+
+A strict session can't be ended by a link or a shortcut, only from the menu
+bar, behind its phrase.
 
 ## Works with Bench
 
@@ -113,6 +146,9 @@ short enough to read first.
 - The first time a session reaches a browser, macOS asks whether Nidus may
   control it. Say OK, or websites in that browser won't be blocked. Settings
   → Browsers shows where each one stands.
+- "Until next meeting" asks for Calendar access the first time you choose
+  it. Nidus reads your calendar on this Mac for the time of your next event,
+  and nothing else.
 - If you used Nidus as a droplet in Droppy, remove it there, so two copies
   don't block the same things twice.
 
