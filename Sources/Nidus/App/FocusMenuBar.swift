@@ -297,6 +297,10 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
                 menu.addItem(.separator())
             }
             let start = action("Start focus", #selector(startSession))
+            let setups = model.setupMenuItems()
+            // With setups listed beside it, Start focus takes an icon too,
+            // so the group's titles line up.
+            if !setups.isEmpty { start.image = FocusSetupsMenu.symbolImage("play") }
             let plan = "\(FocusFormat.duration(minutes: model.durationMinutes)) · \(model.selectionSummary)"
             if #available(macOS 14.4, *) {
                 start.subtitle = plan
@@ -307,6 +311,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
                 detail.isEnabled = false
                 menu.addItem(detail)
             }
+            setups.forEach(menu.addItem)
             menu.addItem(.separator())
             menu.addItem(action("Stats…", #selector(openStats)))
             menu.addItem(action("Nidus settings…", #selector(openSettings)))

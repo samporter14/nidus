@@ -272,6 +272,7 @@ final class NidusModel: NSObject, ObservableObject {
             presentBreakEndingHUD(at: Date().addingTimeInterval(12), next: next)
             return
         case "welcome": controller.end(); return presentWelcomeHUD()
+        case "setups": controller.end(); return seedSampleSetups()
         case "goals":
             controller.end()
             if recentGoals.isEmpty {

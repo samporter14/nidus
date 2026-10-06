@@ -76,6 +76,7 @@ enum RenderSurfaces {
             await renderStatsExtras(model: model, settings: settings, host: host, in: directory)
             // After Settings, so the Stats page above is drawn without them.
             await shootPopoverVariants(model: model, settings: settings, in: directory)
+            await renderSetups(model: model, settings: settings, in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }
