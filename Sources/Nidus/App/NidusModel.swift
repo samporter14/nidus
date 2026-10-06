@@ -134,12 +134,13 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// Starts a session from the popover: its goal, length and categories.
     func startSession() {
-        startSession(SessionRequest())
+        startSession(SessionRequest(goal: goalDraft))
     }
 
     /// Starts a session from anywhere: the popover, a nidus:// link, a
     /// Shortcuts action, a saved setup or a schedule. What the request leaves
-    /// nil comes from the popover's current choices and Settings. Returns
+    /// nil comes from the popover's current choices and Settings, except the
+    /// goal: nil is none, so a half-typed goal is never taken. Returns
     /// false, starting nothing, while a session or break is already on, or
     /// when a block list session would block nothing.
     @discardableResult
@@ -151,7 +152,7 @@ final class NidusModel: NSObject, ObservableObject {
         guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
         let minutes = request.minutes ?? durationMinutes
         var plan = SessionPlan(
-            goal: (request.goal ?? goalDraft).trimmingCharacters(in: .whitespacesAndNewlines),
+            goal: (request.goal ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
             mode: mode,
             categories: chosen,
@@ -391,11 +392,11 @@ extension NidusModel {
     /// 0 means no break.
     static let breakChoices = [0, 5, 10, 15]
 
-    private func preference<Value: Codable>(_ key: String, default value: Value) -> Value {
+    func preference<Value: Codable>(_ key: String, default value: Value) -> Value {
         host?.preferences.value(forKey: key, default: value) ?? value
     }
 
-    private func setPreference<Value: Codable>(_ value: Value, _ key: String) {
+    func setPreference<Value: Codable>(_ value: Value, _ key: String) {
         host?.preferences.setValue(value, forKey: key)
         objectWillChange.send()
     }
@@ -686,7 +687,8 @@ extension NidusModel {
 }
 
 /// A session to start. Anything nil is taken from the popover's current
-/// choices (goal, length, categories) and Settings (mode, strict).
+/// choices (length, categories) and Settings (mode, strict); a nil goal is
+/// no goal.
 struct SessionRequest: Equatable, Sendable {
     var goal: String?
     /// 0 means open-ended.
