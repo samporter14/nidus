@@ -142,7 +142,9 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask = nil
         stopWeeklyRecap()
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
-        controller?.stop()
+        // Quitting puts blocked tabs back; demos and renders never touch
+        // real browsers.
+        controller?.stop(restoringTabs: !Demo.isActive)
         controller = nil
         menuBar?.stop()
         menuBar = nil

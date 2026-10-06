@@ -74,6 +74,12 @@ final class FocusController: ObservableObject {
 
     private let blockPage: BlockPage
     private let browsers: BrowserBlocker
+    /// Written when quitting put a session's tabs back. The session resumes
+    /// on the next start(), and its first sweep blocks those tabs again:
+    /// that is the same block as before, so it is not counted or shown.
+    private let tabsRestoredMarker: URL
+    /// The next sweep's redirects are tabs put back at quit; see above.
+    private(set) var quietsNextSweep = false
     private let browserQueue = DispatchQueue(label: "focus.browsers", qos: .utility)
     private var sweepInFlight = false
     private lazy var appBlocker = AppBlocker(mode: .block([]), action: .terminate) { [weak self] app in
@@ -105,6 +111,7 @@ final class FocusController: ObservableObject {
         blockPage = BlockPage(directory: directory, dropletID: dropletID)
         browsers = BrowserBlocker(blockPage: blockPage)
         engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")))
+        tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
     }
 
@@ -117,6 +124,10 @@ final class FocusController: ObservableObject {
         engine.onEvent = { [weak self] event in self?.handle(event) }
         now = Date()
         engine.restore()
+        if FileManager.default.fileExists(atPath: tabsRestoredMarker.path) {
+            try? FileManager.default.removeItem(at: tabsRestoredMarker)
+            quietsNextSweep = engine.session != nil
+        }
 
         let center = NSWorkspace.shared.notificationCenter
         observers = [
@@ -141,9 +152,25 @@ final class FocusController: ObservableObject {
     }
 
     /// Stops watching. The session itself is saved and resumes on the next
-    /// start(), so this does not end it, and the tabs stay on the block page
-    /// until then: they are the session's, not this process's.
-    func stop() {
+    /// start(), so this does not end it. With `restoringTabs` (Nidus is
+    /// quitting), tabs on the block page go back to their pages first: a
+    /// blocker that isn't running shouldn't leave them stuck. The next
+    /// start() blocks them again, quietly.
+    func stop(restoringTabs: Bool = false) {
+        if restoringTabs, let enforcing, !(enforcing.mode == .block && enforcing.websites.isEmpty) {
+            // Synchronous, after any sweep in flight: the process is about
+            // to end. Every Apple Event has a timeout, so a hung browser
+            // costs seconds, not the quit.
+            let browsers = self.browsers
+            let restored = browserQueue.sync {
+                BrowserProfile.known.reduce(0) { count, browser in
+                    count + ((try? browsers.restore(browser))?.count ?? 0)
+                }
+            }
+            if restored > 0, engine.session != nil {
+                FileManager.default.createFile(atPath: tabsRestoredMarker.path, contents: Data())
+            }
+        }
         isStarted = false
         updateClock()
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
@@ -379,7 +406,12 @@ final class FocusController: ObservableObject {
                     guard let self else { return }
                     self.sweepInFlight = false
                     if self.browserAccess != access { self.browserAccess = access }
-                    for key in redirected { self.report(.website(domain: key)) }
+                    // Tabs put back at quit, blocked again: not a new block.
+                    if self.quietsNextSweep {
+                        self.quietsNextSweep = false
+                    } else {
+                        for key in redirected { self.report(.website(domain: key)) }
+                    }
                 }
             }
         }

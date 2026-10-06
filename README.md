@@ -44,7 +44,8 @@ and the categories to block, and press Start. Until the session ends:
   instead.
 - **Blocked websites are replaced with a quiet page** in Safari, Google
   Chrome, Brave, Chromium and Opera Air, which reminds you what you're working
-  on. When the session ends, every tab goes back to where it was. A website
+  on. When the session ends, or you quit Nidus, every tab goes back to where
+  it was. A website
   can be a whole site (`youtube.com`, subdomains included) or just part of one
   (`youtube.com/shorts`, `reddit.com/r/all`). Firefox isn't supported: it
   offers no way to script its tabs.
