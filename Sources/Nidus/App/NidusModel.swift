@@ -44,6 +44,8 @@ final class NidusModel: NSObject, ObservableObject {
     /// The last recorded session with a goal, until "did you finish?" is
     /// answered or the next session starts. The menu bar asks too.
     private(set) var pendingFinish: (id: SessionEntry.ID, goal: String)?
+    /// Listens for the moments Monday's recap may be offered (WeeklyRecapCard.swift).
+    var recapWatcher: WeeklyRecapWatcher?
 
     // MARK: Lifecycle
 
@@ -91,6 +93,7 @@ final class NidusModel: NSObject, ObservableObject {
 
         controller.start()
         publishFocus()
+        startWeeklyRecap()
 
         if host.isGranted(.menuBar) {
             let menuBar = FocusMenuBar(model: self)
@@ -116,6 +119,7 @@ final class NidusModel: NSObject, ObservableObject {
         // Everything activate() started is torn down here, before Nidus quits.
         welcomeTask?.cancel()
         welcomeTask = nil
+        stopWeeklyRecap()
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
         controller?.stop()
         controller = nil
@@ -241,6 +245,8 @@ final class NidusModel: NSObject, ObservableObject {
         guard let controller else { return }
         switch scenario {
         case "idle", "stats": return controller.end()
+        case "stats-filled": controller.end(); return seedSampleHistory()
+        case "recap": controller.end(); return presentSampleRecap()
         case "break":
             controller.end()
             let next = SessionPlan(goal: "Write the launch post", duration: 25 * 60, mode: .block, apps: [], websites: [])

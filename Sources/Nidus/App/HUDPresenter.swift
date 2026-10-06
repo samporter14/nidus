@@ -21,6 +21,8 @@ final class HUDPresenter {
     private var dismissTask: Task<Void, Never>?
     /// The last card asked for, for `--render-surfaces`.
     private(set) var lastRequest: DropletHUDRequest?
+    /// A card is up, so a card that can wait should.
+    var isShowing: Bool { shownID != nil }
 
     static let width: CGFloat = 420
     static let inset: CGFloat = 14
