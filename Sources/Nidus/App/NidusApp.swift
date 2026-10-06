@@ -46,6 +46,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.settings = settings
         self.host = host
         self.model = model
+        // Shortcuts actions (FocusIntents.swift) reach the app through this.
+        if !Demo.isActive { NidusModel.running = model }
 
         LoginItem.registerOnFirstLaunch()
         watchForTerminate()
