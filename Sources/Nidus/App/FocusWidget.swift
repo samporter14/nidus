@@ -117,8 +117,8 @@ struct FocusWidget: View {
                 }
             }
 
-            // Setups bar goes here: a row of one-click buttons, above the
-            // Length / Categories / Start row.
+            // Saved setups, one click each; draws nothing until there are any.
+            FocusSetupsBar(model: model)
 
             VStack(alignment: .leading, spacing: DroppySpacing.xs) {
                 HStack(spacing: DroppySpacing.sm) {

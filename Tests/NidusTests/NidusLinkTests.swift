@@ -93,8 +93,7 @@ struct NidusStartLinkTests {
     }
 
     @Test func unknownParametersAreIgnored() throws {
-        // `preset=` is read once saved setups land; until then it is unknown.
-        let link = try start("?minutes=10&preset=Deep%20work&utm_source=x&bad=%zz")
+        let link = try start("?minutes=10&utm_source=x&bad=%zz")
         #expect(link == NidusLink.Start(minutes: 10))
     }
 
@@ -348,5 +347,25 @@ struct ShortcutsActionTests {
 
     @Test func theMinutesOfAnActionShareTheLinksRange() {
         #expect(NidusLink.minutesRange == 0...1440)
+    }
+}
+
+// MARK: - A saved setup by name
+
+struct NidusLinkPresetTests {
+    @Test func aPresetIsReadByNameAndKeptOnOneLine() throws {
+        #expect(try start("?preset=Deep%20work").preset == "Deep work")
+        #expect(try start("?preset=Deep+work&minutes=50").preset == "Deep work")
+        #expect(try start("?preset=Deep%0Awork").preset == "Deep work")
+    }
+
+    @Test func noPresetIsNil() throws {
+        #expect(try start("?goal=Write").preset == nil)
+        #expect(try start("?preset=").preset == nil)
+    }
+
+    @Test func aBlankPresetIsLeftOut() throws {
+        // As any blank value is: a Shortcut's empty variable still starts.
+        #expect(try start("?preset=%20%20").preset == nil)
     }
 }

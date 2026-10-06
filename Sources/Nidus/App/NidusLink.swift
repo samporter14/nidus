@@ -38,10 +38,9 @@ enum NidusLink: Equatable, Sendable {
         var categories: [String]?
         var mode: SessionPlan.Mode?
         var strict: Bool?
-        // PRESET HOOK: `preset=<name>` goes here, as `var preset: String?`,
-        // when saved setups land. Read it in `parseStart` below, and let
-        // `NidusModel.startFromLink` (NidusLinkRouting.swift) apply the
-        // setup before the other parameters, so the link's own values win.
+        /// A saved setup, by name or id: its choices come first, and the
+        /// link's own parameters win over them.
+        var preset: String?
     }
 
     /// Why a link was ignored. Never holds the link's values: a goal is the
@@ -123,6 +122,12 @@ enum NidusLink: Equatable, Sendable {
                 throw .invalid(parameter: "mode")
             }
             start.mode = mode
+        }
+
+        if let text = try query.nonEmptyValue("preset") {
+            let name = cleanedGoal(text)
+            guard !name.isEmpty else { throw .invalid(parameter: "preset") }
+            start.preset = name
         }
 
         if let text = try query.nonEmptyValue("strict") {

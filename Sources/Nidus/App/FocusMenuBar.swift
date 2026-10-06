@@ -301,7 +301,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             // With setups listed beside it, Start focus takes an icon too,
             // so the group's titles line up.
             if !setups.isEmpty { start.image = FocusSetupsMenu.symbolImage("play") }
-            let plan = "\(FocusFormat.duration(minutes: model.durationMinutes)) · \(model.selectionSummary)"
+            let plan = "\(model.lengthLabel) · \(model.selectionSummary)"
             if #available(macOS 14.4, *) {
                 start.subtitle = plan
                 menu.addItem(start)
