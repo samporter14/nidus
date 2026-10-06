@@ -347,7 +347,11 @@ final class FocusController: ObservableObject {
     }
 
     private func websiteRule(for enforcement: Enforcement) -> WebsiteRule {
-        WebsiteRule(mode: enforcement.mode == .block ? .block : .allow, domains: Array(enforcement.websites))
+        // Snoozed sites on the plan, so a snooze covers a listed entry that
+        // overlaps another (`youtube.com/shorts` inside `youtube.com`).
+        let snoozed = engine.session.map { Set($0.snoozes.keys).intersection($0.plan.websites) } ?? []
+        return WebsiteRule(mode: enforcement.mode == .block ? .block : .allow,
+                           domains: Array(enforcement.websites), snoozed: Array(snoozed))
     }
 
     private func sweepBrowsers() {

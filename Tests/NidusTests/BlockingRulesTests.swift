@@ -95,7 +95,8 @@ struct WebsiteRuleTests {
 struct CategoryTests {
     @Test(arguments: [
         ("youtube.com", "youtube.com"),
-        ("  https://www.YouTube.com/watch?v=1 ", "youtube.com"),
+        // A path is kept now (a rule can block part of a site): the query still goes.
+        ("  https://www.YouTube.com/watch?v=1 ", "youtube.com/watch"),
         ("news.ycombinator.com/", "news.ycombinator.com"),
         ("http://bbc.co.uk", "bbc.co.uk"),
     ])

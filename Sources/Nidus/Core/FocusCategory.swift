@@ -78,16 +78,17 @@ extension FocusCategory {
     /// What a session blocks when the user has picked no category yet.
     static let defaultSelection: [String] = ["social", "video"]
 
-    /// Normalises what the user typed into a bare domain:
-    /// "https://www.YouTube.com/watch" becomes "youtube.com".
+    /// Normalises what the user typed into a website rule: a bare domain, or
+    /// a domain with a path to block only that part of it.
+    /// "https://www.YouTube.com/shorts/?feature=share#top" becomes
+    /// "youtube.com/shorts". The scheme, `www.`, port, query, fragment and
+    /// trailing slash go; the path stays, lowercased. nil for what is not a
+    /// web address. Reading a rule back through this gives the same rule,
+    /// which `nidus://snooze` depends on.
+    ///
+    /// Named for when a rule was only a domain; callers still use it.
     static func domain(from input: String) -> String? {
-        var text = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !text.isEmpty else { return nil }
-        if !text.contains("://") { text = "https://" + text }
-        guard var host = URLComponents(string: text)?.host, host.contains("."),
-              !host.hasPrefix("."), !host.hasSuffix(".") else { return nil }
-        if host.hasPrefix("www.") { host.removeFirst(4) }
-        return host
+        WebsiteEntry(typed: input)?.text
     }
 }
 
