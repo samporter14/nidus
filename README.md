@@ -5,7 +5,7 @@
 **Block the apps and websites that pull you away, for as long as you say.** A
 Solanum product.
 
-<img src="docs/popover-idle.png" width="440" alt="The Nidus popover under the menu bar: a goal field reading What are you working on?, a 25 minute length, the Social and Video categories, and a clay Start button">
+<img src="docs/popover-idle.png" width="440" alt="The Nidus popover under the menu bar: a goal field reading What are you working on?, three setups (Deep work, Writing, Reading), a 25 minute length, the Social and Video categories, a clay Start button, and Today 1 hr 10 min, 6-day streak">
 
 **Install in one line**: paste into Terminal (Apple silicon, macOS 27):
 
@@ -60,6 +60,8 @@ and the categories to block, and press Start. Until the session ends:
   Settings can make Snooze wait 10 or 30 seconds first, to get you past the
   impulse. Or turn on strict mode, which takes snooze and pause away, and asks
   you to type "stop early" to end a session before its time.
+
+  <img src="docs/popover-running.png" width="440" alt="The popover during a session: Write the launch post, until 9:37 PM, blocked 2 times, 25:00 left, with pause, +5 and stop buttons">
 - **A card says what happened**, at the top of your screen: what was blocked,
   a snooze about to run out, and how the session went.
 
@@ -80,6 +82,8 @@ and the categories to block, and press Start. Until the session ends:
   card sums up last week. Export your history as CSV or JSON whenever you
   like. Categories for social media, messaging, video, news and mail are
   ready to use, and you can make your own.
+
+<img src="docs/settings.png" width="420" alt="Nidus Settings on its Blocking tab, with toolbar tabs for General, Blocking, Setups, Schedules, Stats and About, the blocking choices, and the categories"> <img src="docs/stats.png" width="420" alt="The Stats tab: 2 hr 27 min this week, a 6-day streak, 76 sessions, six months of focus as a graph, and the most blocked app">
 
 ## Start it from anywhere
 
