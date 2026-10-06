@@ -41,6 +41,8 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Nidus sends blocked websites in your browser to a quiet page while a focus session runs, and brings them back when it ends.</string>
+	<key>NSCalendarsFullAccessUsageDescription</key>
+	<string>Nidus reads your calendar on this Mac to end a session before your next meeting. Nothing leaves this Mac.</string>
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSPrincipalClass</key>

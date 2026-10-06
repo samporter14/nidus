@@ -44,6 +44,10 @@ final class NidusModel: NSObject, ObservableObject {
     /// The last recorded session with a goal, until "did you finish?" is
     /// answered or the next session starts. The menu bar asks too.
     private(set) var pendingFinish: (id: SessionEntry.ID, goal: String)?
+    /// Weekly schedules (FocusScheduler.swift) and the calendar's next meeting
+    /// (FocusCalendar.swift). Neither does anything until `activate` starts it.
+    let scheduler = FocusScheduler()
+    let meetings = MeetingFinder()
 
     // MARK: Lifecycle
 
@@ -97,6 +101,7 @@ final class NidusModel: NSObject, ObservableObject {
             menuBar.start()
             self.menuBar = menuBar
         }
+        startSchedules()
 
         if let harnessScenario {
             runHarnessScenario(harnessScenario)
@@ -114,6 +119,7 @@ final class NidusModel: NSObject, ObservableObject {
     func deactivate() {
         publishFocus(quitting: true)
         // Everything activate() started is torn down here, before Nidus quits.
+        stopSchedules()
         welcomeTask?.cancel()
         welcomeTask = nil
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
@@ -150,7 +156,8 @@ final class NidusModel: NSObject, ObservableObject {
         let ids = request.categoryIDs ?? selectedCategoryIDs
         let chosen = categories.filter { ids.contains($0.id) }
         guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
-        let minutes = request.minutes ?? durationMinutes
+        let meetingMinutes = request.minutes == nil ? meetings.minutesToChosenMeeting() : nil
+        let minutes = request.minutes ?? meetingMinutes ?? durationMinutes
         var plan = SessionPlan(
             goal: (request.goal ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
@@ -163,9 +170,10 @@ final class NidusModel: NSObject, ObservableObject {
         )
         plan.strict = request.strict ?? strictMode
         controller.start(plan)
+        noteFixedEnd(request.hasFixedEnd || meetingMinutes != nil)
         rememberGoal(plan.goal)
         host?.feedback.play(.success)
-        askBrowsersNeedingConsent()
+        if request.asksBrowserAccess { askBrowsersNeedingConsent() }
         return true
     }
 
@@ -311,6 +319,7 @@ final class NidusModel: NSObject, ObservableObject {
             menuBar?.closePopover()
             menuBar?.sessionDidStart()
         case .ended(let reason, let final):
+            endBreakAfterFixedEnd(final)
             host?.hud.dismiss(id: Self.snoozeHUDID)
             if reason != .expiredWhileAway {
                 // Ask only about a goal that was set and a session that was
@@ -697,6 +706,13 @@ struct SessionRequest: Equatable, Sendable {
     var categoryIDs: [String]?
     var mode: SessionPlan.Mode?
     var strict: Bool?
+    /// Whether starting may raise macOS's prompt for browser control. It is
+    /// asked only after a click; a start nobody clicked (a schedule) must not.
+    var asksBrowserAccess = true
+    /// The end is a time set outside the session (a schedule's end, a
+    /// meeting's start). No break follows it: the next session would run a
+    /// full length again, past the time it was meant to stop at.
+    var hasFixedEnd = false
 }
 
 /// What `focus.json` holds.

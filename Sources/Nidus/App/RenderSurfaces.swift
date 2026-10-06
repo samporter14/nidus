@@ -59,13 +59,14 @@ enum RenderSurfaces {
                 let name = "settings-" + (page.map { $0.hasPrefix("category:") ? "category" : $0 } ?? "main")
                 await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900, name: name, in: directory)
             }
+            await renderSchedules(model: model, settings: settings, host: host, in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }
     }
 
-    private static func shoot<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, name: String,
-                                       in directory: URL, padded: Bool = false) async {
+    static func shoot<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, name: String,
+                               in directory: URL, padded: Bool = false) async {
         for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let root = view
                 .padding(padded ? 24 : 0)
