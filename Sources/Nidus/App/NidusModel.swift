@@ -55,6 +55,9 @@ final class NidusModel: NSObject, ObservableObject {
     private(set) var pendingFinish: (id: SessionEntry.ID, goal: String)?
     /// Listens for the moments Monday's recap may be offered (WeeklyRecapCard.swift).
     var recapWatcher: WeeklyRecapWatcher?
+    /// What the cards remember: a snooze waiting out its pause, and the
+    /// answer to "did you finish?" the wrap-up card is showing. FocusSurfaces.
+    let cards = FocusCardState()
 
     // MARK: Lifecycle
 
@@ -129,7 +132,7 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask?.cancel()
         welcomeTask = nil
         stopWeeklyRecap()
-        for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
+        for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
         controller?.stop()
         controller = nil
         menuBar?.stop()
@@ -223,12 +226,16 @@ final class NidusModel: NSObject, ObservableObject {
         host?.hud.dismiss(id: Self.breakHUDID)
     }
 
-    /// "Did you finish?", from the wrap-up card or the menu bar.
+    /// "Did you finish?", from the wrap-up card or the menu bar. The card, if
+    /// it is still up, turns into its confirmation and stays a few seconds
+    /// to be read; the menu bar's items go with `pendingFinish`.
     func answerFinished(_ finished: Bool) {
         guard let pending = pendingFinish else { return }
         controller?.markFinished(pending.id, finished)
         pendingFinish = nil
-        host?.hud.dismiss(id: Self.completedHUDID)
+        cards.finishAnswer = finished
+        host?.hud.refresh(id: Self.completedHUDID, duration: FinishReply.linger,
+                          announcing: FinishReply.confirmation(finished))
         host?.feedback.play(finished ? .success : .tick)
     }
 
@@ -284,12 +291,20 @@ final class NidusModel: NSObject, ObservableObject {
         switch scenario {
         case "paused": controller.pause()
         case "blocked": presentBlockedHUD(for: .app(bundleID: "com.tinyspeck.slackmacgap", name: "Slack", quit: true))
-        case "finish":
+        case "finish", "finish-yes", "finish-notyet", "finish-break", "finish-break-yes":
+            // The card asking, then as it reads after Yes or Not yet; and the
+            // same while a break follows.
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60
             final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            if scenario.hasPrefix("finish-break") {
+                controller.end()
+                controller.engine.startBreak(plan: final.plan, length: 5 * 60)
+            }
             pendingFinish = (id: UUID(), goal: final.plan.goal)
             presentWrapUpHUD(for: final, completed: true, askAbout: final.plan.goal)
+            if scenario.hasSuffix("-yes") { answerFinished(true) }
+            if scenario == "finish-notyet" { answerFinished(false) }
         case "wrapup", "streak":
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60
@@ -312,7 +327,7 @@ final class NidusModel: NSObject, ObservableObject {
             if let end = controller.engine.session?.snoozes["youtube.com"] {
                 presentSnoozeEndingHUD(for: "youtube.com", at: min(end, Date().addingTimeInterval(30)))
             }
-        default: break
+        default: runCardScenario(scenario)
         }
     }
 
@@ -320,6 +335,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     private func sessionDidChange(_ event: SessionEvent) {
         defer { publishFocus() }
+        dropSnoozeWaitIfMoot()
         switch event {
         case .started:
             warnedBrowsers.removeAll()
@@ -327,6 +343,8 @@ final class NidusModel: NSObject, ObservableObject {
             // A one-off belongs to the Start it was set for, however it came.
             untilTarget = nil
             customLengthDraft = nil
+            // Its question has no answer to take now.
+            host?.hud.dismiss(id: Self.completedHUDID)
             host?.hud.dismiss(id: Self.breakHUDID)
             // Last week's recap can wait; this session is now.
             host?.hud.dismiss(id: Self.recapHUDID)

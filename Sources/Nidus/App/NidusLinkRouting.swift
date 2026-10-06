@@ -31,7 +31,8 @@ extension NidusModel {
                 host?.log.debug("ignored snooze outside a session")
                 return
             }
-            snooze(site)
+            // Through the pause, if one is set: the page can't skip it.
+            requestSnooze(site)
         case .start(let start):
             startFromLink(start)
         case .end:

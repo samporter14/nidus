@@ -82,6 +82,28 @@ final class HUDPresenter {
         hide()
     }
 
+    /// Whether this card is the one on screen now: not replaced, not gone.
+    func isShowing(id: String) -> Bool {
+        shownID == id && panel?.isVisible == true
+    }
+
+    /// Gives the card showing a fresh `seconds` before it goes, and says why
+    /// to VoiceOver. For a card that has just changed in place (an answer
+    /// confirmed) so the new words can be read. Does nothing, and says so, if
+    /// another card has taken its place or it has gone.
+    @discardableResult
+    func refresh(id: String, duration seconds: TimeInterval, announcing announcement: String? = nil) -> Bool {
+        guard isShowing(id: id) else { return false }
+        scheduleDismiss(id: id, after: seconds)
+        if let announcement {
+            NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested, userInfo: [
+                .announcement: announcement,
+                .priority: NSAccessibilityPriorityLevel.high.rawValue,
+            ])
+        }
+        return true
+    }
+
     private func scheduleDismiss(id: String, after seconds: TimeInterval) {
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in

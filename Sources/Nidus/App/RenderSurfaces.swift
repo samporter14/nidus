@@ -51,8 +51,22 @@ enum RenderSurfaces {
                 await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
                             name: "card-\(scenario)", in: directory, padded: true)
             }
+            // The snooze pause (its three moments, then the block page's link
+            // as the app takes it), and the finish card as it reads after an
+            // answer or beside a break.
+            for scenario in ["snooze-wait-start", "snooze-wait-mid", "snooze-wait-ready", "snooze-link",
+                             "finish-yes", "finish-notyet", "finish-break", "finish-break-yes", "wrapup-break"] {
+                model.runHarnessScenario(scenario)
+                guard let request = host.hud.lastRequest else { continue }
+                await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
+                            name: "card-\(scenario)", in: directory, padded: true)
+            }
             // Settings.
             model.runHarnessScenario("idle")
+            model.snoozeWaitSeconds = 10
+            await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900,
+                        name: "settings-snooze-wait", in: directory)
+            model.snoozeWaitSeconds = 0
             for (page, title) in [(nil, ""), ("stats", "Stats"), ("launch-apps", "Apps to open"),
                                   ("category:\(model.categories.first?.id ?? "")", model.categories.first?.name ?? "")] as [(String?, String)] {
                 settings.router.reset(to: page, title: title)
