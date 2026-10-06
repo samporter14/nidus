@@ -51,9 +51,21 @@ final class NidusHost {
         }
 
         func setValue<Value: Codable>(_ value: Value, forKey key: String) {
-            guard let data = try? JSONEncoder().encode(value) else { return }
-            defaults.set(data, forKey: key)
+            guard write(value, forKey: key) else { return }
             didChange.send(key)
+        }
+
+        /// A value only the window that set it reads (which tab Settings was
+        /// left on). Saved without `didChange`, which makes the model apply
+        /// every setting again and wakes the scheduler.
+        func setValueQuietly<Value: Codable>(_ value: Value, forKey key: String) {
+            _ = write(value, forKey: key)
+        }
+
+        private func write<Value: Codable>(_ value: Value, forKey key: String) -> Bool {
+            guard let data = try? JSONEncoder().encode(value) else { return false }
+            defaults.set(data, forKey: key)
+            return true
         }
     }
 
@@ -102,7 +114,7 @@ final class NidusHost {
 
         @discardableResult
         func goBackInSettings() -> Bool {
-            settings.router.back()
+            settings.goBack()
             return true
         }
 

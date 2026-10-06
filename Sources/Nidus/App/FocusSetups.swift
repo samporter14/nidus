@@ -246,8 +246,8 @@ extension NidusModel {
 
     // MARK: Pages
 
-    static let setupsPageID = "setups"
-    static let setupPagePrefix = "setup:"
+    nonisolated static let setupsPageID = "setups"
+    nonisolated static let setupPagePrefix = "setup:"
 
     /// These open from the popover as well as from Settings; the popover
     /// closes so it isn't left open over the window.

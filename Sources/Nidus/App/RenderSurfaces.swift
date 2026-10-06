@@ -3,10 +3,11 @@
 //  Nidus
 //
 //  `Nidus --render-surfaces <dir>`: draws the popover in each state, every
-//  card and the Settings pages to PNGs, in Ivory and Slate, then quits. The
-//  windows sit off-screen and Nidus never becomes the active app, so nothing
-//  takes the keyboard from whatever you are typing in. Its session blocks
-//  nothing, and it keeps its settings and files apart from yours (see Demo).
+//  card, each tab of Settings and the pages pushed inside them to PNGs, in
+//  Ivory and Slate, then quits. The windows sit off-screen and Nidus never
+//  becomes the active app, so nothing takes the keyboard from whatever you
+//  are typing in. Its session blocks nothing, and it keeps its settings and
+//  files apart from yours (see Demo).
 //
 
 import AppKit
@@ -61,18 +62,40 @@ enum RenderSurfaces {
                 await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
                             name: "card-\(scenario)", in: directory, padded: true)
             }
-            // Settings.
+            // Settings: each tab's own page, then the pages pushed inside
+            // them. Setups and Schedules are drawn with their sample data,
+            // further down.
             model.runHarnessScenario("idle")
             model.snoozeWaitSeconds = 10
-            await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900,
-                        name: "settings-snooze-wait", in: directory)
+            await shootSettings(model, settings, tab: .blocking, name: "settings-snooze-wait", height: 1300, in: directory)
             model.snoozeWaitSeconds = 0
-            for (page, title) in [(nil, ""), ("stats", "Stats"), ("launch-apps", "Apps to open"),
-                                  ("category:\(model.categories.first?.id ?? "")", model.categories.first?.name ?? "")] as [(String?, String)] {
-                settings.router.reset(to: page, title: title)
-                let name = "settings-" + (page.map { $0.hasPrefix("category:") ? "category" : $0 } ?? "main")
-                await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900, name: name, in: directory)
+            // General as first run has it, with the guide, and as it is after
+            // a session (this run has had several).
+            model.harnessScenario = "welcome"
+            await shootSettings(model, settings, tab: .general, name: "settings-general-get-started", height: 1500, in: directory)
+            model.harnessScenario = "idle"
+            for tab in [SettingsTab.general, .blocking] {
+                await shootSettings(model, settings, tab: tab, name: "settings-\(tab.rawValue)", height: 1300, in: directory)
             }
+            await shootSettings(model, settings, tab: .about, name: "settings-about", height: 700, in: directory)
+            // An unbundled build has no version; this is the page with one.
+            await shoot(FocusAboutPage(model: model, version: "0.1.3").background(Color(nsColor: .windowBackgroundColor)),
+                        width: 640, height: 700, name: "settings-about-version", in: directory)
+            for (page, title, name) in [("stats", "Stats", "settings-stats"),
+                                        (NidusModel.launchAppsPageID, "Apps to open", "settings-launch-apps"),
+                                        (NidusModel.categoryPagePrefix + (model.categories.first?.id ?? ""),
+                                         model.categories.first?.name ?? "", "settings-category")] {
+                await shootSettings(model, settings, page: page, title: title, name: name, in: directory)
+            }
+            // The window itself, toolbar and title, on each tab and with a
+            // page pushed.
+            for tab in [SettingsTab.general, .blocking, .stats, .about] {
+                await shootWindow(settings, page: tab.pageID, name: "settings-window-\(tab.rawValue)", in: directory)
+            }
+            await shootWindow(settings, page: NidusModel.categoryPagePrefix + (model.categories.first?.id ?? ""),
+                              title: model.categories.first?.name ?? "", name: "settings-window-category", in: directory)
+            settings.window?.orderOut(nil)
+            settings.router(for: .blocking).reset()
             await renderStatsExtras(model: model, settings: settings, host: host, in: directory)
             // After Settings, so the Stats page above is drawn without them.
             await shootPopoverVariants(model: model, settings: settings, in: directory)
@@ -174,10 +197,44 @@ enum RenderSurfaces {
         model.mode = .block
 
         // Settings' Session length with that 40 in it.
-        settings.router.reset(to: nil, title: "")
-        await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900,
-                    name: "settings-main-custom-length", in: directory)
+        await shootSettings(model, settings, tab: .general, name: "settings-general-custom-length", height: 1300, in: directory)
         model.durationMinutes = 25
+    }
+
+    /// One page of Settings as its tab draws it: the tab's own page, or
+    /// `page` pushed on it, with its Back header. The tab is the one the
+    /// window routes the page to. Each tab's router is the window's own, put
+    /// back to the tab's page afterwards.
+    static func shootSettings(_ model: NidusModel, _ settings: SettingsWindowController,
+                              tab: SettingsTab? = nil, page: String? = nil, title: String = "",
+                              name: String, width: CGFloat = 640, height: CGFloat = 900, in directory: URL) async {
+        let route = page.map { SettingsRoute.resolve($0) } ?? SettingsRoute(tab: tab ?? .general, pushes: false)
+        let router = settings.router(for: route.tab)
+        router.reset(to: route.pushes ? page : nil, title: title)
+        await shoot(SettingsRoot(model: model, tab: route.tab, router: router).background(Color(nsColor: .windowBackgroundColor)),
+                    width: width, height: height, name: name, in: directory)
+        router.reset()
+    }
+
+    /// The Settings window as the app builds it, toolbar and title included,
+    /// ordered in where no screen is and drawn from its frame. Materials and
+    /// Liquid Glass don't draw off-screen, so the toolbar is flatter than on
+    /// a Mac. Prints the title the window ends up with, which a picture of
+    /// it can't show.
+    static func shootWindow(_ settings: SettingsWindowController, page: String, title: String = "",
+                            name: String, in directory: URL) async {
+        for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
+            guard let window = settings.showOffscreen(page: page, title: title) else { return }
+            window.appearance = NSAppearance(named: appearance)
+            try? await Task.sleep(for: .milliseconds(400))
+            print("WINDOW \(name)-\(theme): title \"\(window.title)\", tab \(settings.selectedTab.rawValue), saved \(settings.model?.preference(NidusModel.Key.settingsTab, default: "?") ?? "?"), size \(Int(window.frame.width))x\(Int(window.frame.height))")
+            guard let frameView = window.contentView?.superview,
+                  let rep = frameView.bitmapImageRepForCachingDisplay(in: frameView.bounds) else { continue }
+            frameView.cacheDisplay(in: frameView.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: directory.appendingPathComponent("\(name)-\(theme).png"))
+        }
+        settings.window?.orderOut(nil)
     }
 
     static func shoot<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, name: String,
@@ -260,11 +317,10 @@ enum CaptureSurfaces {
                     await capture("card-\(scenario)-\(theme)", host.hud.windowNumber, in: directory)
                 }
                 model.runHarnessScenario("idle")
-                for (page, title) in [(nil, ""), ("stats", "Stats")] as [(String?, String)] {
-                    settings.router.reset(to: page, title: title)
-                    settings.show()
+                for (page, title) in [("general", "General"), ("stats", "Stats")] {
+                    settings.show(page: page, title: title)
                     try? await Task.sleep(for: .milliseconds(700))
-                    await capture("settings-\(page ?? "main")-\(theme)", settings.window?.windowNumber, in: directory)
+                    await capture("settings-\(page)-\(theme)", settings.window?.windowNumber, in: directory)
                 }
                 settings.window?.orderOut(nil)
             }

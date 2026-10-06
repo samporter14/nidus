@@ -2,8 +2,11 @@
 //  FocusSettings.swift
 //  Nidus
 //
-//  Settings: the main page, and a page per category, Stats and Apps to
-//  open. Built from the rows in Kit.swift: a grouped form, as System Settings.
+//  Settings: the General and Blocking tabs, and the pages pushed inside them,
+//  one per category and Apps to open. The other tabs (Setups, Schedules,
+//  Stats, About) have files of their own; SettingsTabs.swift says which page
+//  is in which tab. Built from the rows in Kit.swift: a grouped form, as
+//  System Settings.
 //
 
 import AppKit
@@ -12,11 +15,25 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 extension NidusModel {
+    /// What a tab shows before anything is pushed on it: its own page. The
+    /// tabs that have one page id (Setups, Schedules, Stats) are served by
+    /// `makeSettingsPage`; a tab whose page is nil is left out of the window.
+    func settingsRoot(for tab: SettingsTab) -> AnyView? {
+        switch tab {
+        case .general: return AnyView(FocusGeneralPage(model: self))
+        case .blocking: return AnyView(FocusBlockingPage(model: self))
+        case .about: return AnyView(FocusAboutPage(model: self))
+        case .setups, .schedules, .stats: return makeSettingsPage(id: tab.pageID)
+        }
+    }
+
+    /// A page by id: the three tabs that are one page each, and the pages
+    /// pushed inside the others. nil for a page that is gone.
     func makeSettingsPage(id: String) -> AnyView? {
         if let page = makeSchedulesPage(id: id) { return page }
         switch id {
-        case "stats": return AnyView(FocusStatsPage(model: self))
-        case "launch-apps": return AnyView(FocusLaunchAppsPage(model: self))
+        case SettingsTab.stats.pageID: return AnyView(FocusStatsPage(model: self))
+        case Self.launchAppsPageID: return AnyView(FocusLaunchAppsPage(model: self))
         case _ where id.hasPrefix("setup"): return makeSetupsPage(id: id)
         default: break
         }
@@ -26,7 +43,8 @@ extension NidusModel {
         return AnyView(FocusCategoryPage(model: self, categoryID: categoryID))
     }
 
-    static let categoryPagePrefix = "category:"
+    nonisolated static let categoryPagePrefix = "category:"
+    nonisolated static let launchAppsPageID = "launch-apps"
 
     func openCategoryPage(_ category: FocusCategory) {
         host?.workspace.openSettingsPage(Self.categoryPagePrefix + category.id, title: category.name)
@@ -53,250 +71,112 @@ extension NidusModel {
     }
 }
 
-// MARK: - The pane
+// MARK: - General
 
-struct FocusSettingsPane: View {
+/// The Get started guide (until the first session), then what is set once and
+/// left: sessions, the menu bar and login, and what happens when a session
+/// starts. What is blocked is the Blocking tab's.
+struct FocusGeneralPage: View {
     @ObservedObject var model: NidusModel
 
     @State private var opensAtLogin = LoginItem.isOn
 
     var body: some View {
         DropletSettingsPane {
-            Section {
-                HStack(spacing: 14) {
-                    Image(nsImage: NSApp.applicationIconImage)
-                        .resizable()
-                        .frame(width: 56, height: 56)
-                        .accessibilityHidden(true)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Nidus")
-                            .font(.title2.weight(.semibold))
-                        Text("Blocks what pulls you away, for as long as you say. Nothing leaves this Mac.")
-                            .foregroundStyle(.secondary)
-                    }
-                    Spacer(minLength: 0)
-                    Text(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
-                        .foregroundStyle(.tertiary)
-                        .monospacedDigit()
-                }
-                .padding(.vertical, 4)
-            }
+            if model.showsGettingStarted { gettingStarted }
+            sessions
+            menuBarAndLogin
+            whenASessionStarts
+        }
+    }
 
+    private var gettingStarted: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Get started", detail: "Where Nidus lives, and how to begin.")
+        } content: {
             DropletSettingsCard {
-                DropletSettingsPageLink("Stats", subtitle: statsSummary, page: "stats") {
-                    CategoryTile(symbol: "chart.bar.xaxis")
+                FocusStepRow(
+                    title: "Start from the menu bar",
+                    detail: Text("Click \(FocusWelcomeCard.inlineGlyph) in the menu bar, type what you're working on, then press Start. Right-click it for a quick menu. If you use a menu bar manager, check it isn't hiding the icon.")
+                ) {
+                    CategoryTile(image: FocusWelcomeCard.glyph)
                 }
-                DropletSettingsPageLink("Schedules", subtitle: model.schedulesSummary, page: "schedules") {
-                    CategoryTile(symbol: "calendar.badge.clock")
+                FocusStepRow(
+                    title: "Choose what to block",
+                    detail: Text("Pick categories in Blocking, or make your own. The first time Nidus reaches a browser, macOS asks whether Nidus may control it.")
+                ) {
+                    CategoryTile(symbol: "nosign")
                 }
-            }
-
-            if model.showsGettingStarted {
-                DropletSettingsSection {
-                    VStack(alignment: .leading, spacing: 2) {
-                        settingsSectionHeader("Get started")
-                        Text("Where Nidus lives, and how to begin.")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
-                    }
-                } content: {
-                    DropletSettingsCard {
-                        FocusStepRow(
-                            title: "Start from the menu bar",
-                            detail: Text("Click \(FocusWelcomeCard.inlineGlyph) in the menu bar, type what you're working on, then press Start. Right-click it for a quick menu. If you use a menu bar manager, check it isn't hiding the icon.")
-                        ) {
-                            CategoryTile(image: FocusWelcomeCard.glyph)
-                        }
-                        FocusStepRow(
-                            title: "Choose what to block",
-                            detail: Text("Pick categories below, or make your own. The first time Nidus reaches a browser, macOS asks whether Nidus may control it.")
-                        ) {
-                            CategoryTile(symbol: "nosign")
-                        }
-                        DropletControlRow(title: "This guide goes after your first session") {
-                            Button("Hide now", action: model.hideGettingStarted)
-                                .buttonStyle(.bordered)
-                        }
-                    }
-                }
-            }
-
-            DropletSettingsCard {
-                DropletSettingsPageLink("Setups", subtitle: setupsSummary, page: NidusModel.setupsPageID) {
-                    CategoryTile(symbol: "bolt")
-                }
-            }
-
-            DropletSettingsSection {
-                settingsSectionHeader("Sessions")
-            } content: {
-                DropletSettingsCard {
-                    DropletGroupedPickerRow(title: "Session length",
-                                            subtitle: "What a new session starts with. You can add time while it runs.") {
-                        Picker("Session length", selection: model.binding(\.durationMinutes)) {
-                            // A length typed into the popover's "Custom…" is
-                            // listed too, so the picker never shows a blank.
-                            ForEach(model.durationChoicesIncludingCurrent, id: \.self) { minutes in
-                                Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
-                            }
-                        }
-                    }
-                    DropletGroupedPickerRow(title: "Break after a session",
-                                            subtitle: "When a session runs its full length, a break starts. When the break ends, the next session starts with the same goal.") {
-                        Picker("Break after a session", selection: model.binding(\.breakMinutes)) {
-                            ForEach(NidusModel.breakChoices, id: \.self) { minutes in
-                                Text(minutes == 0 ? "No break" : FocusFormat.duration(minutes: minutes)).tag(minutes)
-                            }
-                        }
-                    }
-                    DropletToggleRow(title: "Strict mode",
-                                     subtitle: "No snooze or pause during a session, and ending one early means typing \u{201C}stop early\u{201D} in the popover. Applies to sessions you start from now on.",
-                                     isOn: model.binding(\.strictMode))
-                }
-            }
-
-            DropletSettingsSection {
-                settingsSectionHeader("Blocking")
-            } content: {
-                DropletSettingsCard {
-                    DropletGroupedPickerRow(title: "What to block",
-                                            subtitle: "Block the categories you pick, or block everything except them.") {
-                        Picker("What to block", selection: model.binding(\.mode)) {
-                            Text("Block list").tag(SessionPlan.Mode.block)
-                            Text("Allow list").tag(SessionPlan.Mode.allow)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    DropletGroupedPickerRow(title: "When a blocked app opens",
-                                            subtitle: "Quitting asks the app to close normally, so it can save your work.") {
-                        Picker("When a blocked app opens", selection: model.binding(\.hidesInsteadOfQuitting)) {
-                            Text("Quit it").tag(false)
-                            Text("Hide it").tag(true)
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                    DropletGroupedPickerRow(title: "Snooze length",
-                                            subtitle: "How long Snooze lets one app or website through.") {
-                        Picker("Snooze length", selection: model.binding(\.snoozeMinutes)) {
-                            ForEach(NidusModel.snoozeChoices, id: \.self) { minutes in
-                                Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
-                            }
-                        }
-                    }
-                    .disabled(model.strictMode)
-                    DropletGroupedPickerRow(title: "Before a snooze",
-                                            subtitle: "A short wait gets you past the impulse.") {
-                        Picker("Before a snooze", selection: model.binding(\.snoozeWaitSeconds)) {
-                            ForEach(SnoozeWait.choices, id: \.self) { seconds in
-                                Text(SnoozeWait.choiceLabel(seconds)).tag(seconds)
-                            }
-                        }
-                    }
-                    .disabled(model.strictMode)
-                    DropletToggleRow(title: "Reopen quit apps",
-                                     subtitle: "When a session ends, opens the apps it quit, in the background.",
-                                     isOn: model.binding(\.reopensQuitApps))
-                }
-            }
-
-            DropletSettingsSection {
-                settingsSectionHeader("Nidus")
-            } content: {
-                DropletSettingsCard {
-                    DropletToggleRow(title: "Time left in the menu bar",
-                                     subtitle: "Shows the countdown beside the brain while a session runs.",
-                                     isOn: model.binding(\.menuBarShowsTime))
-                    DropletToggleRow(title: "Open at login",
-                                     subtitle: "A session left running carries on after a restart.",
-                                     isOn: Binding(get: { opensAtLogin },
-                                                   set: { LoginItem.set($0); opensAtLogin = LoginItem.isOn }))
-                }
-            }
-
-            DropletSettingsSection {
-                VStack(alignment: .leading, spacing: 2) {
-                    settingsSectionHeader("When a session starts")
-                    Text("Open what you work in, and quiet the rest of your Mac.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            } content: {
-                DropletSettingsCard {
-                    DropletSettingsPageLink("Apps to open", subtitle: launchSummary, page: "launch-apps") {
-                        CategoryTile(symbol: "macwindow.on.rectangle")
-                    }
-                }
-                if FocusShortcuts.isAvailable {
-                    DropletSettingsCard {
-                        FocusShortcutRows(model: model)
-                    }
-                }
-            }
-
-            DropletSettingsSection {
-                VStack(alignment: .leading, spacing: 2) {
-                    settingsSectionHeader("Categories")
-                    Text("Pick one or more when you start a session.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            } content: {
-                DropletSettingsCard {
-                    ForEach(model.categories) { category in
-                        DropletSettingsPageLink(
-                            category.name,
-                            subtitle: category.summary,
-                            page: NidusModel.categoryPagePrefix + category.id
-                        ) {
-                            CategoryTile(symbol: category.symbol)
-                        }
-                    }
-                    DropletControlRow(title: "New category") {
-                        Button("Add", action: model.addCategory)
-                            .buttonStyle(.bordered)
-                    }
-                }
-            }
-
-            DropletSettingsSection {
-                VStack(alignment: .leading, spacing: 2) {
-                    settingsSectionHeader("Browsers")
-                    Text("Blocked websites are redirected in these browsers. Nidus needs permission to control each one.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            } content: {
-                DropletSettingsCard {
-                    ForEach(BrowserProfile.known.filter(\.isInstalled), id: \.bundleID) { browser in
-                        BrowserAccessRow(model: model, browser: browser)
-                    }
-                }
-            }
-
-            DropletSettingsSection {
-                VStack(alignment: .leading, spacing: 2) {
-                    settingsSectionHeader("Privacy")
-                    Text("Nidus collects nothing and never connects to the internet. What it keeps stays on this Mac.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
-            } content: {
-                DropletSettingsCard {
-                    DropletToggleRow(title: "Record session history",
-                                     subtitle: "Used only for your stats and recent goals, and kept only on this Mac. When off, neither is kept.",
-                                     isOn: model.binding(\.recordsHistory))
+                DropletControlRow(title: "This guide goes after your first session") {
+                    Button("Hide now", action: model.hideGettingStarted)
+                        .buttonStyle(.bordered)
                 }
             }
         }
     }
-}
 
-extension FocusSettingsPane {
-    var statsSummary: String {
-        let stats = model.stats
-        guard !stats.isEmpty else { return "Your sessions will show up here." }
-        let streak = stats.currentStreak > 0 ? " · \(stats.currentStreak)-day streak" : ""
-        return "\(FocusFormat.long(stats.focusedThisWeek)) this week\(streak)"
+    private var sessions: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Sessions")
+        } content: {
+            DropletSettingsCard {
+                DropletGroupedPickerRow(title: "Session length",
+                                        subtitle: "What a new session starts with. You can add time while it runs.") {
+                    Picker("Session length", selection: model.binding(\.durationMinutes)) {
+                        // A length typed into the popover's "Custom…" is
+                        // listed too, so the picker never shows a blank.
+                        ForEach(model.durationChoicesIncludingCurrent, id: \.self) { minutes in
+                            Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
+                        }
+                    }
+                }
+                DropletGroupedPickerRow(title: "Break after a session",
+                                        subtitle: "When a session runs its full length, a break starts. When the break ends, the next session starts with the same goal.") {
+                    Picker("Break after a session", selection: model.binding(\.breakMinutes)) {
+                        ForEach(NidusModel.breakChoices, id: \.self) { minutes in
+                            Text(minutes == 0 ? "No break" : FocusFormat.duration(minutes: minutes)).tag(minutes)
+                        }
+                    }
+                }
+                DropletToggleRow(title: "Strict mode",
+                                 subtitle: "No snooze or pause during a session, and ending one early means typing \u{201C}stop early\u{201D} in the popover. Applies to sessions you start from now on.",
+                                 isOn: model.binding(\.strictMode))
+            }
+        }
+    }
+
+    private var menuBarAndLogin: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Menu bar and login")
+        } content: {
+            DropletSettingsCard {
+                DropletToggleRow(title: "Time left in the menu bar",
+                                 subtitle: "Shows the countdown beside the brain while a session runs.",
+                                 isOn: model.binding(\.menuBarShowsTime))
+                DropletToggleRow(title: "Open at login",
+                                 subtitle: "A session left running carries on after a restart.",
+                                 isOn: Binding(get: { opensAtLogin },
+                                               set: { LoginItem.set($0); opensAtLogin = LoginItem.isOn }))
+            }
+        }
+    }
+
+    private var whenASessionStarts: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("When a session starts",
+                                  detail: "Open what you work in, and quiet the rest of your Mac.")
+        } content: {
+            DropletSettingsCard {
+                DropletSettingsPageLink("Apps to open", subtitle: launchSummary, page: NidusModel.launchAppsPageID) {
+                    CategoryTile(symbol: "macwindow.on.rectangle")
+                }
+            }
+            if FocusShortcuts.isAvailable {
+                DropletSettingsCard {
+                    FocusShortcutRows(model: model)
+                }
+            }
+        }
     }
 
     var launchSummary: String {
@@ -305,6 +185,99 @@ extension FocusSettingsPane {
         case 0: return "None"
         case 1, 2: return names.joined(separator: ", ")
         default: return "\(names[0]), \(names[1]) and \(names.count - 2) more"
+        }
+    }
+}
+
+// MARK: - Blocking
+
+/// How blocking behaves, then the categories it draws on and the browsers it
+/// reaches. The first group has no heading: the tab already says what it is.
+struct FocusBlockingPage: View {
+    @ObservedObject var model: NidusModel
+
+    var body: some View {
+        DropletSettingsPane {
+            behaviour
+            categories
+            browsers
+        }
+    }
+
+    private var behaviour: some View {
+        DropletSettingsCard {
+            DropletGroupedPickerRow(title: "What to block",
+                                    subtitle: "Block the categories you pick, or block everything except them.") {
+                Picker("What to block", selection: model.binding(\.mode)) {
+                    Text("Block list").tag(SessionPlan.Mode.block)
+                    Text("Allow list").tag(SessionPlan.Mode.allow)
+                }
+                .pickerStyle(.segmented)
+            }
+            DropletGroupedPickerRow(title: "When a blocked app opens",
+                                    subtitle: "Quitting asks the app to close normally, so it can save your work.") {
+                Picker("When a blocked app opens", selection: model.binding(\.hidesInsteadOfQuitting)) {
+                    Text("Quit it").tag(false)
+                    Text("Hide it").tag(true)
+                }
+                .pickerStyle(.segmented)
+            }
+            DropletGroupedPickerRow(title: "Snooze length",
+                                    subtitle: "How long Snooze lets one app or website through.") {
+                Picker("Snooze length", selection: model.binding(\.snoozeMinutes)) {
+                    ForEach(NidusModel.snoozeChoices, id: \.self) { minutes in
+                        Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
+                    }
+                }
+            }
+            .disabled(model.strictMode)
+            DropletGroupedPickerRow(title: "Before a snooze",
+                                    subtitle: "A short wait gets you past the impulse.") {
+                Picker("Before a snooze", selection: model.binding(\.snoozeWaitSeconds)) {
+                    ForEach(SnoozeWait.choices, id: \.self) { seconds in
+                        Text(SnoozeWait.choiceLabel(seconds)).tag(seconds)
+                    }
+                }
+            }
+            .disabled(model.strictMode)
+            DropletToggleRow(title: "Reopen quit apps",
+                             subtitle: "When a session ends, opens the apps it quit, in the background.",
+                             isOn: model.binding(\.reopensQuitApps))
+        }
+    }
+
+    private var categories: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Categories", detail: "Pick one or more when you start a session.")
+        } content: {
+            DropletSettingsCard {
+                ForEach(model.categories) { category in
+                    DropletSettingsPageLink(
+                        category.name,
+                        subtitle: category.summary,
+                        page: NidusModel.categoryPagePrefix + category.id
+                    ) {
+                        CategoryTile(symbol: category.symbol)
+                    }
+                }
+                DropletControlRow(title: "New category") {
+                    Button("Add", action: model.addCategory)
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    private var browsers: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Browsers",
+                                  detail: "Blocked websites are redirected in these browsers. Nidus needs permission to control each one.")
+        } content: {
+            DropletSettingsCard {
+                ForEach(BrowserProfile.known.filter(\.isInstalled), id: \.bundleID) { browser in
+                    BrowserAccessRow(model: model, browser: browser)
+                }
+            }
         }
     }
 }

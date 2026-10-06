@@ -75,6 +75,16 @@ func settingsSectionHeader(_ title: String) -> some View {
     Text(title)
 }
 
+/// A section's title with a line under it saying what the section is for.
+func settingsSectionHeader(_ title: String, detail: String) -> some View {
+    VStack(alignment: .leading, spacing: 2) {
+        settingsSectionHeader(title)
+        Text(detail)
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+    }
+}
+
 /// One group of rows.
 struct DropletSettingsCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
