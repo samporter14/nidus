@@ -80,21 +80,19 @@ and the categories to block, and press Start. Until the session ends:
   like. Categories for social media, messaging, video, news and mail are
   ready to use, and you can make your own.
 
-<img src="docs/settings.png" width="520" alt="Nidus Settings: Block what pulls you away, with Stats, and sections for sessions and blocking">
-
 ## Start it from anywhere
 
 **Shortcuts.** Nidus adds Start Focus, End Focus, Toggle Focus and Get Focus
-Status to the Shortcuts app, so Siri, Spotlight and your own shortcuts can
-use them. For a keyboard shortcut, make a shortcut that runs Toggle Focus and
-give it a key in its details.
+Status to the Shortcuts app. For a keyboard shortcut, make a shortcut that
+runs Toggle Focus (or opens `nidus://toggle`) and give it a key in its
+details.
 
 **Links.** Any app, script or launcher can open these:
 
 | Link | Does |
 | --- | --- |
 | `nidus://start` | Starts a session with the popover's choices |
-| `nidus://start?goal=Write&minutes=45&categories=social,video` | Starts one with these. Also `mode=allow`, `strict=1`, and `preset=Deep work` for a setup |
+| `nidus://start?goal=Write&minutes=45&categories=social,video` | Starts one with these. Also `mode=allow`, `strict=1`, and `preset=Deep%20work` for a setup |
 | `nidus://toggle` | Ends a session, or starts the last one again |
 | `nidus://end` | Ends a session |
 | `nidus://popover` | Opens the popover |
@@ -141,11 +139,11 @@ short enough to read first.
 - Nidus lives in the menu bar; it has no Dock icon. Click the glyph to start,
   or right-click it for a short menu with Stats, Settings and Quit.
 - It adds itself to your login items once, so a session carries on after a
-  restart; macOS says so in a notification. Settings → Open at login turns
-  that off.
+  restart; macOS says so in a notification. Settings → General → Open at
+  login turns that off.
 - The first time a session reaches a browser, macOS asks whether Nidus may
   control it. Say OK, or websites in that browser won't be blocked. Settings
-  → Browsers shows where each one stands.
+  → Blocking → Browsers shows where each one stands.
 - "Until next meeting" asks for Calendar access the first time you choose
   it. Nidus reads your calendar on this Mac for the time of your next event,
   and nothing else.
