@@ -16,6 +16,7 @@ extension NidusModel {
         switch id {
         case "stats": return AnyView(FocusStatsPage(model: self))
         case "launch-apps": return AnyView(FocusLaunchAppsPage(model: self))
+        case _ where id.hasPrefix("setup"): return makeSetupsPage(id: id)
         default: break
         }
         guard id.hasPrefix(Self.categoryPagePrefix) else { return nil }
@@ -113,6 +114,12 @@ struct FocusSettingsPane: View {
                                 .buttonStyle(.bordered)
                         }
                     }
+                }
+            }
+
+            DropletSettingsCard {
+                DropletSettingsPageLink("Setups", subtitle: setupsSummary, page: NidusModel.setupsPageID) {
+                    CategoryTile(symbol: "bolt")
                 }
             }
 
