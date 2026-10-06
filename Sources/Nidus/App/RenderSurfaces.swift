@@ -77,6 +77,7 @@ enum RenderSurfaces {
             // After Settings, so the Stats page above is drawn without them.
             await shootPopoverVariants(model: model, settings: settings, in: directory)
             await renderSetups(model: model, settings: settings, in: directory)
+            await renderSchedules(model: model, settings: settings, host: host, in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }
@@ -180,7 +181,7 @@ enum RenderSurfaces {
     }
 
     static func shoot<V: View>(_ view: V, width: CGFloat, height: CGFloat? = nil, name: String,
-                                       in directory: URL, padded: Bool = false) async {
+                               in directory: URL, padded: Bool = false) async {
         for (theme, appearance) in [("light", NSAppearance.Name.aqua), ("dark", .darkAqua)] {
             let root = view
                 .padding(padded ? 24 : 0)

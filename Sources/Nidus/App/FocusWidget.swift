@@ -112,6 +112,8 @@ struct FocusWidget: View {
             }
             .onAppear {
                 model.requestKeyboardFocus()
+                // The calendar is read only when someone is about to start.
+                model.refreshNextMeeting()
                 DispatchQueue.main.async {
                     if model.customLengthDraft == nil { goalFocused = true } else { customLengthFocused = true }
                 }
@@ -228,12 +230,14 @@ struct FocusWidget: View {
             let until = model.pendingUntil()
             ForEach(NidusModel.durationChoices, id: \.self) { minutes in
                 Toggle(FocusFormat.duration(minutes: minutes), isOn: Binding(
-                    get: { until == nil && model.durationMinutes == minutes },
+                    get: { until == nil && !model.endsAtNextMeeting && model.durationMinutes == minutes },
                     set: { if $0 { model.durationMinutes = minutes } }
                 ))
             }
+            // "Until 2:00 PM (Design review)", with its own divider, or
+            // nothing without Calendar or a meeting left today.
+            UntilNextMeetingMenuItem(model: model)
             Divider()
-            // "Until next meeting" goes here: it sets `model.untilTarget`.
             if let until {
                 // The one-off time, checked while it is the choice; choosing
                 // it again lets go of it and the saved length is back.
@@ -244,7 +248,7 @@ struct FocusWidget: View {
             } else if !NidusModel.durationChoices.contains(model.durationMinutes) {
                 // A saved length that is not one of the above: typed here
                 // earlier, so listed and checked.
-                Toggle(FocusFormat.duration(minutes: model.durationMinutes), isOn: .constant(true))
+                Toggle(FocusFormat.duration(minutes: model.durationMinutes), isOn: .constant(!model.endsAtNextMeeting))
             }
             Button("Custom…", action: model.openCustomLength)
         } label: {

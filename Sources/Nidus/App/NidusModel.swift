@@ -31,7 +31,10 @@ final class NidusModel: NSObject, ObservableObject {
     /// Never saved: as a number of minutes it would be wrong tomorrow. A
     /// Start, or choosing any saved length, clears it; see FocusLength.swift.
     /// Whatever else offers an end time ("Until next meeting") sets this.
-    @Published var untilTarget: Date?
+    @Published var untilTarget: Date? {
+        // One end time at a time: a typed "until" replaces the meeting.
+        didSet { if untilTarget != nil { meetings.isChosen = false } }
+    }
 
     /// The popover's "Custom…" length field: nil while it is closed.
     @Published var customLengthDraft: CustomLengthDraft?
@@ -58,6 +61,10 @@ final class NidusModel: NSObject, ObservableObject {
     /// What the cards remember: a snooze waiting out its pause, and the
     /// answer to "did you finish?" the wrap-up card is showing. FocusSurfaces.
     let cards = FocusCardState()
+    /// Weekly schedules (FocusScheduler.swift) and the calendar's next meeting
+    /// (FocusCalendar.swift). Neither does anything until `activate` starts it.
+    let scheduler = FocusScheduler()
+    let meetings = MeetingFinder()
 
     // MARK: Lifecycle
 
@@ -112,6 +119,7 @@ final class NidusModel: NSObject, ObservableObject {
             menuBar.start()
             self.menuBar = menuBar
         }
+        startSchedules()
 
         if let harnessScenario {
             runHarnessScenario(harnessScenario)
@@ -129,6 +137,7 @@ final class NidusModel: NSObject, ObservableObject {
     func deactivate() {
         publishFocus(quitting: true)
         // Everything activate() started is torn down here, before Nidus quits.
+        stopSchedules()
         welcomeTask?.cancel()
         welcomeTask = nil
         stopWeeklyRecap()
@@ -166,7 +175,11 @@ final class NidusModel: NSObject, ObservableObject {
         let ids = request.categoryIDs ?? selectedCategoryIDs
         let chosen = categories.filter { ids.contains($0.id) }
         guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
-        let minutes = request.minutes ?? minutesForNextStart()
+        // A length the request didn't give: the next meeting if it was chosen
+        // (read again now, in case it moved), else an "until" time, else the
+        // popover's length.
+        let meetingMinutes = request.minutes == nil ? meetings.minutesToChosenMeeting() : nil
+        let minutes = request.minutes ?? meetingMinutes ?? minutesForNextStart()
         var plan = SessionPlan(
             goal: (request.goal ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
             duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
@@ -179,9 +192,10 @@ final class NidusModel: NSObject, ObservableObject {
         )
         plan.strict = request.strict ?? strictMode
         controller.start(plan)
+        noteFixedEnd(request.hasFixedEnd || meetingMinutes != nil)
         rememberGoal(plan.goal)
         host?.feedback.play(.success)
-        askBrowsersNeedingConsent()
+        if request.asksBrowserAccess { askBrowsersNeedingConsent() }
         return true
     }
 
@@ -352,6 +366,7 @@ final class NidusModel: NSObject, ObservableObject {
             menuBar?.closePopover()
             menuBar?.sessionDidStart()
         case .ended(let reason, let final):
+            endBreakAfterFixedEnd(final)
             host?.hud.dismiss(id: Self.snoozeHUDID)
             if reason != .expiredWhileAway {
                 // Ask only about a goal that was set and a session that was
@@ -742,6 +757,13 @@ struct SessionRequest: Equatable, Sendable {
     var categoryIDs: [String]?
     var mode: SessionPlan.Mode?
     var strict: Bool?
+    /// Whether starting may raise macOS's prompt for browser control. It is
+    /// asked only after a click; a start nobody clicked (a schedule) must not.
+    var asksBrowserAccess = true
+    /// The end is a time set outside the session (a schedule's end, a
+    /// meeting's start). No break follows it: the next session would run a
+    /// full length again, past the time it was meant to stop at.
+    var hasFixedEnd = false
 }
 
 /// What `focus.json` holds.

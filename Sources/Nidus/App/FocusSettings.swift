@@ -13,6 +13,7 @@ import UniformTypeIdentifiers
 
 extension NidusModel {
     func makeSettingsPage(id: String) -> AnyView? {
+        if let page = makeSchedulesPage(id: id) { return page }
         switch id {
         case "stats": return AnyView(FocusStatsPage(model: self))
         case "launch-apps": return AnyView(FocusLaunchAppsPage(model: self))
@@ -84,6 +85,9 @@ struct FocusSettingsPane: View {
             DropletSettingsCard {
                 DropletSettingsPageLink("Stats", subtitle: statsSummary, page: "stats") {
                     CategoryTile(symbol: "chart.bar.xaxis")
+                }
+                DropletSettingsPageLink("Schedules", subtitle: model.schedulesSummary, page: "schedules") {
+                    CategoryTile(symbol: "calendar.badge.clock")
                 }
             }
 

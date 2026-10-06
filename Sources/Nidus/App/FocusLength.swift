@@ -124,7 +124,10 @@ extension NidusModel {
     /// well, so a subtitle built from `durationMinutes` alone can say
     /// "25 min" for a session that will end at 3:30.)
     var lengthLabel: String {
-        FocusLength.label(durationMinutes: durationMinutes, until: untilTarget, now: Date())
+        if endsAtNextMeeting, let meeting = nextMeeting {
+            return "Until \(FocusFormat.clockTime(meeting.start))"
+        }
+        return FocusLength.label(durationMinutes: durationMinutes, until: untilTarget, now: Date())
     }
 
     /// The lengths for a picker: the standard ones, and the saved one if it
