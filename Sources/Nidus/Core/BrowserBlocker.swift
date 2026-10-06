@@ -15,8 +15,19 @@
 import Foundation
 
 /// The scripting vocabulary of one browser. Chromium browsers do not share
-/// codes: Chrome's tab class is `CrTb`, Opera's is `OpTb`. Each entry here was
-/// read from the app's own .sdef; add a browser only after reading its.
+/// codes: Chrome's tab class is `CrTb`, Opera's is `OpTb`. A wrong code does
+/// not fail loudly, it leaves the browser's sites unblocked, so add a browser
+/// only with its codes read from a primary source for that browser: its own
+/// .sdef (Safari, Chrome and Opera Air were read from the installed apps), or
+/// its published source showing which scripting.sdef it ships. That a browser
+/// is built on Chromium proves nothing.
+///
+/// Every browser is addressed alike: `every window` (`cwin`) and each one's
+/// `ID  `, then `every <tab class>` and its URL property. Only the tab class
+/// and the URL property vary.
+///
+/// Not added, for want of a primary source: Edge, Arc, Dia, Orion, Vivaldi.
+/// Read their codes from the installed app first (see the tests).
 struct BrowserProfile: Sendable, Hashable {
     let name: String
     let bundleID: String
@@ -26,8 +37,17 @@ struct BrowserProfile: Sendable, Hashable {
     static let safari = BrowserProfile(name: "Safari", bundleID: "com.apple.Safari", tabClass: "bTab", urlProperty: "pURL")
     static let chrome = BrowserProfile(name: "Google Chrome", bundleID: "com.google.Chrome", tabClass: "CrTb", urlProperty: "URL ")
     static let operaAir = BrowserProfile(name: "Opera Air", bundleID: "com.operasoftware.OperaAir", tabClass: "OpTb", urlProperty: "URL ")
+    /// Chromium's own scripting.sdef (chrome/browser/ui/cocoa/applescript in
+    /// the chromium repository) is bundled by the Chromium build, so an
+    /// unbranded Chromium has Chrome's codes.
+    static let chromium = BrowserProfile(name: "Chromium", bundleID: "org.chromium.Chromium", tabClass: "CrTb", urlProperty: "URL ")
+    /// brave-core builds Chromium's app plist, which names scripting.sdef, and
+    /// replaces neither: Brave ships Chromium's dictionary unchanged.
+    static let brave = BrowserProfile(name: "Brave Browser", bundleID: "com.brave.Browser", tabClass: "CrTb", urlProperty: "URL ")
 
-    static let known: [BrowserProfile] = [.safari, .chrome, .operaAir]
+    /// Settings lists only those that are installed, and a sweep sends
+    /// nothing to one that is not running, so a long list costs nothing.
+    static let known: [BrowserProfile] = [.safari, .chrome, .operaAir, .brave, .chromium]
 }
 
 /// One tab, addressed the only way every browser supports: its window's id
@@ -143,15 +163,19 @@ struct BlockPage: Sendable {
     let host = "";
     try { host = new URL(q.get("u")).hostname.replace(/^www\\./, ""); } catch {}
     if (host) {
-      document.getElementById("site").textContent = host + " is blocked until your session ends.";
-      document.title = host + " is blocked";
+      // What is blocked: the list entry that caught this page, path and all
+      // ("youtube.com/shorts"), or the site itself when there is none.
+      const key = (q.get("s") || "").trim();
+      const what = key || host;
+      document.getElementById("site").textContent = what + " is blocked until your session ends.";
+      document.title = what + " is blocked";
       // m=0: a strict session, which has no snooze. Missing: 3.
       const m = parseInt(q.get("m"), 10);
       const minutes = Number.isNaN(m) ? 3 : m;
       if (minutes > 0) {
         const snooze = document.getElementById("snooze");
         snooze.textContent = "Snooze for " + minutes + (minutes === 1 ? " minute" : " minutes");
-        snooze.href = "nidus://snooze?site=" + encodeURIComponent(q.get("s") || host);
+        snooze.href = "nidus://snooze?site=" + encodeURIComponent(key || host);
         snooze.hidden = false;
       }
     }
@@ -162,13 +186,183 @@ struct BlockPage: Sendable {
     """
 }
 
-/// Matches a URL against blocked domains: `youtube.com` blocks
-/// `www.youtube.com` and `m.youtube.com`, not `notyoutube.com`.
+/// One website rule: a host, and optionally a path under it. `youtube.com`
+/// covers the whole site; `youtube.com/shorts` covers `/shorts` and what is
+/// below it, and nothing else on the site.
+///
+/// Rules stay the plain strings people type (`FocusCategory.websites`, a
+/// session's plan), so saved data needs no migration and a rule without a
+/// path is the domain it always was. This type is how such a string is read.
+///
+/// - The host matches the page's host or any parent of it: `youtube.com`
+///   covers `m.youtube.com`, not `notyoutube.com`. Hosts compare without
+///   regard to case.
+/// - The path matches whole segments from the start: `/shorts` covers
+///   `/shorts` and `/shorts/abc`, not `/shortsfoo` or `/a/shorts`. Paths also
+///   compare without regard to case, which is friendlier (nobody means
+///   `/Shorts` as a different page) and errs toward blocking. A trailing or
+///   doubled slash makes no difference, and percent-encoding is undone first,
+///   so `/%73horts` does not slip past `/shorts`.
+/// - A query or fragment is never part of a rule: a page is its host and path.
+struct WebsiteEntry: Sendable, Hashable {
+    /// Lowercase, without `www.`, a port or a trailing dot.
+    let host: String
+    /// The path's segments, lowercase and decoded. Empty: the whole site.
+    let segments: [String]
+
+    /// The rule as saved, shown, snoozed and counted: "youtube.com/shorts".
+    var text: String { host + segments.map { "/" + $0 }.joined() }
+
+    /// A rule from what someone typed or pasted into "Add a website": a bare
+    /// domain, an address copied from the browser, or anything between. nil
+    /// for what is not a web address (an email, `chrome://settings`, a name
+    /// with no dot), so garbage is refused instead of saved as a rule that
+    /// never matches.
+    init?(typed input: String) {
+        self.init(parsing: input, tolerant: false)
+    }
+
+    /// A rule read back from saved data. Takes what `init(typed:)` takes, and
+    /// also forgives stray dots and spaces around the domain (`news.ycombinator.com.`),
+    /// which earlier versions matched, and leaves `www.` alone since it was
+    /// never stripped from what is already saved.
+    init?(stored text: String) {
+        self.init(parsing: text, tolerant: true)
+    }
+
+    private init?(parsing input: String, tolerant: Bool) {
+        var text = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if tolerant { text = text.trimmingCharacters(in: CharacterSet(charactersIn: ". ")) }
+        // Web addresses only: a scheme of any other kind is not one.
+        if let scheme = text.range(of: #"^[A-Za-z][A-Za-z0-9+.\-]*://"#, options: .regularExpression) {
+            guard ["http://", "https://"].contains(text[scheme].lowercased()) else { return nil }
+            text.removeSubrange(scheme)
+        } else if text.hasPrefix("//") {
+            text.removeFirst(2)
+        }
+        if let end = text.firstIndex(where: { $0 == "?" || $0 == "#" }) { text = String(text[..<end]) }
+        let slash = text.firstIndex(of: "/")
+        var authority = String(slash.map { text[..<$0] } ?? text[...])
+        let path = slash.map { String(text[$0...]) } ?? ""
+
+        // `name@host` is an email address or a login, never a site to block.
+        guard !authority.contains("@") else { return nil }
+        if let colon = authority.lastIndex(of: ":") {
+            let port = authority[authority.index(after: colon)...]
+            guard !port.isEmpty, port.allSatisfy({ $0.isASCII && $0.isNumber }) else { return nil }
+            authority = String(authority[..<colon])
+        }
+        var host = authority.lowercased()
+        if tolerant {
+            host = host.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        } else if host.hasPrefix("www.") {
+            host.removeFirst(4)
+        }
+        // Through URLComponents so a typed `bücher.de` and the `xn--` form a
+        // browser reports end up as the same host, as they do for a page.
+        guard Self.isValid(host: host),
+              let canonical = URLComponents(string: "https://" + host)?.host?.lowercased() else { return nil }
+        self.host = canonical
+        segments = Self.segments(ofPath: path)
+    }
+
+    /// Whether this rule covers a page.
+    func covers(_ location: WebLocation) -> Bool {
+        (location.host == host || location.host.hasSuffix("." + host)) && location.segments.starts(with: segments)
+    }
+
+    /// Of two rules covering the same page, whether this one says more: more
+    /// path first (`youtube.com/shorts` over `youtube.com`), then more host
+    /// (`m.youtube.com` over `youtube.com`).
+    func isNarrower(than other: WebsiteEntry) -> Bool {
+        (segments.count, hostLabels) > (other.segments.count, other.hostLabels)
+    }
+
+    private var hostLabels: Int { host.reduce(1) { $1 == "." ? $0 + 1 : $0 } }
+
+    /// At least two labels of letters, digits, `-` and `_`. A dotless name
+    /// would otherwise be a rule for a whole top-level domain.
+    private static func isValid(host: String) -> Bool {
+        guard host.count <= 253 else { return false }
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        return labels.count >= 2 && labels.allSatisfy { label in
+            (1...63).contains(label.count) && label.first != "-" && label.last != "-"
+                && label.allSatisfy { $0.isLetter || $0.isNumber || $0 == "-" || $0 == "_" }
+        }
+    }
+
+    /// The segments of a path as typed or as a browser reports it, in the one
+    /// form both are compared in. Empty and `.` segments vanish and `..`
+    /// steps back, as a browser would have resolved them.
+    static func segments(ofPath path: String) -> [String] {
+        var result: [String] = []
+        for part in path.split(separator: "/") {
+            switch canonical(part) {
+            case ".": continue
+            case "..": _ = result.popLast()
+            case let segment: result.append(segment)
+            }
+        }
+        return result
+    }
+
+    /// Decoded and lowercased, then encoded again only where the text would
+    /// otherwise break: `/`, `?`, `#`, `%` and whitespace. That makes a rule's
+    /// text read back as the same rule, which the Snooze link relies on, and
+    /// leaves accented letters readable (`addingPercentEncoding` would not).
+    private static func canonical(_ segment: Substring) -> String {
+        let decoded = (String(segment).removingPercentEncoding ?? String(segment)).lowercased()
+        var result = ""
+        for scalar in decoded.unicodeScalars {
+            if mustEscape.contains(scalar) {
+                for byte in String(scalar).utf8 { result += String(format: "%%%02X", byte) }
+            } else {
+                result.unicodeScalars.append(scalar)
+            }
+        }
+        return result
+    }
+
+    private static let mustEscape: CharacterSet = {
+        var reserved = CharacterSet(charactersIn: "%/?#")
+        reserved.formUnion(.whitespacesAndNewlines)
+        reserved.formUnion(.controlCharacters)
+        return reserved
+    }()
+}
+
+/// Where a tab is, for matching: the host and path of a web page.
+struct WebLocation: Sendable, Hashable {
+    let host: String
+    let segments: [String]
+
+    /// nil for anything that is not an http or https page.
+    init?(_ url: String) {
+        guard let components = URLComponents(string: url),
+              let scheme = components.scheme?.lowercased(), scheme == "http" || scheme == "https",
+              let host = components.host?.lowercased() else { return nil }
+        // `youtube.com.` is the same site as `youtube.com`.
+        let trimmed = host.trimmingCharacters(in: CharacterSet(charactersIn: "."))
+        guard !trimmed.isEmpty else { return nil }
+        self.host = trimmed
+        segments = WebsiteEntry.segments(ofPath: components.percentEncodedPath)
+    }
+}
+
+/// Matches a URL against the listed websites: `youtube.com` blocks
+/// `www.youtube.com` and `m.youtube.com`, not `notyoutube.com`, and
+/// `youtube.com/shorts` blocks only that part of it (see `WebsiteEntry`).
+///
+/// An entry that is not a web address (empty, `/shorts`, a stray word) is left
+/// out. It can never act as a wildcard.
 struct DomainMatcher: Sendable {
+    /// The entries as `WebsiteEntry.text` writes them.
     let domains: Set<String>
+    private let entries: [WebsiteEntry]
 
     init(_ domains: [String]) {
-        self.domains = Set(domains.map { $0.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ". ")) })
+        entries = domains.compactMap { WebsiteEntry(stored: $0) }
+        self.domains = Set(entries.map(\.text))
     }
 
     static func isWebPage(_ url: String) -> Bool {
@@ -180,14 +374,16 @@ struct DomainMatcher: Sendable {
         matchedDomain(url) != nil
     }
 
-    /// The listed domain that covers this URL, if any.
+    /// The listed entry that covers this URL, as written ("youtube.com" or
+    /// "youtube.com/shorts"). When several do, the one that says the most.
     func matchedDomain(_ url: String) -> String? {
-        guard Self.isWebPage(url), var host = URLComponents(string: url)?.host?.lowercased() else { return nil }
-        while true {
-            if domains.contains(host) { return host }
-            guard let dot = host.firstIndex(of: ".") else { return nil }
-            host = String(host[host.index(after: dot)...])
+        guard let location = WebLocation(url) else { return nil }
+        var best: WebsiteEntry?
+        for entry in entries where entry.covers(location) {
+            if let current = best, !entry.isNarrower(than: current) { continue }
+            best = entry
         }
+        return best?.text
     }
 
     /// The host as a person would write it: lowercased, without `www.`.
@@ -197,35 +393,58 @@ struct DomainMatcher: Sendable {
     }
 }
 
-/// Which pages a session blocks: the listed domains, or everything but them.
+/// Which pages a session blocks: the listed websites, or everything but them.
 struct WebsiteRule: Sendable {
     enum Mode: Sendable { case block, allow }
 
     let mode: Mode
     let matcher: DomainMatcher
+    /// Entries snoozed right now. Where listed entries overlap (`youtube.com`
+    /// and `youtube.com/shorts`), taking one off the list would leave the
+    /// other still blocking the page, so a snooze lets through everything the
+    /// snoozed entry covers, whatever else covers it too. Only block mode
+    /// needs it: allow mode adds the snoozed site to the list instead.
+    private let snoozed: DomainMatcher
 
-    init(mode: Mode, domains: [String]) {
+    init(mode: Mode, domains: [String], snoozed: [String] = []) {
         self.mode = mode
         matcher = DomainMatcher(domains)
+        self.snoozed = DomainMatcher(snoozed)
     }
 
     /// Only web pages are ever blocked; `about:`, `file:` and the browser's
     /// own pages are left alone in either mode.
+    ///
+    /// In allow mode a page is allowed when any entry covers it. An entry
+    /// with a path allows that part and what is below it; the pages above it
+    /// stay blocked, so `github.com/samporter14` lets `/samporter14/nidus`
+    /// through but not `github.com` itself or `/other`.
     func blocks(_ url: String) -> Bool {
         switch mode {
-        case .block: return matcher.matches(url)
+        case .block: return matcher.matches(url) && !snoozed.matches(url)
         case .allow: return DomainMatcher.isWebPage(url) && !matcher.matches(url)
         }
     }
 
-    /// What snoozing this blocked URL lets through: the list entry that
-    /// caught it, or in allow mode the site itself.
+    /// What snoozing this blocked URL lets through. In block mode the list
+    /// entry that caught it, path and all, so snoozing `youtube.com/shorts`
+    /// lets shorts through and nothing else, and `m.youtube.com` snoozes
+    /// `youtube.com`. In allow mode the site itself (host only, since the
+    /// listed paths are what was allowed and this page is none of them).
     func snoozeKey(for url: String) -> String {
         switch mode {
         case .block: return matcher.matchedDomain(url) ?? DomainMatcher.displayHost(url) ?? url
         case .allow: return DomainMatcher.displayHost(url) ?? url
         }
     }
+}
+
+/// A tab the rule blocks: where it is, the block page that replaces it, and
+/// the snooze key of the entry that caught it.
+struct TabRedirect: Sendable, Hashable {
+    let tab: TabLocation
+    let page: String
+    let key: String
 }
 
 /// Stateless and blocking: every call sends Apple Events and waits up to the
@@ -257,16 +476,38 @@ struct BrowserBlocker: Sendable {
         return result
     }
 
+    /// The tabs the rule blocks and where each goes. No Apple Events, so the
+    /// choice of tabs is testable.
+    func redirects(for tabs: [TabLocation], rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3) -> [TabRedirect] {
+        tabs.filter { rule.blocks($0.url) }.map { tab in
+            let key = rule.snoozeKey(for: tab.url)
+            return TabRedirect(tab: tab,
+                               page: blockPage.url(blocking: tab.url, goal: goal, snoozeMinutes: snoozeMinutes, snoozeKey: key),
+                               key: key)
+        }
+    }
+
+    /// The block-page tabs to put back, and the page each was showing: every
+    /// one, or with `keepBlocked`, those the rule no longer blocks (after a
+    /// snooze). The block page carries the whole original address, path
+    /// included, so a tab blocked for `youtube.com/shorts` returns to the
+    /// very short it was on.
+    func restorations(in tabs: [TabLocation], keepBlocked rule: WebsiteRule? = nil) -> [(tab: TabLocation, original: String)] {
+        tabs.compactMap { tab in
+            guard let original = blockPage.original(from: tab.url) else { return nil }
+            if let rule, rule.blocks(original) { return nil }
+            return (tab, original)
+        }
+    }
+
     /// Points each tab the rule blocks at the block page. Returns the snooze
     /// key of each tab it redirected.
     @discardableResult
     func sweep(_ browser: BrowserProfile, rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3) throws(AppleEventError) -> [String] {
         var redirected: [String] = []
-        for tab in try tabs(in: browser) where rule.blocks(tab.url) {
-            let key = rule.snoozeKey(for: tab.url)
-            let page = blockPage.url(blocking: tab.url, goal: goal, snoozeMinutes: snoozeMinutes, snoozeKey: key)
-            if try replace(tab, in: browser, with: page) {
-                redirected.append(key)
+        for redirect in redirects(for: try tabs(in: browser), rule: rule, goal: goal, snoozeMinutes: snoozeMinutes) {
+            if try replace(redirect.tab, in: browser, with: redirect.page) {
+                redirected.append(redirect.key)
             }
         }
         return redirected
@@ -277,9 +518,7 @@ struct BrowserBlocker: Sendable {
     @discardableResult
     func restore(_ browser: BrowserProfile, keepBlocked rule: WebsiteRule? = nil) throws(AppleEventError) -> [String] {
         var restored: [String] = []
-        for tab in try tabs(in: browser) {
-            guard let original = blockPage.original(from: tab.url) else { continue }
-            if let rule, rule.blocks(original) { continue }
+        for (tab, original) in restorations(in: try tabs(in: browser), keepBlocked: rule) {
             if try replace(tab, in: browser, with: original) {
                 restored.append(original)
             }

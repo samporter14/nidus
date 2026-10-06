@@ -452,7 +452,7 @@ struct FocusCategoryPage: View {
                 DropletSettingsSection {
                     VStack(alignment: .leading, spacing: 2) {
                         settingsSectionHeader("Websites")
-                        Text("Each one also covers its subdomains, so youtube.com includes m.youtube.com.")
+                        Text("Each one also covers its subdomains, so youtube.com includes m.youtube.com. Add a path, like youtube.com/shorts, to block only that part of it.")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
