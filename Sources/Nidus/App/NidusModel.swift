@@ -267,6 +267,10 @@ final class NidusModel: NSObject, ObservableObject {
 
     func openSettings() { host?.workspace.openSettings() }
 
+    /// Settings on a given tab, with nothing pushed on it, for what lives
+    /// there: the Get started guide in General, the categories in Blocking.
+    func openSettings(_ tab: SettingsTab) { host?.workspace.openSettingsPage(tab.pageID, title: tab.title) }
+
     /// A field that has just appeared takes keystrokes only while Nidus is
     /// the active app; the popover makes it so when it opens.
     /// Not for a render, which draws off-screen and must not take the
@@ -684,7 +688,7 @@ extension NidusModel {
         NSWorkspace.shared.open(url)
     }
 
-    func openStats() { host?.workspace.openSettingsPage("stats", title: "Stats") }
+    func openStats() { openSettings(.stats) }
 }
 
 // MARK: - Formatting

@@ -2,7 +2,7 @@
 //  FocusSetupsRender.swift
 //  Nidus
 //
-//  What `--render-surfaces` draws for setups: the Settings list, one setup's
+//  What `--render-surfaces` draws for setups: the Setups tab, one setup's
 //  page, and the popover's bar with none, a few, and more than fit. The
 //  sample setups go into the demo's own settings, which are emptied at each
 //  launch, and none is ever started.
@@ -52,8 +52,7 @@ extension RenderSurfaces {
 
         // One whose only category has been deleted, so it can't start.
         let broken = FocusSetup(name: "Old setup", symbol: "moon", minutes: 25, categoryIDs: ["deleted"])
-        let pages: [(String?, String, String, CGFloat, [FocusSetup])] = [
-            (nil, "", "settings-main-with-setups", 560, samples),
+        let pages: [(String, String, String, CGFloat, [FocusSetup])] = [
             (NidusModel.setupsPageID, "Setups", "settings-setups", 420, samples),
             (NidusModel.setupPagePrefix + first.id.uuidString, first.displayName, "settings-setup", 1000, samples),
             (NidusModel.setupPagePrefix + broken.id.uuidString, broken.displayName, "settings-setup-broken", 1000, samples + [broken]),
@@ -62,10 +61,13 @@ extension RenderSurfaces {
         ]
         for (page, title, name, height, setups) in pages {
             stage(setups)
-            settings.router.reset(to: page, title: title)
-            await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: height,
-                        name: name, in: directory)
+            await shootSettings(model, settings, page: page, title: title, name: name, height: height, in: directory)
         }
+        stage(samples)
+        await shootWindow(settings, page: NidusModel.setupsPageID, name: "settings-window-setups", in: directory)
+        await shootWindow(settings, page: NidusModel.setupPagePrefix + first.id.uuidString, title: first.displayName,
+                          name: "settings-window-setup", in: directory)
+        settings.window?.orderOut(nil)
 
         // The bar at the popover's content width, 440 less 20 each side.
         let many = samples + [

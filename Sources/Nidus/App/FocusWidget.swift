@@ -349,7 +349,7 @@ struct FocusWidget: View {
                 }
             }
             Divider()
-            Button("Edit categories…", action: model.openSettings)
+            Button("Edit categories…") { model.openSettings(.blocking) }
         } label: {
             menuLabel(
                 model.mode == .allow ? "Only \(model.selectionSummary)" : model.selectionSummary,

@@ -2,9 +2,9 @@
 //  FocusSchedulesPage.swift
 //  Nidus
 //
-//  Settings, Schedules: the list of weekly schedules, each with its own
-//  switch, and a page per schedule for its days, times, categories and
-//  goal. The rules for when they run are in Core/FocusSchedule.swift; the
+//  Settings, Schedules: the tab with the list of weekly schedules, each with
+//  its own switch, and a page per schedule for its days, times, categories
+//  and goal. The rules for when they run are in Core/FocusSchedule.swift; the
 //  scheduler that acts on them is FocusScheduler.
 //
 
@@ -42,12 +42,10 @@ struct FocusSchedulesPage: View {
                         .buttonStyle(.bordered)
                 }
             } header: {
-                VStack(alignment: .leading, spacing: 2) {
-                    settingsSectionHeader("Schedules")
-                    Text("Start a session by itself, on the days and times you pick. A card shows a minute before, with Skip.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
+                // The tab is already called Schedules.
+                Text("Start a session by itself, on the days and times you pick. A card shows a minute before, with Skip.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             } footer: {
                 Text("Schedules only run while Nidus is running and your Mac is awake. If it wakes or opens inside a window, a session starts then, unless less than 5 minutes are left. A schedule that starts during a session or a break is skipped.")
             }
@@ -304,8 +302,8 @@ private struct DayToggleStyle: ToggleStyle {
 // MARK: - Renders
 
 extension RenderSurfaces {
-    /// The Schedules page with two sample schedules, one schedule's page, the
-    /// Settings link beside them, and the two cards. Nothing here fires: the
+    /// The Schedules tab with two sample schedules, one schedule's page, and
+    /// the two cards. Nothing here fires: the
     /// scheduler is never started in a render, and the sample times are
     /// only drawn.
     static func renderSchedules(model: NidusModel, settings: SettingsWindowController,
@@ -320,15 +318,15 @@ extension RenderSurfaces {
             categoryIDs: ["mail"], mode: .allow, strict: true)
         model.schedules = [deepWork, reading]
 
-        settings.router.reset()
-        await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 900,
-                    name: "settings-main-with-schedules", in: directory)
         for (page, name) in [("schedules", "settings-schedules"), ("schedule:sample-deep-work", "settings-schedule"),
                              ("schedule:sample-reading", "settings-schedule-allow")] {
-            settings.router.reset(to: page, title: page == "schedules" ? "Schedules" : "Schedule")
-            await shoot(SettingsRoot(model: model, router: settings.router), width: 640,
-                        height: page == "schedules" ? 560 : 860, name: name, in: directory)
+            await shootSettings(model, settings, page: page, title: page == "schedules" ? "Schedules" : "Schedule",
+                                name: name, height: page == "schedules" ? 560 : 860, in: directory)
         }
+        await shootWindow(settings, page: "schedules", name: "settings-window-schedules", in: directory)
+        await shootWindow(settings, page: "schedule:sample-deep-work", title: "Schedule",
+                          name: "settings-window-schedule", in: directory)
+        settings.window?.orderOut(nil)
 
         let start = Date().addingTimeInterval(58)
         let run = FocusSchedule.Occurrence(schedule: deepWork, start: start, end: start.addingTimeInterval(3 * 3600))

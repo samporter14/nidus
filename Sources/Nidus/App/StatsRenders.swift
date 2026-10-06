@@ -101,13 +101,11 @@ extension NidusModel {
 extension RenderSurfaces {
     /// The pictures that need sessions: the filled Stats page and Monday's
     /// card. They come last, because sessions change the Get started guide
-    /// and the Stats link on the main page, which the others show empty.
+    /// on General, which the others show.
     static func renderStatsExtras(model: NidusModel, settings: SettingsWindowController, host: NidusHost,
                                   in directory: URL) async {
         model.runHarnessScenario("stats-filled")
-        settings.router.reset(to: "stats", title: "Stats")
-        await shoot(SettingsRoot(model: model, router: settings.router), width: 640, height: 1200,
-                    name: "settings-stats-filled", in: directory)
+        await shootSettings(model, settings, page: "stats", title: "Stats", name: "settings-stats-filled", height: 1200, in: directory)
 
         model.runHarnessScenario("recap")
         if let request = host.hud.lastRequest {

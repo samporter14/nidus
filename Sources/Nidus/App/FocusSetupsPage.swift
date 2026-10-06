@@ -2,9 +2,9 @@
 //  FocusSetupsPage.swift
 //  Nidus
 //
-//  Settings, Setups: the list of saved setups, and a page for each one to
-//  edit its name, symbol, length, what it blocks and whether it is strict.
-//  Built from the rows in Kit.swift, like the category pages.
+//  Settings, Setups: the tab with the list of saved setups, and a page for
+//  each one to edit its name, symbol, length, what it blocks and whether it
+//  is strict. Built from the rows in Kit.swift, like the category pages.
 //
 
 import SwiftUI
@@ -17,12 +17,10 @@ struct FocusSetupsPage: View {
     var body: some View {
         DropletSettingsPage {
             DropletSettingsSection {
-                VStack(alignment: .leading, spacing: 2) {
-                    settingsSectionHeader("Setups")
-                    Text("Start a saved session in one click, from the popover or the right-click menu.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
-                }
+                // The tab is already called Setups.
+                Text("Start a saved session in one click, from the popover or the right-click menu.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
             } content: {
                 DropletSettingsCard {
                     ForEach(model.setups) { setup in
@@ -42,18 +40,6 @@ struct FocusSetupsPage: View {
                     }
                 }
             }
-        }
-    }
-}
-
-extension FocusSettingsPane {
-    /// The line under the Setups link on the main page.
-    var setupsSummary: String {
-        let names = model.setups.map(\.displayName)
-        switch names.count {
-        case 0: return "None yet"
-        case 1, 2: return names.joined(separator: ", ")
-        default: return "\(names[0]), \(names[1]) and \(names.count - 2) more"
         }
     }
 }

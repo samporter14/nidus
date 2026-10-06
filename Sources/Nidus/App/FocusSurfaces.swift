@@ -153,7 +153,8 @@ extension NidusModel {
             FocusHUDStrip(icon: FocusWelcomeCard.glyph, text: "Nidus")
         } expanded: { [weak self] in
             FocusWelcomeCard(showMe: {
-                self?.openSettings()
+                // The guide is at the top of General.
+                self?.openSettings(.general)
                 self?.host?.hud.dismiss(id: Self.welcomeHUDID)
             })
         }

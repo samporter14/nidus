@@ -29,7 +29,7 @@ extension NidusModel.Key {
 }
 
 extension NidusModel {
-    static let schedulePagePrefix = "schedule:"
+    nonisolated static let schedulePagePrefix = "schedule:"
 
     var schedules: [FocusSchedule] {
         get { preference(Key.schedules, default: [FocusSchedule]()) }
@@ -87,16 +87,6 @@ extension NidusModel {
     /// session file may hold its start less exactly than the note does.
     static func isFixedEnd(_ final: SessionState, recorded: Double) -> Bool {
         recorded > 0 && abs(final.startedAt.timeIntervalSince1970 - recorded) < 1
-    }
-
-    /// "2 schedules on", for the link in Settings.
-    var schedulesSummary: String {
-        let on = schedules.filter(\.isOn).count
-        switch (schedules.count, on) {
-        case (0, _): return "Start a session on its own, on days and times you pick."
-        case (_, 0): return "None on"
-        default: return "\(on) on"
-        }
     }
 
     /// The scheduler is started and stopped with the model, and not at all in
