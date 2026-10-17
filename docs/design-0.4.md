@@ -269,8 +269,10 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
   when paused. `next.kind`: `break`, `block` or `finish`; `next.minutes` the
   length of what follows when known; `next` null when nothing is planned.
   `sequence` null outside a sequence; `step` is 1-based and counts work
-  blocks only.
-- `text`: present only when the person turned on sharing text; else absent.
+  blocks only (on a break, the block that comes next); `sequence.name` is
+  typed text, so it is there only with text sharing on.
+- `text` (and `sequence.name`): present only when the person turned on
+  sharing text; else absent.
   `goal` ≤ 120 characters, `project` ≤ 60, `nextStep` ≤ 160, sequence name
   ≤ 60; the whole file stays under 4 KB.
 - Freshness: `expiresAt` = `updatedAt` + 15 minutes (24 hours when idle or
