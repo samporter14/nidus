@@ -65,15 +65,25 @@ extension WorkspaceResource {
     }
 }
 
-// MARK: - Pages its own rules block
+// MARK: - Things its own rules block
 
-/// A page a setup opens that the setup's own blocking rules would block.
+/// Something a setup opens that the setup's own blocking rules would block:
+/// a web page its websites cover, or a document whose app its apps cover.
 struct WorkspaceConflict: Equatable, Sendable, Identifiable {
+    enum Kind: Equatable, Sendable {
+        case page
+        /// A document or folder that opens in this app.
+        case app(BlockedApp)
+    }
+
+    var kind: Kind
     var resourceID: WorkspaceResource.ID
-    /// How the page is listed: "reviewer.org/guide".
+    /// How the resource is listed: "reviewer.org/guide", "Aims.pdf".
     var page: String
+    /// The page's address; the file's path for a document.
     var address: String
-    /// The categories whose websites cover it; none known in an allow list.
+    /// The categories whose websites (or apps) cover it; none known in an
+    /// allow list.
     var blockedBy: [String]
     var isAllowList: Bool
     /// The exception that would let exactly this page through, when one can
@@ -82,22 +92,66 @@ struct WorkspaceConflict: Equatable, Sendable, Identifiable {
 
     var id: WorkspaceResource.ID { resourceID }
 
-    /// "Blocked by Video", "Not on the allow list".
+    /// The app a document opens in, for an app conflict.
+    var app: BlockedApp? {
+        if case .app(let app) = kind { return app }
+        return nil
+    }
+
+    /// Whether there is something to press: an exception for a page, and for
+    /// an app, adding it to the setup's apps to open (which no session blocks).
+    var hasFix: Bool { app != nil || fix != nil }
+
+    /// "Allow only this page", "Add Preview to Apps to open".
+    var fixTitle: String {
+        guard let app else { return "Allow only this page" }
+        return "Add \(app.name) to Apps to open"
+    }
+
+    /// The same on the card, where the sentence beside it already names the app.
+    var cardFixTitle: String { app == nil ? fixTitle : "Add to Apps to open" }
+
+    /// What the card says once it is done.
+    var fixDone: String {
+        app == nil ? "Allowed from the next start" : "Added to Apps to open from the next start"
+    }
+
+    /// "Blocked by Video", "Not on the allow list", "Opens in Preview, which is blocked".
     var reason: String {
+        if let app { return "Opens in \(app.name), which is \(isAllowList ? "not allowed" : "blocked")" }
         if isAllowList { return "Not on the allow list" }
         guard !blockedBy.isEmpty else { return "Blocked by this setup\u{2019}s rules" }
         return "Blocked by \(WorkspaceReport.list(blockedBy))"
     }
 
-    /// One sentence for the card: "reviewer.org/guide is blocked by Video."
+    /// The line a row starts with: "reviewer.org/guide is blocked".
+    var rowTitle: String {
+        app == nil ? "\(page) is blocked" : "\(page) opens in a blocked app"
+    }
+
+    /// One sentence for the card: "reviewer.org/guide is blocked by Video.",
+    /// "Aims.pdf opens in Preview, which this setup blocks."
     var sentence: String {
+        if let app {
+            return "\(page) opens in \(app.name), which this setup \(isAllowList ? "doesn\u{2019}t allow" : "blocks")."
+        }
         if isAllowList { return "\(page) isn\u{2019}t on the allow list." }
         guard !blockedBy.isEmpty else { return "\(page) is blocked by this setup\u{2019}s rules." }
         return "\(page) is blocked by \(WorkspaceReport.list(blockedBy))."
     }
 
+    /// The card's sentence and what the fix does: it applies from the next
+    /// start, because a running session keeps what it started with.
+    var cardSentence: String {
+        if app != nil { return sentence + " Adding it applies from the next start." }
+        return sentence + (fix != nil ? " Allowing it applies from the next start." : " It opens, then the block page replaces it.")
+    }
+
     /// What the setup page says under it.
     var explanation: String {
+        if let app {
+            return "\(sentence) It still opens when the session starts, then \(app.name) is blocked like any other app."
+        }
         let tail = isAllowList
             ? "Only what the allow list names is let through."
             : "It still opens when the session starts, then the block page replaces it."
@@ -106,22 +160,55 @@ struct WorkspaceConflict: Equatable, Sendable, Identifiable {
 }
 
 enum WorkspaceConflicts {
-    /// The web pages among `resources` that these rules would block. The
-    /// rules are the ones a session enforces: the same `WebsiteRule` the
-    /// sweep uses, exceptions included, so what is shown is what happens.
+    /// The pages and documents among `resources` that these rules would
+    /// block. The rules are the ones a session enforces: the same
+    /// `WebsiteRule` the sweep uses (exceptions included) and the same app
+    /// rule `AppBlocker` uses (the apps a session opens are never blocked),
+    /// so what is shown is what happens.
+    ///
+    /// `apps` are the blocked apps in a block list and the allowed ones in an
+    /// allow list, as a plan holds them; `openedBy` says which app opens each
+    /// document (see `openers`), and a document it doesn't name is skipped.
     static func find(in resources: [WorkspaceResource], mode: SessionPlan.Mode, websites: [String],
-                     exceptions: [WebsiteException], categories: [FocusCategory]) -> [WorkspaceConflict] {
+                     exceptions: [WebsiteException], categories: [FocusCategory],
+                     apps: [String] = [], launchApps: [String] = [],
+                     openedBy: [WorkspaceResource.ID: BlockedApp] = [:]) -> [WorkspaceConflict] {
         let rule = WebsiteRule(mode: mode == .block ? .block : .allow, domains: websites,
                                exceptions: mode == .block ? exceptions : [])
+        let appMode: AppBlocker.Mode = mode == .block ? .block(Set(apps).subtracting(launchApps))
+                                                      : .allow(Set(apps).union(launchApps))
         return resources.compactMap { resource in
-            guard resource.kind == .webPage, let address = resource.url,
-                  WorkspaceResource.openableAddress(address) != nil, rule.blocks(address) else { return nil }
-            let by = mode == .block
-                ? categories.filter { WebsiteRule(mode: .block, domains: $0.websites).blocks(address) }.map(\.name)
-                : []
-            return WorkspaceConflict(resourceID: resource.id, page: resource.shownName, address: address, blockedBy: by,
-                                     isAllowList: mode == .allow, fix: mode == .block ? exactException(for: address) : nil)
+            switch resource.kind {
+            case .webPage:
+                guard let address = resource.url, WorkspaceResource.openableAddress(address) != nil,
+                      rule.blocks(address) else { return nil }
+                let by = mode == .block
+                    ? categories.filter { WebsiteRule(mode: .block, domains: $0.websites).blocks(address) }.map(\.name)
+                    : []
+                return WorkspaceConflict(kind: .page, resourceID: resource.id, page: resource.shownName, address: address,
+                                         blockedBy: by, isAllowList: mode == .allow,
+                                         fix: mode == .block ? exactException(for: address) : nil)
+            case .document, .folder:
+                guard let app = openedBy[resource.id], AppBlocker.isBlocked(app.bundleID, under: appMode) else { return nil }
+                let by = mode == .block
+                    ? categories.filter { category in category.apps.contains { $0.bundleID == app.bundleID } }.map(\.name)
+                    : []
+                return WorkspaceConflict(kind: .app(app), resourceID: resource.id, page: resource.shownName,
+                                         address: resource.path ?? "", blockedBy: by, isAllowList: mode == .allow, fix: nil)
+            }
         }
+    }
+
+    /// Which app opens each document and folder that can be found. Only
+    /// asks; nothing is opened. Read once when a page appears or a start
+    /// happens, not while a page draws.
+    static func openers(for resources: [WorkspaceResource], launcher: WorkspaceLauncher,
+                        finder: any DefaultAppFinding) -> [WorkspaceResource.ID: BlockedApp] {
+        var found: [WorkspaceResource.ID: BlockedApp] = [:]
+        for resource in resources where resource.kind != .webPage {
+            if case .file(let url, _) = launcher.locate(resource), let app = finder.appToOpen(url) { found[resource.id] = app }
+        }
+        return found
     }
 
     /// The exception for exactly this page: its host and path, and the query
@@ -142,21 +229,35 @@ enum WorkspaceConflicts {
 }
 
 extension FocusSetup {
-    /// Pages this setup opens that its own categories (or allow list) block,
-    /// judged as a session started from it would be: the live categories'
-    /// websites, their exceptions and the setup's own.
-    func conflicts(in categories: [FocusCategory]) -> [WorkspaceConflict] {
+    /// Pages and documents this setup opens that its own categories (or allow
+    /// list) block, judged as a session started from it would be: the live
+    /// categories' websites and apps, their exceptions and the setup's own.
+    /// A setup with no apps of its own opens Settings' (`settingsLaunchApps`),
+    /// and those are never blocked. `openedBy` is what `openers` found.
+    func conflicts(in categories: [FocusCategory], openedBy: [WorkspaceResource.ID: BlockedApp] = [:],
+                   settingsLaunchApps: [BlockedApp] = []) -> [WorkspaceConflict] {
         let live = categories.filter { liveCategoryIDs(in: categories).contains($0.id) }
         let websites = live.flatMap(\.websites)
         let exceptions = WorkspaceConflicts.merged([live.flatMap(\.websiteExceptions), websiteExceptions])
         return WorkspaceConflicts.find(in: resources, mode: mode, websites: websites, exceptions: exceptions,
-                                       categories: live)
+                                       categories: live, apps: live.flatMap { $0.apps.map(\.bundleID) },
+                                       launchApps: (launchApps ?? settingsLaunchApps).map(\.bundleID), openedBy: openedBy)
     }
 
-    /// Lets exactly this page through, for the setup's next start. False
-    /// when there is nothing to add or it is already there.
+    /// The fix for a conflict, for the setup's next start: lets exactly that
+    /// page through, or adds the app to the setup's own apps to open (which
+    /// no session blocks). A setup that used Settings' apps keeps them: its
+    /// own list starts from Settings'. False when there is nothing to add or
+    /// it is already there.
     @discardableResult
-    mutating func allow(_ conflict: WorkspaceConflict) -> Bool {
+    mutating func allow(_ conflict: WorkspaceConflict, settingsLaunchApps: [BlockedApp] = []) -> Bool {
+        if let app = conflict.app {
+            var apps = launchApps ?? settingsLaunchApps
+            guard !apps.contains(where: { $0.bundleID == app.bundleID }) else { return false }
+            apps.append(app)
+            launchApps = apps
+            return true
+        }
         guard let fix = conflict.fix, !websiteExceptions.contains(fix) else { return false }
         websiteExceptions.append(fix)
         return true
@@ -164,12 +265,13 @@ extension FocusSetup {
 }
 
 extension SessionPlan {
-    /// Pages this session opened that it blocks, from what it committed to
-    /// when it started. `categories` only names them.
-    func workspaceConflicts(categories: [FocusCategory]) -> [WorkspaceConflict] {
-        let named = categories.filter { !Set($0.websites).isDisjoint(with: websites) }
+    /// Pages and documents this session opened that it blocks, from what it
+    /// committed to when it started. `categories` only names them.
+    func workspaceConflicts(categories: [FocusCategory],
+                            openedBy: [WorkspaceResource.ID: BlockedApp] = [:]) -> [WorkspaceConflict] {
+        let named = categories.filter { !Set($0.websites).isDisjoint(with: websites) || !Set($0.apps.map(\.bundleID)).isDisjoint(with: apps) }
         return WorkspaceConflicts.find(in: resources, mode: mode, websites: websites, exceptions: websiteExceptions,
-                                       categories: named)
+                                       categories: named, apps: apps, launchApps: launchApps, openedBy: openedBy)
     }
 }
 
@@ -240,8 +342,9 @@ extension FocusSetup {
 /// What the workspace card remembers while it is up.
 @MainActor
 final class WorkspaceCardState: ObservableObject {
-    /// The one page was allowed from the card.
+    /// The one page or app was allowed from the card, and what it says then.
     @Published var allowed = false
+    var doneText = "Allowed from the next start"
 }
 
 extension NidusModel {
@@ -263,7 +366,11 @@ extension NidusModel {
                 }
             }
         }
-        let conflicts = plan.workspaceConflicts(categories: categories)
+        // Which app opened each document is read once, now; nothing is opened.
+        let openedBy = controller.map {
+            WorkspaceConflicts.openers(for: plan.resources, launcher: $0.launcher, finder: $0.appFinder)
+        } ?? [:]
+        let conflicts = plan.workspaceConflicts(categories: categories, openedBy: openedBy)
         guard !report.isClean || !conflicts.isEmpty else { return }
         presentWorkspaceHUD(report, conflicts: conflicts, for: plan)
     }
@@ -277,7 +384,7 @@ extension NidusModel {
         // replace this one.
         let rule = WebsiteRule(mode: plan.mode == .block ? .block : .allow, domains: plan.websites,
                                exceptions: plan.websiteExceptions)
-        cards.workspaceQuietKeys = Set(conflicts.map { rule.snoozeKey(for: $0.address) })
+        cards.workspaceQuietKeys = Set(conflicts.map { $0.app?.bundleID ?? rule.snoozeKey(for: $0.address) })
         cards.workspaceQuietUntil = Date().addingTimeInterval(Self.workspaceQuietSeconds)
 
         let state = WorkspaceCardState()
@@ -289,14 +396,16 @@ extension NidusModel {
         }
         // One page, and a setup to add it to: the explicit fix, on the card.
         var allow: (() -> Void)?
-        if let setup, conflicts.count == 1, conflicts[0].fix != nil {
+        if let setup, conflicts.count == 1, conflicts[0].hasFix {
             let conflict = conflicts[0]
             allow = { [weak self] in
                 guard let self else { return }
-                self.updateSetup(setup.id) { $0.allow(conflict) }
+                let settingsApps = self.launchApps
+                self.updateSetup(setup.id) { $0.allow(conflict, settingsLaunchApps: settingsApps) }
                 state.allowed = true
+                state.doneText = conflict.fixDone
                 self.host?.hud.refresh(id: Self.workspaceHUDID, duration: 6,
-                                       announcing: "Allowed. It applies from the next start.")
+                                       announcing: conflict.fixDone + ".")
                 // The card gains a line saying so.
                 self.host?.hud.remeasure(id: Self.workspaceHUDID)
             }
@@ -313,7 +422,7 @@ extension NidusModel {
         } expanded: {
             WorkspaceNoticeCard(symbol: report.isClean ? "nosign" : "folder.badge.questionmark",
                                 title: title, lines: lines, state: state,
-                                openSetup: openSetup, allow: allow)
+                                openSetup: openSetup, allow: allow, allowTitle: conflicts.first?.cardFixTitle ?? "")
         }
         if host.hud.present(request) { host.feedback.play(.tick) }
     }
@@ -327,20 +436,24 @@ extension NidusModel {
                                     : name + "opened \(report.opened) of \(report.total)"
         }
         let n = conflicts.count
-        return name + (n == 1 ? "1 page is blocked" : "\(n) pages are blocked")
+        let apps = conflicts.compactMap(\.app)
+        if apps.count == n {
+            // Documents that open in an app the session blocks.
+            return name + (n == 1 ? "\(apps[0].name) is blocked" : "\(n) apps are blocked")
+        }
+        if apps.isEmpty { return name + (n == 1 ? "1 page is blocked" : "\(n) pages are blocked") }
+        return name + "\(n) things are blocked"
     }
 
-    /// The lines under the title: what could not be opened, then the pages
-    /// that are blocked. At most two sentences each, so the card stays short.
+    /// The lines under the title: what could not be opened, then what is
+    /// blocked. At most two sentences each, so the card stays short.
     nonisolated static func workspaceCardLines(report: WorkspaceReport, conflicts: [WorkspaceConflict]) -> [String] {
         var lines: [String] = []
         if !report.isClean { lines.append(report.detail) }
         switch conflicts.count {
         case 0: break
         case 1:
-            let c = conflicts[0]
-            lines.append(c.sentence + (c.fix != nil ? " Allowing it applies from the next start."
-                                                    : " It opens, then the block page replaces it."))
+            lines.append(conflicts[0].cardSentence)
         default:
             // The title counts them and the setup's page names them.
             lines.append("This setup\u{2019}s own rules block them. Open the setup to allow the ones you want.")
@@ -368,6 +481,7 @@ struct WorkspaceNoticeCard: View {
     @ObservedObject var state: WorkspaceCardState
     let openSetup: (() -> Void)?
     let allow: (() -> Void)?
+    var allowTitle = "Allow only this page"
 
     var body: some View {
         HStack(alignment: .top, spacing: DroppySpacing.md) {
@@ -380,10 +494,10 @@ struct WorkspaceNoticeCard: View {
                     Text(verbatim: line)
                         .font(.system(size: 12))
                         .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
-                        .lineLimit(4)
+                        .lineLimit(5)
                 }
                 if state.allowed {
-                    Label("Allowed from the next start", systemImage: "checkmark")
+                    Label(state.doneText, systemImage: "checkmark")
                         .font(.system(size: 12))
                         .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
                         .padding(.top, 2)
@@ -392,7 +506,7 @@ struct WorkspaceNoticeCard: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             VStack(alignment: .trailing, spacing: DroppySpacing.xsm) {
                 if let allow, !state.allowed {
-                    Button("Allow only this page", action: allow)
+                    Button(allowTitle, action: allow)
                 }
                 if let openSetup {
                     Button("Open setup", action: openSetup)

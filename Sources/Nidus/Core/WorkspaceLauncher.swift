@@ -94,6 +94,27 @@ struct SystemBookmarks: BookmarkResolving {
     }
 }
 
+/// Which app opens a file. The real one asks Launch Services, which only
+/// answers; nothing is opened. Tests say what opens what.
+protocol DefaultAppFinding: Sendable {
+    /// The app that opens this file or folder by default, or nil when none does.
+    func appToOpen(_ url: URL) -> BlockedApp?
+}
+
+struct SystemAppFinder: DefaultAppFinding {
+    func appToOpen(_ url: URL) -> BlockedApp? {
+        guard let appURL = NSWorkspace.shared.urlForApplication(toOpen: url),
+              let bundleID = Bundle(url: appURL)?.bundleIdentifier else { return nil }
+        let name = FileManager.default.displayName(atPath: appURL.path)
+        return BlockedApp(bundleID: bundleID, name: name.hasSuffix(".app") ? String(name.dropLast(4)) : name)
+    }
+}
+
+/// Knows of no app: a demo or a render has nothing to ask.
+struct NullAppFinder: DefaultAppFinding {
+    func appToOpen(_ url: URL) -> BlockedApp? { nil }
+}
+
 // MARK: - A resource, found again
 
 /// Why a document, folder or page could not be opened.

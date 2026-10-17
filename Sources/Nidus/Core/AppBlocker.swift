@@ -25,7 +25,7 @@ final class AppBlocker {
 
     /// Never blocked, whatever the mode. The host is added at runtime: in
     /// Nidus's process, `Bundle.main` is Nidus. Droppy stays exempt too.
-    static let exempt: Set<String> = [
+    nonisolated static let exempt: Set<String> = [
         "iordv.Droppy",
         "iordv.DroppyPlayground",
         "com.apple.finder",
@@ -56,7 +56,13 @@ final class AppBlocker {
     }
 
     func isBlocked(_ bundleID: String) -> Bool {
-        if Self.exempt.contains(bundleID) || bundleID == Bundle.main.bundleIdentifier { return false }
+        Self.isBlocked(bundleID, under: mode)
+    }
+
+    /// The one rule for whether an app is blocked under a mode, for the
+    /// blocker and for whatever wants to say beforehand what it would do.
+    nonisolated static func isBlocked(_ bundleID: String, under mode: Mode) -> Bool {
+        if exempt.contains(bundleID) || bundleID == Bundle.main.bundleIdentifier { return false }
         switch mode {
         case .block(let blocked): return blocked.contains(bundleID)
         case .allow(let allowed): return !allowed.contains(bundleID)

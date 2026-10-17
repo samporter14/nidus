@@ -281,11 +281,15 @@ struct FocusSequence: Codable, Identifiable, Equatable, Sendable {
     /// rest, through `FocusSetup.request`), the step's goal and length over
     /// it, and its project when that project still exists. A project that was
     /// deleted starts the block with none, as a setup's does.
+    ///
+    /// A setup that follows the popover's project takes `popoverProject`, its
+    /// saved choice, as it does wherever it starts; a step's own project
+    /// comes after and wins.
     func request(for step: Step, setups: [FocusSetup], categories: [FocusCategory],
-                 projectExists: (UUID) -> Bool) -> SessionRequest {
+                 popoverProject: UUID? = nil, projectExists: (UUID) -> Bool) -> SessionRequest {
         var request: SessionRequest
         if let id = step.setupID, let setup = setups.first(where: { $0.id == id }) {
-            request = setup.request(categories: categories, goalDraft: step.goal)
+            request = setup.request(categories: categories, goalDraft: step.goal, popoverProject: popoverProject)
             request.setupID = request.setupID ?? setup.id
         } else {
             let goal = step.goal.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -414,7 +418,10 @@ extension NidusModel {
         let setups = self.setups, categories = self.categories
         guard let run = sequence.resolved(
             startedAt: Date(),
-            request: { sequence.request(for: $0, setups: setups, categories: categories, projectExists: { self.project($0) != nil }) },
+            request: {
+                sequence.request(for: $0, setups: setups, categories: categories, popoverProject: self.selectedProjectID,
+                                 projectExists: { self.project($0) != nil })
+            },
             plan: { self.resolveSession($0)?.plan }
         ), controller.startSequence(run) else { return false }
         if case .work(let first)? = run.steps.first { rememberGoal(first.goal) }

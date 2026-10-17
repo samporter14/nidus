@@ -278,7 +278,10 @@ running, and its own blocking in place. In Settings, open the setup. Under
   list opens none even when Settings has some.
 - **Documents and folders** are chosen in the Open panel. Nidus keeps a
   bookmark to each, so a file you moved or renamed is still found, and a
-  file in the Trash counts as gone.
+  file in the Trash counts as gone. A document opens in its usual app, and
+  the setup says when that app is one it blocks ("Aims.pdf opens in Preview,
+  which this setup blocks"), with **Add Preview to Apps to open**, since an
+  app a session opens is never blocked by it.
 - **Web pages** are http or https addresses, opened in your default browser.
   Anything else is refused.
 - **Shortcuts** to run when it starts and when it ends, or Settings' choice.
@@ -289,7 +292,10 @@ running, and its own blocking in place. In Settings, open the setup. Under
   Each says "Uses Settings" (or "Uses the popover's", for the project) until
   you change it, and can be set to none: no project even when the popover has
   one chosen, no break, or a break that blocks nothing even when Settings has
-  rules. A sequence's block from a setup takes these too.
+  rules. A setup that uses the popover's project counts toward the project
+  the popover has saved, wherever it starts: the popover, the menu, a link, a
+  Shortcut, the JSON command or a sequence's block. A sequence's block from a
+  setup takes the rest too.
 
 Documents, folders and pages open once, when you start. They do not open
 again when a break hands over to the same session, and not when Nidus opens
@@ -298,9 +304,9 @@ start of work, after a break too, which is how a Focus mode comes back on.
 
 If a file can't be found, the rest still opens and one card at the top of the
 screen says so: "Opened 2 of 3. Aims.docx can't be found. Choose it again in
-the setup." A setup whose own rules block one of its pages says so on its page
-and on that card, with **Allow only this page**, which adds that one page as an
-exception. Nothing is added unless you press it, and it applies from the next
+the setup." A setup whose own rules block one of its pages (or the app that opens one
+of its documents) says so on its page and on that card, with **Allow only this
+page**, which adds that one page as an exception. Nothing is added unless you press it, and it applies from the next
 start: a running session keeps what it started with. A start never waits for
 this. The blocked page still opens and is then replaced by the block page, as
 any blocked page is.

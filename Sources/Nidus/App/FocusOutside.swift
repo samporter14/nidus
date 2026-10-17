@@ -171,6 +171,10 @@ protocol FocusCommandTarget: AnyObject {
     var commandStatus: FocusStatus { get }
     var setups: [FocusSetup] { get }
     var categories: [FocusCategory] { get }
+    /// The projects, and the one the popover has chosen: a setup that follows
+    /// the popover's project counts toward it however it is started.
+    var projects: [FocusProject] { get }
+    var selectedProjectID: UUID? { get }
     func startFromOutside(_ request: SessionRequest) -> OutsideStart
     @discardableResult func endFromOutside() -> OutsideEnd
     /// Adds time the engine's way: running or paused, up to its limit.
@@ -178,6 +182,10 @@ protocol FocusCommandTarget: AnyObject {
 }
 
 extension FocusCommandTarget {
+    // A target with no projects (a test's) has none chosen.
+    var projects: [FocusProject] { [] }
+    var selectedProjectID: UUID? { nil }
+
     /// Adds whole minutes to a timed session and says what happened, from
     /// the time left before and after: only a timed session has an end to
     /// move, and the engine stops at 24 hours left.
@@ -215,7 +223,10 @@ extension FocusCommandTarget {
         guard case .success(let resolved) = start.resolve(against: categories) else {
             return .failure(.noMatchingCategory)
         }
-        var request = setup?.request(categories: categories) ?? SessionRequest(goal: "")
+        // A setup that follows the popover's project takes its saved choice,
+        // here as everywhere it starts.
+        var request = setup?.startRequest(categories: categories, goalDraft: "", popoverProject: selectedProjectID,
+                                          projects: projects) ?? SessionRequest(goal: "")
         // An empty goal is no goal: it doesn't wipe the setup's.
         if let goal = start.goal, !goal.isEmpty { request.goal = goal }
         if let minutes = start.minutes { request.minutes = minutes }

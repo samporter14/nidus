@@ -150,9 +150,11 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     /// where it came from. `startSession` copies all of it into the plan, so
     /// editing the setup afterwards changes nothing about a session running.
     ///
-    /// `popoverProject` is the project the popover has chosen: a setup that
-    /// doesn't name one of its own (or none) counts toward it. Callers that
-    /// have no popover choice (a sequence, a link) leave it nil.
+    /// `popoverProject` is the project the popover has saved: a setup that
+    /// names none of its own (and not "no project") counts toward it, wherever
+    /// it starts: the popover, the menu, a link, a Shortcut, the JSON command
+    /// or a sequence's block. Left nil, it follows no project. Only a test,
+    /// or a caller that really has no popover, leaves it out.
     func request(categories: [FocusCategory], goalDraft: String = "", popoverProject: UUID? = nil) -> SessionRequest {
         var request = SessionRequest(goal: Self.resolvedGoal(typed: goalDraft, saved: goal),
                                      minutes: minutes,
@@ -178,8 +180,8 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         return request
     }
 
-    /// The request a click on the setup makes: `request`, with the project the
-    /// popover has chosen taken when the setup doesn't name one, and a project
+    /// The request a start of the setup makes: `request`, with the project the
+    /// popover has saved taken when the setup doesn't name one, and a project
     /// archived or deleted since counted as none, quietly.
     func startRequest(categories: [FocusCategory], goalDraft: String, popoverProject: UUID?,
                       projects: [FocusProject]) -> SessionRequest {

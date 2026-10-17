@@ -28,12 +28,27 @@ enum SetupPart: Hashable, Sendable {
     case project, breakLength, breakRules
 }
 
+/// Which app opens a document, as the page asks it. A render says its own.
+private struct DefaultAppFinderKey: EnvironmentKey {
+    static let defaultValue: any DefaultAppFinding = SystemAppFinder()
+}
+
+extension EnvironmentValues {
+    var defaultAppFinder: any DefaultAppFinding {
+        get { self[DefaultAppFinderKey.self] }
+        set { self[DefaultAppFinderKey.self] = newValue }
+    }
+}
+
 struct SetupWorkspaceSections: View {
     @ObservedObject var model: NidusModel
     let setupID: FocusSetup.ID
+    @Environment(\.defaultAppFinder) private var appFinder
 
     @State private var opened: Set<SetupPart>
     @State private var locations: [WorkspaceResource.ID: WorkspaceLocation] = [:]
+    /// The app that opens each document, read with `locations`.
+    @State private var openers: [WorkspaceResource.ID: BlockedApp] = [:]
     @State private var shortcutNames: [String] = []
     @State private var pageDraft: String
 
@@ -48,13 +63,16 @@ struct SetupWorkspaceSections: View {
 
     var body: some View {
         if let setup {
-            let conflicts = setup.conflicts(in: model.categories)
+            let conflicts = setup.conflicts(in: model.categories, openedBy: openers, settingsLaunchApps: model.launchApps)
             Group {
                 startSection(setup, conflicts: conflicts)
                 exceptionsSection(setup)
                 projectAndBreakSection(setup)
             }
-            .task(id: setup.resources) { locations = Self.locate(setup.resources) }
+            .task(id: setup.resources) {
+                locations = Self.locate(setup.resources)
+                openers = WorkspaceConflicts.openers(for: setup.resources, launcher: WorkspaceLauncher(), finder: appFinder)
+            }
             .task { await loadShortcuts() }
         }
     }
@@ -69,7 +87,9 @@ struct SetupWorkspaceSections: View {
             DropletSettingsCard {
                 attention(setup, conflicts: conflicts)
                 line(.apps, "Apps", summary: setup.appsSummary) { appsRows(setup) }
-                line(.documents, "Documents and folders", summary: documentsSummary(setup)) { documentRows(setup) }
+                line(.documents, "Documents and folders", summary: documentsSummary(setup, conflicts: conflicts)) {
+                    documentRows(setup, conflicts: conflicts)
+                }
                 line(.pages, "Web pages", summary: pagesSummary(setup, conflicts: conflicts)) { pageRows(setup, conflicts: conflicts) }
                 if FocusShortcuts.isAvailable {
                     line(.shortcuts, "Shortcuts", summary: setup.shortcutsSummary) { shortcutRows(setup) }
@@ -135,13 +155,14 @@ struct SetupWorkspaceSections: View {
         ForEach(conflicts.map { Keyed(id: "conflict \($0.id)", value: $0) }) { item in
             let conflict = item.value
             LabeledContent {
-                if conflict.fix != nil {
-                    Button("Allow only this page") { allow(conflict) }
+                if conflict.hasFix {
+                    Button(conflict.fixTitle) { allow(conflict) }
                         .buttonStyle(.bordered)
-                        .accessibilityLabel("Allow only \(conflict.page)")
+                        .accessibilityLabel(conflict.app == nil ? "Allow only \(conflict.page)"
+                                                                : "\(conflict.fixTitle) for \(conflict.page)")
                 }
             } label: {
-                Label("\(conflict.page) is blocked", systemImage: "exclamationmark.triangle")
+                Label(conflict.rowTitle, systemImage: "exclamationmark.triangle")
                 Text(conflict.explanation)
             }
         }
@@ -219,17 +240,22 @@ struct SetupWorkspaceSections: View {
 
     // MARK: Documents and folders
 
-    private func documentsSummary(_ setup: FocusSetup) -> String {
+    private func documentsSummary(_ setup: FocusSetup, conflicts: [WorkspaceConflict]) -> String {
         let missing = setup.documents.filter { locations[$0.id]?.problem != nil }.count
-        guard missing > 0 else { return setup.documentsSummary }
+        let blocked = conflicts.filter { $0.app != nil }.count
+        guard missing > 0 || blocked > 0 else { return setup.documentsSummary }
         let total = setup.documents.count
-        return "\(total) \(total == 1 ? "item" : "items") \u{00B7} \(missing) missing"
+        var parts = ["\(total) \(total == 1 ? "item" : "items")"]
+        if missing > 0 { parts.append("\(missing) missing") }
+        if blocked > 0 { parts.append("\(blocked) blocked") }
+        return parts.joined(separator: " \u{00B7} ")
     }
 
-    private func documentRows(_ setup: FocusSetup) -> some View {
+    private func documentRows(_ setup: FocusSetup, conflicts: [WorkspaceConflict]) -> some View {
         Group {
             ForEach(setup.documents) { resource in
                 let problem = locations[resource.id]?.problem
+                let conflict = conflicts.first { $0.resourceID == resource.id }
                 LabeledContent {
                     HStack(spacing: DroppySpacing.sm) {
                         if problem != nil {
@@ -240,7 +266,8 @@ struct SetupWorkspaceSections: View {
                     }
                 } label: {
                     Label(resource.shownName, systemImage: resource.kind == .folder ? "folder" : "doc")
-                    Text(problem.map { Self.problemTitle(for: resource, $0) } ?? Self.place(of: locations[resource.id]?.url ?? resource.path.map { URL(fileURLWithPath: $0) }))
+                    Text(problem.map { Self.problemTitle(for: resource, $0) } ?? conflict?.reason
+                         ?? Self.place(of: locations[resource.id]?.url ?? resource.path.map { URL(fileURLWithPath: $0) }))
                 }
             }
             DropletControlRow(title: setup.documents.isEmpty ? "No documents or folders yet" : "Add more",
@@ -287,9 +314,10 @@ struct SetupWorkspaceSections: View {
     // MARK: Web pages
 
     private func pagesSummary(_ setup: FocusSetup, conflicts: [WorkspaceConflict]) -> String {
-        guard !conflicts.isEmpty else { return setup.pagesSummary }
+        let blocked = conflicts.filter { $0.app == nil }.count
+        guard blocked > 0 else { return setup.pagesSummary }
         let total = setup.pages.count
-        return "\(total) \(total == 1 ? "page" : "pages") \u{00B7} \(conflicts.count) blocked"
+        return "\(total) \(total == 1 ? "page" : "pages") \u{00B7} \(blocked) blocked"
     }
 
     private func pageRows(_ setup: FocusSetup, conflicts: [WorkspaceConflict]) -> some View {
@@ -561,7 +589,8 @@ struct SetupWorkspaceSections: View {
     }
 
     private func allow(_ conflict: WorkspaceConflict) {
-        update { $0.allow(conflict) }
+        let settingsApps = model.launchApps
+        update { $0.allow(conflict, settingsLaunchApps: settingsApps) }
     }
 
     /// Where each resource is now. Read when the page appears and when the

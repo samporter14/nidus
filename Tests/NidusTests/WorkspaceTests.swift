@@ -66,6 +66,16 @@ struct FakeBookmarks: BookmarkResolving {
     }
 }
 
+/// Which app opens a file, by its extension; a folder opens in Finder.
+struct FakeAppFinder: DefaultAppFinding {
+    var byExtension: [String: BlockedApp] = [:]
+
+    func appToOpen(_ url: URL) -> BlockedApp? {
+        if url.hasDirectoryPath { return BlockedApp(bundleID: "com.apple.finder", name: "Finder") }
+        return byExtension[url.pathExtension]
+    }
+}
+
 /// A folder of real files to point bookmarks at, removed afterwards.
 final class Workspace {
     let root: URL
@@ -1041,10 +1051,12 @@ struct WorkspaceSequenceTests {
                       projectName: { _ in "R01 renewal" })
     }
 
-    private func resolve(_ sequence: FocusSequence, setups: [FocusSetup]) throws -> SequenceRun {
+    private func resolve(_ sequence: FocusSequence, setups: [FocusSetup], popoverProject: UUID? = nil,
+                         projectExists: @escaping (UUID) -> Bool = { _ in true }) throws -> SequenceRun {
         let d = defaults()
         return try #require(sequence.resolved(startedAt: Date(), request: {
-            sequence.request(for: $0, setups: setups, categories: T.categories, projectExists: { _ in true })
+            sequence.request(for: $0, setups: setups, categories: T.categories, popoverProject: popoverProject,
+                             projectExists: projectExists)
         }, plan: { $0.resolved(with: d, length: { (25, false) })?.plan }))
     }
 
@@ -1100,10 +1112,285 @@ struct WorkspaceSequenceTests {
         let overridden = try resolve(FocusSequence(steps: [.work(setupID: setup.id, projectID: steps)]), setups: [setup])
         guard case .work(let b) = overridden.steps[0] else { return }
         #expect(b.projectID == steps)
-        // A setup that follows the popover has no popover here: no project.
+        // A setup that follows the popover, with no popover choice given: no project.
         let follows = FocusSetup(name: "Follows", categoryIDs: ["social"])
         let none = try resolve(FocusSequence(steps: [.work(setupID: follows.id)]), setups: [follows])
         guard case .work(let c) = none.steps[0] else { return }
         #expect(c.projectID == nil)
+    }
+}
+
+
+// MARK: - A document that opens in an app the setup blocks
+
+struct WorkspaceAppConflictTests {
+    typealias T = FocusSetupTests
+
+    static let preview = BlockedApp(bundleID: "com.apple.Preview", name: "Preview")
+    static let word = BlockedApp(bundleID: "com.microsoft.Word", name: "Word")
+    static let xcode = BlockedApp(bundleID: "com.apple.dt.Xcode", name: "Xcode")
+    /// A category whose app is the one a PDF opens in.
+    static let reading = FocusCategory(id: "reading", name: "Reading", symbol: "book", apps: [preview], websites: [])
+    static let categories = T.categories + [reading]
+
+    static func document(_ name: String) -> WorkspaceResource {
+        WorkspaceResource(kind: .document, displayName: name, path: "/tmp/\(name)")
+    }
+
+    static func setup(_ categoryIDs: [String], mode: SessionPlan.Mode = .block, launchApps: [BlockedApp]? = nil,
+                      resources: [WorkspaceResource]) -> FocusSetup {
+        FocusSetup(name: "Reading", categoryIDs: categoryIDs, mode: mode, launchApps: launchApps, resources: resources)
+    }
+
+    @Test func aBlockListThatCoversTheDocumentsAppIsAConflict() throws {
+        let pdf = Self.document("Aims.pdf")
+        let setup = Self.setup(["reading"], resources: [pdf])
+        let conflicts = setup.conflicts(in: Self.categories, openedBy: [pdf.id: Self.preview])
+        let c = try #require(conflicts.first)
+        #expect(conflicts.count == 1 && c.app == Self.preview && !c.isAllowList)
+        #expect(c.blockedBy == ["Reading"])
+        #expect(c.sentence == "Aims.pdf opens in Preview, which this setup blocks.")
+        #expect(c.rowTitle == "Aims.pdf opens in a blocked app" && c.reason == "Opens in Preview, which is blocked")
+        #expect(c.hasFix && c.fix == nil && c.fixTitle == "Add Preview to Apps to open")
+        #expect(c.cardSentence == "Aims.pdf opens in Preview, which this setup blocks. Adding it applies from the next start.")
+    }
+
+    @Test func anAllowListThatDoesNotNameTheDocumentsAppIsAConflict() throws {
+        let pdf = Self.document("Aims.pdf"), swift = Self.document("Main.swift")
+        let setup = Self.setup(["xcode"], mode: .allow, resources: [pdf, swift])
+        let conflicts = setup.conflicts(in: Self.categories, openedBy: [pdf.id: Self.preview, swift.id: Self.xcode])
+        #expect(conflicts.map(\.page) == ["Aims.pdf"], "Xcode is allowed, Preview is not")
+        let c = try #require(conflicts.first)
+        #expect(c.isAllowList && c.blockedBy.isEmpty && c.hasFix)
+        #expect(c.sentence == "Aims.pdf opens in Preview, which this setup doesn\u{2019}t allow.")
+    }
+
+    @Test func anAppAlreadyInAppsToOpenIsNoConflictInEitherMode() {
+        let pdf = Self.document("Aims.pdf")
+        let opened = [pdf.id: Self.preview]
+        let block = Self.setup(["reading"], launchApps: [Self.preview], resources: [pdf])
+        #expect(block.conflicts(in: Self.categories, openedBy: opened).isEmpty, "a session never blocks the apps it opened")
+        let allow = Self.setup(["xcode"], mode: .allow, launchApps: [Self.preview], resources: [pdf])
+        #expect(allow.conflicts(in: Self.categories, openedBy: opened).isEmpty)
+        // Settings' apps count when the setup uses them, and not when it has a list of its own.
+        let inherits = Self.setup(["reading"], resources: [pdf])
+        #expect(inherits.conflicts(in: Self.categories, openedBy: opened, settingsLaunchApps: [Self.preview]).isEmpty)
+        let ownEmpty = Self.setup(["reading"], launchApps: [], resources: [pdf])
+        #expect(ownEmpty.conflicts(in: Self.categories, openedBy: opened, settingsLaunchApps: [Self.preview]).count == 1)
+    }
+
+    @Test func finderAndUnknownAppsAreNoConflict() {
+        let folder = WorkspaceResource(kind: .folder, displayName: "References", path: "/tmp/References")
+        let unknown = Self.document("Mystery.xyz")
+        let setup = Self.setup(["xcode"], mode: .allow, resources: [folder, unknown])
+        let finder = BlockedApp(bundleID: "com.apple.finder", name: "Finder")
+        #expect(setup.conflicts(in: Self.categories, openedBy: [folder.id: finder]).isEmpty, "Finder is never blocked")
+        #expect(setup.conflicts(in: Self.categories, openedBy: [:]).isEmpty, "a document with no known app says nothing")
+    }
+
+    @Test func addingTheAppToAppsToOpenIsTheFixAndItEndsTheConflict() throws {
+        let pdf = Self.document("Aims.pdf")
+        let opened = [pdf.id: Self.preview]
+        // A setup that used Settings' apps keeps them: its own list starts from Settings'.
+        var inherits = Self.setup(["reading"], resources: [pdf])
+        let conflict = try #require(inherits.conflicts(in: Self.categories, openedBy: opened).first)
+        let added = inherits.allow(conflict, settingsLaunchApps: [Self.word])
+        #expect(added)
+        #expect(inherits.launchApps == [Self.word, Self.preview])
+        #expect(inherits.conflicts(in: Self.categories, openedBy: opened).isEmpty)
+        let again = inherits.allow(conflict, settingsLaunchApps: [Self.word])
+        #expect(!again, "a second time adds nothing")
+        #expect(inherits.launchApps?.count == 2)
+
+        // Its own list gains the app after what is there.
+        var own = Self.setup(["xcode"], mode: .allow, launchApps: [Self.word], resources: [pdf])
+        let c2 = try #require(own.conflicts(in: Self.categories, openedBy: opened).first)
+        let added2 = own.allow(c2)
+        #expect(added2)
+        #expect(own.launchApps == [Self.word, Self.preview])
+        #expect(own.conflicts(in: Self.categories, openedBy: opened).isEmpty)
+    }
+
+    @MainActor
+    @Test func theSessionThenReallyDoesNotBlockTheApp() throws {
+        let pdf = Self.document("Aims.pdf")
+        var setup = Self.setup(["reading"], resources: [pdf])
+        let before = try #require(setup.request(categories: Self.categories).resolved(
+            with: StartDefaults(mode: .block, selectedCategoryIDs: [], categories: Self.categories), length: { (25, false) })?.plan)
+        let h = Harness()
+        h.engine.start(before)
+        #expect(h.engine.enforcement?.apps.contains(Self.preview.bundleID) == true, "blocked as it stands")
+
+        let conflict = try #require(setup.conflicts(in: Self.categories, openedBy: [pdf.id: Self.preview]).first)
+        setup.allow(conflict)
+        let after = try #require(setup.request(categories: Self.categories).resolved(
+            with: StartDefaults(mode: .block, selectedCategoryIDs: [], categories: Self.categories), length: { (25, false) })?.plan)
+        let h2 = Harness()
+        h2.engine.start(after)
+        #expect(h2.engine.enforcement?.apps.contains(Self.preview.bundleID) == false, "opened by the session, so never blocked")
+        #expect(after.launchApps == [Self.preview.bundleID])
+    }
+
+    @Test func theSessionsOwnPlanSaysTheSameThing() throws {
+        let pdf = Self.document("Aims.pdf")
+        let setup = Self.setup(["reading"], resources: [pdf])
+        let live = Self.categories.filter { setup.categoryIDs.contains($0.id) }
+        var plan = SessionPlan(goal: "", duration: nil, mode: .block, categories: live, reopensQuitApps: false)
+        plan.resources = setup.resources
+        let opened = [pdf.id: Self.preview]
+        #expect(plan.workspaceConflicts(categories: Self.categories, openedBy: opened).map(\.sentence)
+                == setup.conflicts(in: Self.categories, openedBy: opened).map(\.sentence))
+        plan.launchApps = [Self.preview.bundleID]
+        #expect(plan.workspaceConflicts(categories: Self.categories, openedBy: opened).isEmpty)
+    }
+
+    @MainActor
+    @Test func theOpenersAreFoundOnlyForFilesThatCanBeFound() throws {
+        let w = try Workspace()
+        let pdf = WorkspaceResource.file(at: try w.file("Aims.pdf"), bookmarks: FakeBookmarks())
+        let gone = WorkspaceResource.file(at: try w.file("Gone.pdf"), bookmarks: FakeBookmarks())
+        let folder = WorkspaceResource.file(at: try w.folder("References"), bookmarks: FakeBookmarks())
+        try FileManager.default.removeItem(at: w.root.appendingPathComponent("Gone.pdf"))
+        let finder = FakeAppFinder(byExtension: ["pdf": Self.preview])
+        let found = WorkspaceConflicts.openers(for: [pdf, gone, folder, try page("example.org/a")],
+                                               launcher: WorkspaceLauncher(bookmarks: FakeBookmarks()), finder: finder)
+        #expect(found[pdf.id] == Self.preview)
+        #expect(found[gone.id] == nil, "missing: reported as missing, not as blocked")
+        #expect(found[folder.id]?.bundleID == "com.apple.finder")
+        #expect(found.count == 2)
+    }
+
+    @Test func theCardNamesTheAppOrCountsWhatIsBlocked() throws {
+        let a = Self.document("Aims.pdf"), b = Self.document("Notes.pdf")
+        let one = Self.setup(["reading"], resources: [a]).conflicts(in: Self.categories, openedBy: [a.id: Self.preview])
+        let clean = WorkspaceReport(total: 1, opened: 1)
+        #expect(NidusModel.workspaceCardTitle(setupName: "Reading", report: clean, conflicts: one) == "Reading: Preview is blocked")
+        #expect(NidusModel.workspaceCardLines(report: clean, conflicts: one) == [one[0].cardSentence])
+        let two = Self.setup(["reading"], resources: [a, b]).conflicts(in: Self.categories, openedBy: [a.id: Self.preview, b.id: Self.preview])
+        #expect(NidusModel.workspaceCardTitle(setupName: "Reading", report: clean, conflicts: two) == "Reading: 2 apps are blocked")
+        let mixed = two + (try WorkspaceConflictTests.setup(["https://" + "youtube.com/watch?v=abc"]).conflicts(in: T.categories))
+        #expect(NidusModel.workspaceCardTitle(setupName: "Reading", report: clean, conflicts: mixed) == "Reading: 3 things are blocked")
+    }
+
+    @Test func theFixTitlesAndConfirmationsDifferByKind() throws {
+        let pdf = Self.document("Aims.pdf")
+        let app = try #require(Self.setup(["reading"], resources: [pdf]).conflicts(in: Self.categories, openedBy: [pdf.id: Self.preview]).first)
+        let web = try #require(try WorkspaceConflictTests.setup(["https://" + "youtube.com/watch?v=abc"]).conflicts(in: T.categories).first)
+        #expect(app.fixDone == "Added to Apps to open from the next start" && web.fixDone == "Allowed from the next start")
+        #expect(web.fixTitle == "Allow only this page" && web.cardFixTitle == "Allow only this page")
+        #expect(app.fixTitle == "Add Preview to Apps to open" && app.cardFixTitle == "Add to Apps to open")
+    }
+}
+
+// MARK: - "Uses the popover's project" is the saved choice wherever it starts
+
+@MainActor
+final class FakeProjectTarget: FocusCommandTarget {
+    var setups: [FocusSetup] = []
+    var categories: [FocusCategory] = FocusSetupTests.categories
+    var projects: [FocusProject] = []
+    var selectedProjectID: UUID?
+    private(set) var started: [SessionRequest] = []
+
+    var commandStatus: FocusStatus { FocusStatus(state: .idle) }
+    func startFromOutside(_ request: SessionRequest) -> OutsideStart { started.append(request); return .started }
+    func endFromOutside() -> OutsideEnd { .nothingRunning }
+    func extendSession(by seconds: TimeInterval) {}
+}
+
+@MainActor
+struct SetupFollowsThePopoverProjectTests {
+    typealias T = FocusSetupTests
+    let saved = FocusProject(name: "R01 renewal")
+    let other = FocusProject(name: "Lab notebook")
+
+    func target(_ setup: FocusSetup, popover: UUID?) -> FakeProjectTarget {
+        let target = FakeProjectTarget()
+        target.setups = [setup]
+        target.projects = [saved, other, FocusProject(name: "Teaching", isArchived: true)]
+        target.selectedProjectID = popover
+        return target
+    }
+
+    @Test func aLinkAShortcutAndTheJSONCommandTakeTheSavedChoice() throws {
+        let setup = FocusSetup(name: "Writing", categoryIDs: ["social"])
+        let t = target(setup, popover: saved.id)
+        // A link or a Shortcut: the same request.
+        let request = try t.outsideRequest(NidusLink.Start(preset: "Writing")).get().request
+        #expect(request.projectID == saved.id)
+        // The JSON command.
+        let answer = FocusCommands.respond(to: #"{"action":"start","setup":"Writing"}"#, target: t, ledger: FocusCommandLedger())
+        #expect(answer.contains("started"))
+        #expect(t.started.last?.projectID == saved.id)
+    }
+
+    @Test func noProjectAndItsOwnProjectAreNotTheSavedChoice() throws {
+        let none = FocusSetup(name: "Writing", categoryIDs: ["social"], project: .noProject)
+        #expect(try target(none, popover: saved.id).outsideRequest(NidusLink.Start(preset: "Writing")).get().request.projectID == nil)
+        let own = FocusSetup(name: "Writing", categoryIDs: ["social"], project: .project(other.id))
+        #expect(try target(own, popover: saved.id).outsideRequest(NidusLink.Start(preset: "Writing")).get().request.projectID == other.id)
+    }
+
+    @Test func nothingSavedMeansNoProjectAndADeletedOrArchivedOneIsNeverTaken() throws {
+        let follows = FocusSetup(name: "Writing", categoryIDs: ["social"])
+        #expect(try target(follows, popover: nil).outsideRequest(NidusLink.Start(preset: "Writing")).get().request.projectID == nil)
+        // The saved choice is read through `selectedProjectID`, which drops a
+        // deleted or archived project; one that slips through is dropped here.
+        #expect(try target(follows, popover: UUID()).outsideRequest(NidusLink.Start(preset: "Writing")).get().request.projectID == nil,
+                "deleted")
+        let archived = FocusProject(name: "Old", isArchived: true)
+        let t = target(follows, popover: archived.id)
+        t.projects.append(archived)
+        #expect(try t.outsideRequest(NidusLink.Start(preset: "Writing")).get().request.projectID == nil, "archived")
+    }
+
+    @Test func aStartThatNamesNoSetupIsUnchanged() throws {
+        let t = target(FocusSetup(name: "Writing", categoryIDs: ["social"]), popover: saved.id)
+        #expect(try t.outsideRequest(NidusLink.Start(goal: "Draft")).get().request.projectID == nil,
+                "only a setup follows the popover's project")
+    }
+
+    @Test func theResolverDropsAProjectThatNoLongerExists() throws {
+        // The last guard, shared by every start: an id that points nowhere is no project.
+        let gone = UUID()
+        let setup = FocusSetup(name: "W", categoryIDs: ["social"])
+        let request = setup.startRequest(categories: T.categories, goalDraft: "", popoverProject: gone, projects: [saved])
+        #expect(request.projectID == nil)
+        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: [], categories: T.categories,
+                                     projectName: { id in id == saved.id ? "R01 renewal" : nil })
+        var forced = setup.request(categories: T.categories, popoverProject: gone)
+        #expect(forced.projectID == gone)
+        let plan = try #require(forced.resolved(with: defaults, length: { (25, false) })?.plan)
+        #expect(plan.projectID == nil && plan.projectName == nil)
+        forced = setup.request(categories: T.categories, popoverProject: saved.id)
+        let live = try #require(forced.resolved(with: defaults, length: { (25, false) })?.plan)
+        #expect(live.projectID == saved.id && live.projectName == "R01 renewal")
+    }
+
+    @Test func aSequenceBlockFromTheSetupTakesItToo() throws {
+        let setup = FocusSetup(name: "Writing", categoryIDs: ["social"])
+        let sequence = FocusSequence(steps: [.work(setupID: setup.id), .rest(minutes: 5), .work(setupID: setup.id, projectID: other.id)])
+        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: ["social"], categories: T.categories,
+                                     projectName: { [saved, other] id in [saved, other].first { $0.id == id }?.name })
+        let run = try #require(sequence.resolved(startedAt: Date(), request: {
+            sequence.request(for: $0, setups: [setup], categories: T.categories, popoverProject: saved.id, projectExists: { _ in true })
+        }, plan: { $0.resolved(with: defaults, length: { (25, false) })?.plan }))
+        guard case .work(let first) = run.steps[0], case .work(let second) = run.steps[2] else { Issue.record("shape"); return }
+        #expect(first.projectID == saved.id && first.projectName == "R01 renewal")
+        #expect(second.projectID == other.id, "a step's own project is still the one that counts")
+        // And a project that was deleted is no project.
+        let deleted = try #require(sequence.resolved(startedAt: Date(), request: {
+            sequence.request(for: $0, setups: [setup], categories: T.categories, popoverProject: saved.id, projectExists: { _ in false })
+        }, plan: { $0.resolved(with: defaults, length: { (25, false) })?.plan }))
+        guard case .work(let gone) = deleted.steps[0] else { return }
+        #expect(gone.projectID == nil)
+    }
+
+    @Test func thePopoverAndTheMenuTakeItThroughStartRequest() {
+        let follows = FocusSetup(name: "W", categoryIDs: ["social"])
+        let projects = [saved, other]
+        #expect(follows.startRequest(categories: T.categories, goalDraft: "", popoverProject: saved.id, projects: projects).projectID == saved.id)
+        let none = FocusSetup(name: "W", categoryIDs: ["social"], project: .noProject)
+        #expect(none.startRequest(categories: T.categories, goalDraft: "", popoverProject: saved.id, projects: projects).projectID == nil)
     }
 }

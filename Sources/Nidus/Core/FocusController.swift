@@ -71,6 +71,8 @@ final class FocusController: ObservableObject {
     var opener: any WorkspaceOpening = SystemWorkspaceOpener()
     /// How a document or folder is found again.
     var launcher = WorkspaceLauncher()
+    /// Which app opens a document, to say beforehand when a session blocks it.
+    var appFinder: any DefaultAppFinding = SystemAppFinder()
 
     /// The break after a completed, timed session; 0 for none.
     var breakLength: TimeInterval {

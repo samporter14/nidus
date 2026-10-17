@@ -46,6 +46,28 @@ extension NidusModel {
     }
 }
 
+/// What a render says opens a file: a PDF in Preview, a folder in Finder.
+private struct SampleAppFinder: DefaultAppFinding {
+    func appToOpen(_ url: URL) -> BlockedApp? {
+        if url.hasDirectoryPath { return BlockedApp(bundleID: "com.apple.finder", name: "Finder") }
+        return url.pathExtension == "pdf" ? BlockedApp(bundleID: "com.apple.Preview", name: "Preview") : nil
+    }
+}
+
+extension NidusModel {
+    /// Demo only: "Deep reading", an allow list of Xcode's category with a
+    /// PDF, which opens in Preview, an app that list does not allow.
+    func seedSampleReadingSetup(in folder: URL) -> FocusSetup? {
+        guard Demo.isActive else { return nil }
+        seedSampleCategory()
+        let pdf = folder.appendingPathComponent("Aims Reviewer Notes.pdf")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: pdf.path, contents: Data())
+        return FocusSetup(name: "Deep reading", symbol: "book", minutes: 60, categoryIDs: ["xcode"], mode: .allow,
+                          resources: [.file(at: pdf)])
+    }
+}
+
 extension NidusModel {
     /// Demo only: the two projects a setup can count toward. Not the
     /// projects render's, which also writes sessions into the history.
@@ -123,6 +145,32 @@ extension RenderSurfaces {
                                 title: NidusModel.workspaceCardTitle(setupName: sample.displayName, report: clean, conflicts: conflicts),
                                 lines: lines, state: allowed, openSetup: {}, allow: {}))),
                     width: HUDPresenter.width, name: "card-workspace-allowed", in: directory, padded: true)
+
+        // A document that opens in an app the setup does not allow.
+        guard let reading = model.seedSampleReadingSetup(in: folder) else { return }
+        func stageReading() {
+            model.seedSampleCategory()
+            model.setups = others + [reading]
+        }
+        stageReading()
+        await shoot(FocusSetupPage(model: model, setupID: reading.id, opened: [.documents])
+                        .environment(\.defaultAppFinder, SampleAppFinder())
+                        .background(Color(nsColor: .windowBackgroundColor)),
+                    width: 640, height: 1500, name: "settings-setup-workspace-app", in: directory)
+        var readingPlan = SessionPlan(goal: "", duration: 60 * 60, mode: .allow,
+                                      categories: model.categories.filter { reading.categoryIDs.contains($0.id) },
+                                      reopensQuitApps: false)
+        readingPlan.setupID = reading.id
+        readingPlan.resources = reading.resources
+        let appConflicts = readingPlan.workspaceConflicts(
+            categories: model.categories,
+            openedBy: WorkspaceConflicts.openers(for: reading.resources, launcher: WorkspaceLauncher(), finder: SampleAppFinder()))
+        stageReading()
+        model.presentWorkspaceHUD(clean, conflicts: appConflicts, for: readingPlan)
+        if let request = host.hud.lastRequest {
+            await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
+                        name: "card-workspace-app", in: directory, padded: true)
+        }
         model.setups = others
     }
 }
