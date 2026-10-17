@@ -3,8 +3,8 @@
 //  Nidus
 //
 //  Settings, Setups: the tab with the list of saved setups, and a page for
-//  each one to edit its name, symbol, length, what it blocks and whether it
-//  is strict. Built from the rows in Kit.swift, like the category pages.
+//  each one to edit its name, symbol, length, what it blocks, whether it
+//  is strict, and what it opens when it starts (FocusSetupWorkspaceViews). Built from the rows in Kit.swift, like the category pages.
 //
 
 import SwiftUI
@@ -50,6 +50,9 @@ struct FocusSetupsPage: View {
 struct FocusSetupPage: View {
     @ObservedObject var model: NidusModel
     let setupID: FocusSetup.ID
+    /// Which lines of "When it starts" are open to begin with; none, except
+    /// in a render.
+    var opened: Set<SetupPart> = []
     @FocusState private var nameFocused: Bool
 
     private var setup: FocusSetup? { model.setups.first { $0.id == setupID } }
@@ -137,6 +140,8 @@ struct FocusSetupPage: View {
                         }
                     }
                 }
+
+                SetupWorkspaceSections(model: model, setupID: setupID, opened: opened)
 
                 DropletSettingsCard {
                     DropletControlRow(title: "Order", infoTip: "Where it sits in the popover and the menu.") {

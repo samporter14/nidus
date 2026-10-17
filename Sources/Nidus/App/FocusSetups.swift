@@ -33,12 +33,47 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     /// Used when no goal is typed in the popover.
     var goal: String?
 
+    // What it opens and runs when it starts (0.4). A setup saved by 0.3 has
+    // none of these and inherits everything. For apps and Shortcuts there
+    // are three states, as on `SessionRequest`: nil takes what Settings
+    // says, an empty list or "" means none even if Settings has some, and a
+    // value is the setup's own.
+
+    /// Apps to open, with their names for lists. nil: Settings' apps.
+    var launchApps: [BlockedApp]?
+    /// Shortcut names. nil: Settings'; "": none.
+    var startShortcut: String?
+    var endShortcut: String?
+    /// Pages let through on top of the exceptions its categories carry. It
+    /// never takes one of theirs away. Block lists only.
+    var websiteExceptions: [WebsiteException]
+    /// Documents, folders and web pages opened when it starts. Settings has
+    /// none, so there is nothing to inherit: empty opens nothing.
+    var resources: [WorkspaceResource]
+
+    /// The project its sessions count toward. nil: the popover's current one;
+    /// `.none`: no project even when the popover has one; or its own.
+    var project: SetupProject?
+    /// Minutes of break after a full session. nil: Settings'; 0: none.
+    var breakMinutes: Int?
+    /// What stays blocked during that break. nil: Settings' default rules; an
+    /// empty `BreakRules()` is an unrestricted break even if Settings has rules.
+    var breakRules: BreakRules?
+
+    /// A setup that opens dozens of things is not what a setup is for.
+    static let resourceLimit = 12
+    /// The longest break a setup can give, as a sequence's.
+    static let breakMinutesLimit = 180
+
     static let defaultName = "New setup"
     static let defaultSymbol = "bolt"
 
     init(id: UUID = UUID(), name: String = FocusSetup.defaultName, symbol: String = FocusSetup.defaultSymbol,
          minutes: Int = 25, categoryIDs: [String] = [], mode: SessionPlan.Mode = .block,
-         strict: Bool = false, goal: String? = nil) {
+         strict: Bool = false, goal: String? = nil, launchApps: [BlockedApp]? = nil,
+         startShortcut: String? = nil, endShortcut: String? = nil,
+         websiteExceptions: [WebsiteException] = [], resources: [WorkspaceResource] = [],
+         project: SetupProject? = nil, breakMinutes: Int? = nil, breakRules: BreakRules? = nil) {
         self.id = id
         self.name = name
         self.symbol = symbol
@@ -47,6 +82,14 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         self.mode = mode
         self.strict = strict
         self.goal = goal
+        self.launchApps = launchApps
+        self.startShortcut = startShortcut
+        self.endShortcut = endShortcut
+        self.websiteExceptions = websiteExceptions
+        self.resources = resources
+        self.project = project
+        self.breakMinutes = breakMinutes
+        self.breakRules = breakRules
     }
 
     /// Only the id and name must be there. A field a later version adds, or
@@ -62,6 +105,17 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         mode = (try? container.decodeIfPresent(SessionPlan.Mode.self, forKey: .mode)) ?? .block
         strict = (try? container.decodeIfPresent(Bool.self, forKey: .strict)) ?? false
         goal = (try? container.decodeIfPresent(String.self, forKey: .goal)) ?? nil
+        // 0.4. A missing field is "inherit", never "none": the apps are read
+        // as a list only when there is one, element by element. One that does
+        // not decode loses itself, not the setup or the list around it.
+        launchApps = container.decodeTolerant(LossyArray<BlockedApp>.self, forKey: .launchApps)?.elements
+        startShortcut = container.decodeTolerant(String.self, forKey: .startShortcut)
+        endShortcut = container.decodeTolerant(String.self, forKey: .endShortcut)
+        websiteExceptions = container.decodeLossy([WebsiteException].self, forKey: .websiteExceptions)
+        resources = container.decodeLossy([WorkspaceResource].self, forKey: .resources)
+        project = container.decodeTolerant(SetupProject.self, forKey: .project)
+        breakMinutes = container.decodeTolerant(Int.self, forKey: .breakMinutes).map { min(max($0, 0), Self.breakMinutesLimit) }
+        breakRules = container.decodeTolerant(BreakRules.self, forKey: .breakRules)
     }
 
     /// The name as shown: a cleared name is never an empty button or menu item.
@@ -91,12 +145,47 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     /// set, never nil: nil takes the popover's current choice, which would
     /// run a different session from the one on the button. A setup left with
     /// no categories sends `[]`, not nil, for the same reason.
-    func request(categories: [FocusCategory], goalDraft: String = "") -> SessionRequest {
-        SessionRequest(goal: Self.resolvedGoal(typed: goalDraft, saved: goal),
-                       minutes: minutes,
-                       categoryIDs: liveCategoryIDs(in: categories),
-                       mode: mode,
-                       strict: strict)
+    ///
+    /// What the setup opens and runs goes in as well, and `setupID` says
+    /// where it came from. `startSession` copies all of it into the plan, so
+    /// editing the setup afterwards changes nothing about a session running.
+    ///
+    /// `popoverProject` is the project the popover has chosen: a setup that
+    /// doesn't name one of its own (or none) counts toward it. Callers that
+    /// have no popover choice (a sequence, a link) leave it nil.
+    func request(categories: [FocusCategory], goalDraft: String = "", popoverProject: UUID? = nil) -> SessionRequest {
+        var request = SessionRequest(goal: Self.resolvedGoal(typed: goalDraft, saved: goal),
+                                     minutes: minutes,
+                                     categoryIDs: liveCategoryIDs(in: categories),
+                                     mode: mode,
+                                     strict: strict)
+        request.setupID = id
+        request.launchApps = launchApps.map { apps in
+            var seen = Set<String>()
+            return apps.map(\.bundleID).filter { seen.insert($0).inserted }
+        }
+        request.startShortcut = startShortcut
+        request.endShortcut = endShortcut
+        request.websiteExceptions = websiteExceptions
+        request.resources = resources
+        switch project {
+        case nil: request.projectID = popoverProject
+        case .noProject: request.projectID = nil
+        case .project(let id): request.projectID = id
+        }
+        request.breakMinutes = breakMinutes
+        request.breakRules = breakRules
+        return request
+    }
+
+    /// The request a click on the setup makes: `request`, with the project the
+    /// popover has chosen taken when the setup doesn't name one, and a project
+    /// archived or deleted since counted as none, quietly.
+    func startRequest(categories: [FocusCategory], goalDraft: String, popoverProject: UUID?,
+                      projects: [FocusProject]) -> SessionRequest {
+        var request = request(categories: categories, goalDraft: goalDraft, popoverProject: popoverProject)
+        request.projectID = FocusProject.choosable(request.projectID, in: projects)
+        return request
     }
 
     /// A setup from what the popover has chosen now: its length, categories,
@@ -148,7 +237,16 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         let names = categories.filter { live.contains($0.id) }.map(\.name)
         var parts = [FocusFormat.duration(minutes: minutes), Self.scope(names: names, mode: mode)]
         if strict { parts.append("strict") }
+        if let opens = opensSummary { parts.append(opens) }
         return parts.joined(separator: " · ")
+    }
+
+    /// "opens 3 items": its own apps, documents, folders and pages. Nothing
+    /// for a setup that opens none, and not counting the apps Settings
+    /// opens for every session.
+    var opensSummary: String? {
+        let count = (launchApps?.count ?? 0) + resources.count
+        return count == 0 ? nil : "opens \(count) \(count == 1 ? "item" : "items")"
     }
 
     /// "Social, Video"; "Only Xcode" for an allow list; a count once the
@@ -196,6 +294,41 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     }
 }
 
+// MARK: - A setup's project
+
+/// A setup's own say about its project, when it has one. Stored as "none" or
+/// the project's id, so a value from another version that this one can't read
+/// is dropped (the setup then follows the popover) rather than failing.
+enum SetupProject: Codable, Equatable, Sendable {
+    /// No project, even when the popover has one chosen.
+    case noProject
+    case project(UUID)
+
+    init(from decoder: Decoder) throws {
+        let text = try decoder.singleValueContainer().decode(String.self)
+        if text == "none" {
+            self = .noProject
+        } else if let id = UUID(uuidString: text) {
+            self = .project(id)
+        } else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: "Not a project"))
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .noProject: try container.encode("none")
+        case .project(let id): try container.encode(id.uuidString)
+        }
+    }
+
+    var id: UUID? {
+        if case .project(let id) = self { return id }
+        return nil
+    }
+}
+
 // MARK: - The model's side
 
 extension NidusModel {
@@ -213,7 +346,8 @@ extension NidusModel {
     func start(_ setup: FocusSetup) -> Bool {
         let current = categories
         guard setup.problem(in: current) == nil else { return false }
-        return startSession(setup.request(categories: current, goalDraft: goalDraft))
+        return startSession(setup.startRequest(categories: current, goalDraft: goalDraft,
+                                               popoverProject: selectedProjectID, projects: projects))
     }
 
     func updateSetup(_ id: FocusSetup.ID, _ change: (inout FocusSetup) -> Void) {

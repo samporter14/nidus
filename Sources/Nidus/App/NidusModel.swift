@@ -113,6 +113,9 @@ final class NidusModel: NSObject, ObservableObject {
         controller.onSessionEvent = { [weak self] event in self?.sessionDidChange(event) }
         controller.onSnoozeEnding = { [weak self] item, end in self?.presentSnoozeEndingHUD(for: item, at: end) }
         controller.onBreakEnding = { [weak self] end, plan in self?.presentBreakEndingHUD(at: end, next: plan) }
+        controller.onWorkspaceOpened = { [weak self] report, plan in self?.workspaceDidOpen(report, for: plan) }
+        // A demo or a render opens no app, file, page or Shortcut on this Mac.
+        if Demo.isActive { controller.opener = NullWorkspaceOpener() }
         // Views observe the model; forward the controller's once-a-second
         // clock and the preferences, so one object drives every surface.
         controller.objectWillChange
@@ -173,7 +176,8 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask = nil
         stopWeeklyRecap()
         stopInbox()
-        for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
+        for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID,
+                   Self.workspaceHUDID] { host?.hud.dismiss(id: id) }
         // Quitting puts blocked tabs back; demos and renders never touch
         // real browsers.
         controller?.stop(restoringTabs: !Demo.isActive)

@@ -24,16 +24,20 @@ struct WebsiteExceptionsEditor: View {
     /// True while a session is running: it keeps the exceptions it started
     /// with, so the section says that changes wait for the next one.
     var sessionIsRunning = false
+    /// Only the rows, with no section or heading of their own, for a page
+    /// that puts the editor under a disclosure of its own.
+    var isEmbedded = false
 
     @State private var address: String
     @State private var kind: WebsiteException.Kind
     @FocusState private var addressFocused: Bool
 
     init(exceptions: Binding<[WebsiteException]>, websites: [String], sessionIsRunning: Bool = false,
-         address: String = "", kind: WebsiteException.Kind = .exact) {
+         embedded: Bool = false, address: String = "", kind: WebsiteException.Kind = .exact) {
         _exceptions = exceptions
         self.websites = websites
         self.sessionIsRunning = sessionIsRunning
+        isEmbedded = embedded
         _address = State(initialValue: address)
         _kind = State(initialValue: kind)
     }
@@ -43,45 +47,52 @@ struct WebsiteExceptionsEditor: View {
     }
 
     var body: some View {
-        DropletSettingsSection {
-            VStack(alignment: .leading, spacing: 2) {
-                settingsSectionHeader("Exceptions")
-                Text("Let one page through while the rest of a blocked website stays blocked.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-            }
-        } content: {
-            DropletSettingsCard {
-                ForEach(exceptions) { exception in
-                    DropletControlRow(title: exception.displayAddress, infoTip: detail(of: exception)) {
-                        Button {
-                            exceptions.removeAll { $0 == exception }
-                        } label: {
-                            Image(systemName: "minus.circle")
-                        }
-                        .buttonStyle(.borderless)
-                        .help("Remove the exception for \(exception.displayAddress)")
-                        .accessibilityLabel("Remove the exception for \(exception.displayAddress)")
-                    }
-                }
-                DropletControlRow(title: exceptions.isEmpty ? "No exceptions yet" : "Add another") {
-                    TextField("Paste a page address", text: $address)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 240)
-                        .labelsHidden()
-                        .focused($addressFocused)
-                        .onSubmit(add)
-                        .accessibilityLabel("Address of the page to let through")
-                }
-                if !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    adding
-                }
-                if sessionIsRunning {
-                    Text("A session that is running keeps the exceptions it started with. Changes apply to the next one.")
-                        .font(.callout)
+        if isEmbedded {
+            rows
+        } else {
+            DropletSettingsSection {
+                VStack(alignment: .leading, spacing: 2) {
+                    settingsSectionHeader("Exceptions")
+                    Text("Let one page through while the rest of a blocked website stays blocked.")
+                        .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
+            } content: {
+                DropletSettingsCard { rows }
             }
+        }
+    }
+
+    @ViewBuilder
+    private var rows: some View {
+        ForEach(exceptions) { exception in
+            DropletControlRow(title: exception.displayAddress, infoTip: detail(of: exception)) {
+                Button {
+                    exceptions.removeAll { $0 == exception }
+                } label: {
+                    Image(systemName: "minus.circle")
+                }
+                .buttonStyle(.borderless)
+                .help("Remove the exception for \(exception.displayAddress)")
+                .accessibilityLabel("Remove the exception for \(exception.displayAddress)")
+            }
+        }
+        DropletControlRow(title: exceptions.isEmpty ? "No exceptions yet" : "Add another") {
+            TextField("Paste a page address", text: $address)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 240)
+                .labelsHidden()
+                .focused($addressFocused)
+                .onSubmit(add)
+                .accessibilityLabel("Address of the page to let through")
+        }
+        if !address.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            adding
+        }
+        if sessionIsRunning {
+            Text("A session that is running keeps the exceptions it started with. Changes apply to the next one.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
         }
     }
 

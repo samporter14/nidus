@@ -167,6 +167,8 @@ extension NidusModel {
         guard let host else { return }
         let name = item.displayName
         let key = item.snoozeKey
+        // The workspace card has just said this page is blocked, and why.
+        if cards.suppressesBlockedCard(for: key) { return }
         // Its pause is on screen already, counting down. Hearing it was
         // blocked again would replace the card and lose the count. (Only
         // while that card is the one showing: if another has taken its
@@ -688,6 +690,10 @@ final class FocusCardState {
     /// The answer to "did you finish?" for the wrap-up card now up: set by
     /// the card's buttons or the menu bar's items, cleared by the next card.
     var finishAnswer: Bool?
+    /// Pages the workspace card has just named as blocked (their snooze
+    /// keys) and until when their own block card stays quiet.
+    var workspaceQuietKeys: Set<String> = []
+    var workspaceQuietUntil = Date.distantPast
     /// The next step the wrap-up card is collecting, if it offers one.
     var nextStep: NextStepSession?
 }
