@@ -499,6 +499,12 @@ struct FocusCategoryPage: View {
                     }
                 }
 
+                // Only a category with websites has anything to make an exception to.
+                if !category.websites.isEmpty {
+                    WebsiteExceptionsEditor(exceptions: exceptionsBinding, websites: category.websites,
+                                            sessionIsRunning: model.isActive)
+                }
+
                 DropletSettingsCard {
                     DropletControlRow(title: "Delete this category") {
                         Button("Delete", role: .destructive) { model.deleteCategory(categoryID) }
@@ -513,6 +519,13 @@ struct FocusCategoryPage: View {
         Binding(
             get: { category?.name ?? "" },
             set: { name in model.updateCategory(categoryID) { $0.name = name } }
+        )
+    }
+
+    private var exceptionsBinding: Binding<[WebsiteException]> {
+        Binding(
+            get: { category?.websiteExceptions ?? [] },
+            set: { exceptions in model.updateCategory(categoryID) { $0.websiteExceptions = exceptions } }
         )
     }
 
