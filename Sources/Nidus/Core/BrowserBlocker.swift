@@ -88,11 +88,15 @@ struct BlockPage: Sendable {
     /// `snoozeKey` is what the page's Snooze link asks Nidus to let
     /// through: the list entry that matched, so `m.youtube.com` snoozes
     /// `youtube.com`.
-    func url(blocking original: String, goal: String = "", snoozeMinutes: Int = 3, snoozeKey: String = "") -> String {
+    /// `onBreak` is for a break that keeps sites blocked: the page says so, not
+    /// "until your session ends". It is left out of the address otherwise.
+    func url(blocking original: String, goal: String = "", snoozeMinutes: Int = 3, snoozeKey: String = "",
+             onBreak: Bool = false) -> String {
         fileURL.absoluteString
             + "?g=" + Self.encode(goal)
             + "&m=\(snoozeMinutes)"
             + "&s=" + Self.encode(snoozeKey)
+            + (onBreak ? "&b=1" : "")
             + "&u=" + Self.encode(original)
     }
 
@@ -182,7 +186,7 @@ struct BlockPage: Sendable {
       // ("youtube.com/shorts"), or the site itself when there is none.
       const key = (q.get("s") || "").trim();
       const what = key || host;
-      document.getElementById("site").textContent = what + " is blocked until your session ends.";
+      document.getElementById("site").textContent = what + " is blocked until your " + (q.get("b") ? "break ends" : "session ends") + ".";
       document.title = what + " is blocked";
       // m=0: a strict session, which has no snooze. Missing: 3.
       const m = parseInt(q.get("m"), 10);
@@ -531,11 +535,13 @@ struct BrowserBlocker: Sendable {
 
     /// The tabs the rule blocks and where each goes. No Apple Events, so the
     /// choice of tabs is testable.
-    func redirects(for tabs: [TabLocation], rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3) -> [TabRedirect] {
+    func redirects(for tabs: [TabLocation], rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3,
+                   onBreak: Bool = false) -> [TabRedirect] {
         tabs.filter { rule.blocks($0.url) }.map { tab in
             let key = rule.snoozeKey(for: tab.url)
             return TabRedirect(tab: tab,
-                               page: blockPage.url(blocking: tab.url, goal: goal, snoozeMinutes: snoozeMinutes, snoozeKey: key),
+                               page: blockPage.url(blocking: tab.url, goal: goal, snoozeMinutes: snoozeMinutes, snoozeKey: key,
+                                                   onBreak: onBreak),
                                key: key)
         }
     }
@@ -556,9 +562,11 @@ struct BrowserBlocker: Sendable {
     /// Points each tab the rule blocks at the block page. Returns the snooze
     /// key of each tab it redirected.
     @discardableResult
-    func sweep(_ browser: BrowserProfile, rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3) throws(AppleEventError) -> [String] {
+    func sweep(_ browser: BrowserProfile, rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3,
+               onBreak: Bool = false) throws(AppleEventError) -> [String] {
         var redirected: [String] = []
-        for redirect in redirects(for: try tabs(in: browser), rule: rule, goal: goal, snoozeMinutes: snoozeMinutes) {
+        for redirect in redirects(for: try tabs(in: browser), rule: rule, goal: goal, snoozeMinutes: snoozeMinutes,
+                                  onBreak: onBreak) {
             if try replace(redirect.tab, in: browser, with: redirect.page) {
                 redirected.append(redirect.key)
             }

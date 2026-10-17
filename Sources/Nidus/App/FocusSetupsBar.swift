@@ -23,11 +23,11 @@ struct FocusSetupsBar: View {
     static let inlineLimit = 4
     static let inlineWhenMore = 3
 
-    /// Whether the bar has anything to show. With no setups it is nothing at
-    /// all, not an empty row: the popover's own controls stay as they were,
-    /// and a first setup is made in Settings or from the menu there.
+    /// Whether the bar has anything to show. With no setups and no sequences
+    /// it is nothing at all, not an empty row: the popover's own controls stay
+    /// as they were, and a first setup is made in Settings or from the menu there.
     static func isVisible(model: NidusModel) -> Bool {
-        !model.setups.isEmpty
+        !model.setups.isEmpty || !model.sequences.isEmpty
     }
 
     /// Which sit in the row and which go under More.
@@ -45,6 +45,7 @@ struct FocusSetupsBar: View {
                 ForEach(inline) { setupButton($0) }
                 if !overflow.isEmpty { moreMenu }
                 Spacer(minLength: DroppySpacing.sm)
+                if !model.sequences.isEmpty { sequencesMenu }
                 saveButton
             }
             .controlSize(.small)
@@ -99,6 +100,35 @@ struct FocusSetupsBar: View {
         .buttonStyle(.bordered)
         .fixedSize()
         .accessibilityLabel("More setups")
+    }
+
+    // MARK: Sequences
+
+    /// Icon only, beside the plus: a menu of the saved sequences, each with
+    /// its summary. One that can't start is dimmed, with the reason in its help.
+    private var sequencesMenu: some View {
+        Menu {
+            ForEach(model.sequences) { sequence in
+                let problem = model.problem(of: sequence)
+                Button {
+                    model.startSequence(sequence)
+                } label: {
+                    Label("\(sequence.displayName): \(sequence.summary(setups: model.setups))",
+                          systemImage: FocusSequencesMenu.symbol)
+                }
+                .disabled(problem != nil)
+                .help(problem?.message ?? sequence.summary(setups: model.setups))
+            }
+            Divider()
+            Button("Edit sequences\u{2026}", action: model.openSetupsPage)
+        } label: {
+            Image(systemName: FocusSequencesMenu.symbol)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Start a sequence")
+        .accessibilityLabel("Start a sequence")
     }
 
     // MARK: Saving

@@ -55,6 +55,9 @@ final class NidusModel: NSObject, ObservableObject {
     private var welcomeTask: Task<Void, Never>?
     /// Browsers already warned about this session, so each is said once.
     private var warnedBrowsers: Set<String> = []
+    /// A sequence's block ended and the next began in the same moment: the
+    /// `.started` that follows must not take down the card for the first.
+    private var nextBlockFollowedEnd = false
     /// The last recorded session with a goal, until "did you finish?" is
     /// answered or the next session starts. The menu bar asks too.
     private(set) var pendingFinish: (id: SessionEntry.ID, goal: String)?
@@ -83,6 +86,9 @@ final class NidusModel: NSObject, ObservableObject {
         let controller = FocusController(directory: host.environment.containerDirectory,
                                          dropletID: Self.id)
         self.controller = controller
+        // A demo or render draws sample sessions and breaks, some with rules
+        // of their own: none of them may quit an app or ask a browser.
+        controller.blocksNothing = Demo.isActive
         plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
         startInbox(host: host)
@@ -185,42 +191,37 @@ final class NidusModel: NSObject, ObservableObject {
     /// when a block list session would block nothing.
     @discardableResult
     func startSession(_ request: SessionRequest) -> Bool {
-        guard let controller, !isActive, !isOnBreak else { return false }
-        let mode = request.mode ?? mode
-        let ids = request.categoryIDs ?? selectedCategoryIDs
-        let chosen = categories.filter { ids.contains($0.id) }
-        guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
-        // A length the request didn't give: the next meeting if it was chosen
-        // (read again now, in case it moved), else an "until" time, else the
-        // popover's length.
-        let meetingMinutes = request.minutes == nil ? meetings.minutesToChosenMeeting() : nil
-        let minutes = request.minutes ?? meetingMinutes ?? minutesForNextStart()
-        var plan = SessionPlan(
-            goal: (request.goal ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-            duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
-            mode: mode,
-            categories: chosen,
-            reopensQuitApps: reopensQuitApps,
-            launchApps: request.launchApps ?? launchApps.map(\.bundleID),
-            startShortcut: request.startShortcut.map { $0.isEmpty ? nil : $0 } ?? startShortcut,
-            endShortcut: request.endShortcut.map { $0.isEmpty ? nil : $0 } ?? endShortcut
-        )
-        plan.strict = request.strict ?? strictMode
-        plan.setupID = request.setupID
-        plan.projectID = request.projectID
-        plan.projectName = request.projectID.flatMap(projectNameForPlan)
-        // A request's own break, else Settings' (`breakLength` nil), as before.
-        plan.breakLength = request.breakMinutes.map { TimeInterval(max(0, $0) * 60) }
-        plan.breakRules = request.breakRules ?? defaultBreakRules
-        plan.websiteExceptions = mode == .block ? websiteExceptions(for: chosen, adding: request.websiteExceptions) : []
-        plan.resources = request.resources
-        plan.sequenceStep = request.sequenceStep
+        guard let controller, canStartNew else { return false }
+        guard let resolved = resolveSession(request) else { return false }
+        let plan = resolved.plan
         controller.start(plan)
-        noteFixedEnd(request.hasFixedEnd || meetingMinutes != nil)
+        noteFixedEnd(request.hasFixedEnd || resolved.endsAtMeeting)
         rememberGoal(plan.goal)
         host?.feedback.play(.success)
         if request.asksBrowserAccess { askBrowsersNeedingConsent() }
         return true
+    }
+
+    /// Nothing is on: no session, no break (and so no sequence). The guard of
+    /// every new start, a sequence's first block included.
+    var canStartNew: Bool { !isActive && !isOnBreak }
+
+    /// The plan a request starts, from Settings and the popover's choices:
+    /// what `startSession` commits to, and what each work block of a sequence
+    /// is resolved to when the sequence starts. Starts nothing.
+    func resolveSession(_ request: SessionRequest) -> ResolvedSession? {
+        request.resolved(with: startDefaults) {
+            let meeting = meetings.minutesToChosenMeeting()
+            return (meeting ?? minutesForNextStart(), meeting != nil)
+        }
+    }
+
+    /// What a request leaves unsaid.
+    var startDefaults: StartDefaults {
+        StartDefaults(mode: mode, selectedCategoryIDs: selectedCategoryIDs, categories: categories,
+                      reopensQuitApps: reopensQuitApps, launchApps: launchApps.map(\.bundleID),
+                      startShortcut: startShortcut, endShortcut: endShortcut, strict: strictMode,
+                      defaultBreakRules: defaultBreakRules, projectName: { [self] in projectNameForPlan($0) })
     }
 
     /// Starts the last session again, from the wrap-up card.
@@ -323,6 +324,8 @@ final class NidusModel: NSObject, ObservableObject {
             controller.engine.startBreak(plan: next, length: 5 * 60)
             presentBreakEndingHUD(at: Date().addingTimeInterval(12), next: next)
             return
+        case "break-rules", "sequence-block", "sequence-break", "sequence-direct", "sequences":
+            return runSequenceScenario(scenario)
         case "welcome": controller.end(); return presentWelcomeHUD()
         case "setups": controller.end(); return seedSampleSetups()
         case "inbox": controller.end(); return seedSampleInbox()
@@ -390,6 +393,16 @@ final class NidusModel: NSObject, ObservableObject {
             controller.end()
             controller.engine.startBreak(plan: final.plan, length: 5 * 60)
             presentWrapUpHUD(for: final, completed: true)
+        case "wrapup-break-rules":
+            // The card as a break with rules begins: what stays blocked and
+            // until when, and the reminder.
+            guard var final = controller.engine.session else { break }
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            final.plan.breakRules = Self.sampleBreakRules
+            controller.end()
+            controller.engine.startBreak(plan: final.plan, length: 5 * 60)
+            presentWrapUpHUD(for: final, completed: true)
         case "snooze":
             controller.engine.recordBlock("youtube.com", name: "youtube.com")
             controller.snooze("youtube.com")
@@ -408,12 +421,18 @@ final class NidusModel: NSObject, ObservableObject {
         switch event {
         case .started:
             warnedBrowsers.removeAll()
-            pendingFinish = nil
+            // A sequence's next block that began the moment the last one
+            // ended leaves that block's card and question up.
+            let straightAfterEnd = nextBlockFollowedEnd
+            nextBlockFollowedEnd = false
+            if !straightAfterEnd {
+                pendingFinish = nil
+                // Its question has no answer to take now.
+                host?.hud.dismiss(id: Self.completedHUDID)
+            }
             // A one-off belongs to the Start it was set for, however it came.
             untilTarget = nil
             customLengthDraft = nil
-            // Its question has no answer to take now.
-            host?.hud.dismiss(id: Self.completedHUDID)
             host?.hud.dismiss(id: Self.breakHUDID)
             // Last week's recap can wait; this session is now.
             host?.hud.dismiss(id: Self.recapHUDID)
@@ -432,7 +451,9 @@ final class NidusModel: NSObject, ObservableObject {
                                  askAbout: pendingFinish?.goal)
             }
             goalDraft = ""
-            menuBar?.sessionDidEnd(completed: reason == .completed)
+            // The next block is already running: the glyph stays a brain.
+            nextBlockFollowedEnd = engine?.session != nil
+            if !nextBlockFollowedEnd { menuBar?.sessionDidEnd(completed: reason == .completed) }
         case .paused, .resumed, .breakEnded:
             menuBar?.sync()
         default:
@@ -615,7 +636,7 @@ extension NidusModel {
 
     static let recentGoalLimit = 5
 
-    fileprivate func rememberGoal(_ goal: String) {
+    func rememberGoal(_ goal: String) {
         let goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
         guard recordsHistory, !goal.isEmpty else { return }
         var goals = recentGoals.filter { $0.caseInsensitiveCompare(goal) != .orderedSame }
