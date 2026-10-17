@@ -452,7 +452,8 @@ extension RenderSurfaces {
             let conflict = FocusSchedule.conflict(for: run, spans: [span], now: start.addingTimeInterval(-58))
             model.presentHeadsUp(for: run, conflict: conflict)
             if let request = host.hud.lastRequest {
-                await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
+                // As tall as the card measures in the real presenter.
+                await shoot(HUDCardView(content: request.content), width: HUDPresenter.width, height: 94,
                             name: name, in: directory, padded: true)
             }
         }

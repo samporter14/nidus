@@ -669,7 +669,9 @@ struct FocusScheduleHeadsUpCard: View {
     var body: some View {
         if let choices {
             conflictBody(choices)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                // Without a floor a window around it may shrink until the
+                // line wraps letter by letter, and call that its least height.
+                .frame(minWidth: 340, maxWidth: .infinity, alignment: .leading)
         } else {
             ViewThatFits(in: .horizontal) {
                 row(showsSymbol: true, last: false)
