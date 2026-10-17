@@ -250,9 +250,15 @@ struct FocusSequence: Codable, Identifiable, Equatable, Sendable {
     /// "40 min writing \u{2192} 10 min break \u{2192} 25 min figures".
     func summary(setups: [FocusSetup]) -> String {
         steps.map { step in
-            let length = FocusFormat.duration(minutes: step.minutes)
+            let length = Self.lengthText(step.minutes)
             return step.isWork ? "\(length) \(label(of: step, setups: setups))" : "\(length) break"
         }.joined(separator: " \u{2192} ")
+    }
+
+    /// "25 min". A length of nothing is not "open-ended" here, since a
+    /// sequence has none of those: the plan says what is wrong, plainly.
+    static func lengthText(_ minutes: Int) -> String {
+        minutes > 0 ? FocusFormat.duration(minutes: minutes) : "0 min"
     }
 
     var workBlockCount: Int { steps.filter(\.isWork).count }
@@ -264,8 +270,8 @@ struct FocusSequence: Codable, Identifiable, Equatable, Sendable {
     /// "3 blocks \u{00B7} 1 hr 15 min work \u{00B7} 1 hr 25 min in all".
     func totals() -> String {
         let blocks = workBlockCount
-        var parts = ["\(blocks) \(blocks == 1 ? "block" : "blocks")", "\(FocusFormat.duration(minutes: workMinutes)) of work"]
-        if totalMinutes != workMinutes { parts.append("\(FocusFormat.duration(minutes: totalMinutes)) in all") }
+        var parts = ["\(blocks) \(blocks == 1 ? "block" : "blocks")", "\(Self.lengthText(workMinutes)) of work"]
+        if totalMinutes != workMinutes { parts.append("\(Self.lengthText(totalMinutes)) in all") }
         return parts.joined(separator: " \u{00B7} ")
     }
 

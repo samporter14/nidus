@@ -424,6 +424,12 @@ struct FocusSequenceTests {
         #expect(unnamed.summary(setups: [setup]) == "1 hr 30 min Deep work \u{2192} 15 min focus")
     }
 
+    @Test func aLengthOfNothingIsNeverCalledOpenEnded() {
+        let sequence = FocusSequence(steps: [.work(minutes: 0, goal: "a")])
+        #expect(sequence.summary(setups: []) == "0 min a")
+        #expect(sequence.totals() == "1 block \u{00B7} 0 min of work")
+    }
+
     @Test func aGoodOneHasNoProblems() {
         #expect(FocusSequence.starter().problems(in: context()).isEmpty)
     }
