@@ -98,3 +98,79 @@ struct IdleTests {
         controller.stop()
     }
 }
+
+/// The distraction inbox keeps what you typed or saved, on this Mac, and does
+/// nothing with it. The network scan above already covers its sources; this
+/// holds what is particular to it.
+@MainActor
+struct InboxPrivacyTests {
+    private func source(_ name: String) throws -> String {
+        let file = try #require(NoNetworkTests.dropletSources.first { $0.lastPathComponent == name }, "\(name) is not scanned")
+        return try String(contentsOf: file, encoding: .utf8)
+    }
+
+    @Test func theInboxFilesAreInTheScan() {
+        let names = Set(NoNetworkTests.dropletSources.map(\.lastPathComponent))
+        #expect(names.isSuperset(of: ["FocusInbox.swift", "KeyShortcut.swift", "FocusInboxViews.swift", "FocusCapture.swift"]))
+    }
+
+    @Test func theStoreAndTheShortcutAreAsPureAsTheCore() throws {
+        for name in ["FocusInbox.swift", "KeyShortcut.swift"] {
+            let text = try source(name)
+            for api in ["import AppKit", "import SwiftUI", "NSWorkspace", "NSEvent", "Process(", "NSAppleScript"] {
+                #expect(!text.contains(api), "\(name) uses \(api)")
+            }
+        }
+    }
+
+    @Test func nothingInTheInboxSurfacesOpensAnythingByItself() throws {
+        // An address opens through the model's one opener, on Open's click.
+        for name in ["FocusInboxViews.swift", "FocusCapture.swift", "FocusInboxRender.swift"] {
+            let text = try source(name)
+            for api in ["NSWorkspace", "open(url", "openApplication", "NSAppleScript", "Process(", "/usr/bin/"] {
+                #expect(!text.contains(api), "\(name) uses \(api)")
+            }
+        }
+    }
+
+    @Test func itWatchesNoKeysButItsOwnShortcut() {
+        // A hot key asks macOS about one combination. These would read the keyboard.
+        for api in ["addGlobalMonitorForEvents", "CGEvent.tapCreate", "CGEventTapCreate", "IOHIDManager", "AXIsProcessTrusted"] {
+            for file in NoNetworkTests.dropletSources {
+                let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+                #expect(!text.contains(api), "\(file.lastPathComponent) uses \(api)")
+            }
+        }
+    }
+
+    @Test func theFileHoldsOnlyWhatWasGivenAndStaysInNidusFolder() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nidus-inbox-privacy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let inbox = FocusInbox(directory: folder)
+        inbox.add(text: "Email Dana", link: "https://example.com/page?x=1")
+        inbox.add(text: "just words")
+        let token = try #require(InboxSaveToken.loadOrCreate(in: folder))
+        _ = inbox.saveFromBlockPage(url: "https://example.org/a", token: token)
+
+        let names = try FileManager.default.contentsOfDirectory(atPath: folder.path).sorted()
+        #expect(names == [InboxSaveToken.fileName, FocusInbox.fileName].sorted(), "two files, both in the folder it was given")
+
+        let data = try Data(contentsOf: folder.appendingPathComponent(FocusInbox.fileName))
+        let root = try #require(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let items = try #require(root["items"] as? [[String: Any]])
+        #expect(items.count == 3)
+        // No title, icon, preview, page text or referrer: those would have to be fetched.
+        let allowed: Set<String> = ["id", "text", "url", "source", "createdAt", "completedAt"]
+        for item in items { #expect(Set(item.keys).isSubset(of: allowed), "\(item.keys)") }
+        // The token is not in the inbox, and not in preferences-shaped data.
+        #expect(!(String(data: data, encoding: .utf8) ?? "").contains(token))
+    }
+
+    @Test func theTokenFileIsOnlyReadableByThePerson() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nidus-inbox-privacy-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        _ = InboxSaveToken.loadOrCreate(in: folder)
+        let attributes = try FileManager.default.attributesOfItem(atPath: folder.appendingPathComponent(InboxSaveToken.fileName).path)
+        #expect((attributes[.posixPermissions] as? Int) == 0o600)
+    }
+}

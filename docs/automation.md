@@ -125,6 +125,7 @@ Focus). Then open the shortcut's details and give it a key.
 | `nidus://toggle` | Ends a session, or starts the last one again. Refused during a strict one. |
 | `nidus://popover` | Opens the popover. |
 | `nidus://snooze?site=youtube.com` | Snoozes one site. The block page uses it. |
+| `nidus://save?u=<address>&k=<token>` | Saves an address in the inbox. The block page's Save for later uses it, and it is ignored without the token. See [Save for later](#save-for-later). |
 
 What `nidus://start` takes:
 
@@ -158,6 +159,52 @@ Launch Link. Or open Settings → Setups, choose the setup, and press Copy
 beside Launch link. Either puts `nidus://start?preset=<id>` on the clipboard.
 The id belongs to that setup on that Mac, and renaming the setup doesn't
 break the link. The goal isn't in it.
+
+## Save for later
+
+The block page has a Save for later button beside Snooze. It opens
+`nidus://save?u=<address>&k=<token>`, where `u` is the blocked page's address,
+URL-encoded (`encodeURIComponent`), and `k` is the token the page was
+installed with. Nidus puts the address in its inbox (Settings → General →
+Inbox) and does nothing else. The page then says "Saved for later" on its own.
+It can't hear back from Nidus, so it says what it asked for.
+
+- **Nothing else happens.** A save link doesn't snooze or unblock anything,
+  doesn't open or navigate to the address, and doesn't pause, shorten or end
+  a session. A strict session has the button too, because saving doesn't
+  loosen it.
+- **The token.** Any web page can open a `nidus://` link, and a save would put
+  its address in your inbox. So Nidus writes a random token (64 hex digits)
+  into the block page when it installs it, keeps it in `block-page-token` in
+  its folder (readable only by you), and ignores any save link that doesn't
+  carry it. A web page can't read a file on your Mac, so only the block page
+  can. The token is not in preferences, in the address of a blocked tab, or in
+  the inbox file. It stays the same across launches, so a block page already
+  open keeps working. Delete the file and Nidus makes a new one, and pages
+  already open can't save until they are reloaded. The link is for the block
+  page. Other tools should not read the token to use it.
+- **What is kept.** Only `http` and `https` addresses, with spaces and
+  non-ASCII characters percent-encoded, no name or password in them, and at
+  most 4,096 characters. Anything else (`javascript:`, `data:`, `file:` and so
+  on) is ignored. The item's text is the site's name (`youtube.com`); Nidus
+  never fetches a title.
+- **Repeats add nothing.** The same address within 10 minutes of an earlier
+  save, or one that is already open in the inbox, is not added again, however
+  it is written (`www.`, a trailing slash, a fragment, http or https).
+- **What the log holds.** A rejected link logs why ("not from the block
+  page", "not a web address"), never the address or the token.
+- **Private windows.** Nidus can't tell a private window from another one, so
+  a page saved from one is kept as its address like any other. Delete it from
+  the inbox if you don't want it kept.
+
+The inbox file is `inbox.json` in `~/Library/Application Support/Nidus`: a
+list of items with an id, the text (up to 280 characters), an optional
+address, where it came from (`capture` or `blockedPage`), when it was saved
+and when it was completed. Finished items are deleted 30 days after they were
+finished, and open ones stay until you delete them. The capture shortcut is a global hot key that
+macOS reports to Nidus when that one combination is pressed. It is off until
+you record one in Settings → General → Inbox, and it needs no extra
+permission.
 
 ## Raycast
 

@@ -62,7 +62,8 @@ struct TabLocation: Sendable, Hashable {
 /// original URL through its query string: `blocked.html?g=<goal>&m=<minutes>&u=<original>`.
 struct BlockPage: Sendable {
     let fileURL: URL
-    /// The folder name Nidus began with. The Snooze link is `nidus://snooze`.
+    /// The folder name Nidus began with. The Snooze link is `nidus://snooze`,
+    /// and Save for later is `nidus://save`, which carries `InboxSaveToken`.
     let dropletID: String
 
     init(directory: URL, dropletID: String = "focus") {
@@ -73,8 +74,14 @@ struct BlockPage: Sendable {
     /// Writes the page. Call at activation; it lives in Nidus's folder in
     /// Application Support, never in the app, whose signature must not change.
     func install() throws {
-        try FileManager.default.createDirectory(at: fileURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-        let html = Self.html.replacingOccurrences(of: "{{DROPLET}}", with: dropletID)
+        let directory = fileURL.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // The token Save for later carries: made once, kept beside the page.
+        // Without one (a folder that can't be written to) the button stays out.
+        let token = InboxSaveToken.loadOrCreate(in: directory) ?? ""
+        let html = Self.html
+            .replacingOccurrences(of: "{{DROPLET}}", with: dropletID)
+            .replacingOccurrences(of: "{{TOKEN}}", with: token)
         try Data(html.utf8).write(to: fileURL, options: .atomic)
     }
 
@@ -133,11 +140,13 @@ struct BlockPage: Sendable {
     .goal { margin-top: 32px; padding: 16px 20px 18px; background: var(--raised); border: 1px solid var(--hairline); border-radius: 12px; }
     .goal .overline { color: var(--muted); margin-bottom: 6px; }
     .goal div { font: 400 24px/31px "New York", ui-serif, "Iowan Old Style", Georgia, serif; overflow-wrap: anywhere; }
-    .actions { margin-top: 24px; }
-    a.snooze { display: inline-block; padding: 7px 14px; background: var(--raised); border: 1px solid var(--strong);
+    .actions { margin-top: 24px; display: flex; flex-wrap: wrap; gap: 8px; }
+    a.snooze, a.save { display: inline-block; padding: 7px 14px; background: var(--raised); border: 1px solid var(--strong);
                border-radius: 8px; color: var(--ink); text-decoration: none; font-weight: 500; font-size: 14px; line-height: 20px; }
-    a.snooze:hover { background: var(--well); }
-    a.snooze:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+    a.snooze:hover, a.save:hover { background: var(--well); }
+    a.snooze:focus-visible, a.save:focus-visible { outline: 2px solid var(--strong); outline-offset: 2px; }
+    a.save.done { background: transparent; color: var(--muted); cursor: default; }
+    p.saved { margin-top: 12px; color: var(--muted); font-size: 14px; }
     .fine { margin-top: 48px; font: 11px/16px ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: .08em;
             text-transform: uppercase; color: var(--faint); }
     [hidden] { display: none !important; }
@@ -155,13 +164,19 @@ struct BlockPage: Sendable {
       <h1>Stay with it.</h1>
       <p class="lede" id="site">This page is blocked until your session ends.</p>
       <div class="goal" id="goal" hidden><p class="overline">Your goal</p><div id="goal-text"></div></div>
-      <div class="actions"><a class="snooze" id="snooze" hidden>Snooze</a></div>
+      <div class="actions"><a class="snooze" id="snooze" hidden>Snooze</a><a class="save" id="save" hidden>Save for later</a></div>
+      <p class="saved" id="saved" role="status" hidden></p>
       <p class="fine">Nidus · A Solanum product · Nothing leaves this Mac</p>
     </main>
     <script>
     const q = new URLSearchParams(location.search);
     let host = "";
-    try { host = new URL(q.get("u")).hostname.replace(/^www\\./, ""); } catch {}
+    let isWebPage = false;
+    try {
+      const page = new URL(q.get("u"));
+      host = page.hostname.replace(/^www\\./, "");
+      isWebPage = page.protocol === "http:" || page.protocol === "https:";
+    } catch {}
     if (host) {
       // What is blocked: the list entry that caught this page, path and all
       // ("youtube.com/shorts"), or the site itself when there is none.
@@ -177,6 +192,28 @@ struct BlockPage: Sendable {
         snooze.textContent = "Snooze for " + minutes + (minutes === 1 ? " minute" : " minutes");
         snooze.href = "nidus://snooze?site=" + encodeURIComponent(key || host);
         snooze.hidden = false;
+      }
+      // Save for later puts this address in the Nidus inbox and does nothing else:
+      // it doesn't snooze, unblock or open the page. So a strict session has it too.
+      // The token is what tells Nidus the link came from this page and not from a
+      // web page that opened nidus://save; a page can't read this file.
+      const token = "{{TOKEN}}";
+      if (isWebPage && token) {
+        const save = document.getElementById("save");
+        save.href = "nidus://save?u=" + encodeURIComponent(q.get("u")) + "&k=" + encodeURIComponent(token);
+        save.hidden = false;
+        save.addEventListener("click", () => {
+          // The link opens in Nidus as Snooze's does, and this page stays. The
+          // page can't hear back, so it says what it asked for.
+          save.textContent = "Saved for later";
+          save.classList.add("done");
+          save.setAttribute("aria-disabled", "true");
+          const saved = document.getElementById("saved");
+          saved.textContent = "Saved for later. You'll find it in the Nidus inbox.";
+          saved.hidden = false;
+          // Off after the click has been followed, so a second click sends nothing.
+          setTimeout(() => save.removeAttribute("href"), 250);
+        });
       }
     }
     const goal = (q.get("g") || "").trim();

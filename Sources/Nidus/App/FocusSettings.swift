@@ -34,6 +34,7 @@ extension NidusModel {
         switch id {
         case SettingsTab.stats.pageID: return AnyView(FocusStatsPage(model: self))
         case Self.launchAppsPageID: return AnyView(FocusLaunchAppsPage(model: self))
+        case Self.inboxPageID: return AnyView(FocusInboxPage(model: self))
         case _ where id.hasPrefix("setup"): return makeSetupsPage(id: id)
         default: break
         }
@@ -87,6 +88,7 @@ struct FocusGeneralPage: View {
             sessions
             menuBarAndLogin
             whenASessionStarts
+            inboxSection
         }
     }
 
