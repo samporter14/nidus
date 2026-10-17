@@ -331,10 +331,15 @@ struct WebsiteEntry: Sendable, Hashable {
     /// The segments of a path as typed or as a browser reports it, in the one
     /// form both are compared in. Empty and `.` segments vanish and `..`
     /// steps back, as a browser would have resolved them.
-    static func segments(ofPath path: String) -> [String] {
+    ///
+    /// Blocking rules fold case (`/Shorts` is `/shorts`, which errs toward
+    /// blocking). Website exceptions pass `foldingCase: false`: a page that is
+    /// let through must be the page that was named, and `/wiki/Foo` and
+    /// `/wiki/foo` can be two pages.
+    static func segments(ofPath path: String, foldingCase: Bool = true) -> [String] {
         var result: [String] = []
         for part in path.split(separator: "/") {
-            switch canonical(part) {
+            switch canonical(part, foldingCase: foldingCase) {
             case ".": continue
             case "..": _ = result.popLast()
             case let segment: result.append(segment)
@@ -347,8 +352,9 @@ struct WebsiteEntry: Sendable, Hashable {
     /// otherwise break: `/`, `?`, `#`, `%` and whitespace. That makes a rule's
     /// text read back as the same rule, which the Snooze link relies on, and
     /// leaves accented letters readable (`addingPercentEncoding` would not).
-    private static func canonical(_ segment: Substring) -> String {
-        let decoded = (String(segment).removingPercentEncoding ?? String(segment)).lowercased()
+    private static func canonical(_ segment: Substring, foldingCase: Bool) -> String {
+        let undone = String(segment).removingPercentEncoding ?? String(segment)
+        let decoded = foldingCase ? undone.lowercased() : undone
         var result = ""
         for scalar in decoded.unicodeScalars {
             if mustEscape.contains(scalar) {
@@ -442,11 +448,16 @@ struct WebsiteRule: Sendable {
     /// snoozed entry covers, whatever else covers it too. Only block mode
     /// needs it: allow mode adds the snoozed site to the list instead.
     private let snoozed: DomainMatcher
+    /// Pages let through although a listed entry covers them (see
+    /// WebsiteException+Matching.swift). Block mode only: an allow list
+    /// already says what is let through, so none are kept for it.
+    private let exceptions: WebsiteExceptionMatcher
 
-    init(mode: Mode, domains: [String], snoozed: [String] = []) {
+    init(mode: Mode, domains: [String], snoozed: [String] = [], exceptions: [WebsiteException] = []) {
         self.mode = mode
         matcher = DomainMatcher(domains)
         self.snoozed = DomainMatcher(snoozed)
+        self.exceptions = WebsiteExceptionMatcher(mode == .block ? exceptions : [])
     }
 
     /// Only web pages are ever blocked; `about:`, `file:` and the browser's
@@ -456,9 +467,14 @@ struct WebsiteRule: Sendable {
     /// with a path allows that part and what is below it; the pages above it
     /// stay blocked, so `github.com/samporter14` lets `/samporter14/nidus`
     /// through but not `github.com` itself or `/other`.
+    ///
+    /// In block mode a page is blocked when it is listed, not snoozed and not
+    /// excepted. Every call judges the URL it is given and nothing else: the
+    /// sweep reads each tab's address again every second, so a page that
+    /// redirects away from an allowed address is judged at its new one.
     func blocks(_ url: String) -> Bool {
         switch mode {
-        case .block: return matcher.matches(url) && !snoozed.matches(url)
+        case .block: return matcher.matches(url) && !snoozed.matches(url) && !exceptions.allows(url)
         case .allow: return DomainMatcher.isWebPage(url) && !matcher.matches(url)
         }
     }
