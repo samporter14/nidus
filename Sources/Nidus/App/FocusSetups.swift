@@ -201,7 +201,7 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
 extension NidusModel {
     /// The saved setups, in the order they show. None to begin with.
     var setups: [FocusSetup] {
-        get { preference(Key.setups, default: [FocusSetup]()) }
+        get { preferenceList(Key.setups) }
         set { setPreference(newValue, Key.setups) }
     }
 

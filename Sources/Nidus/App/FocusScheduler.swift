@@ -32,7 +32,7 @@ extension NidusModel {
     nonisolated static let schedulePagePrefix = "schedule:"
 
     var schedules: [FocusSchedule] {
-        get { preference(Key.schedules, default: [FocusSchedule]()) }
+        get { preferenceList(Key.schedules) }
         set { setPreference(newValue, Key.schedules) }
     }
 

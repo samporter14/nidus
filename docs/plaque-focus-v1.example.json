@@ -1,0 +1,29 @@
+{
+  "endsAt" : "2026-10-16T14:25:00Z",
+  "expiresAt" : "2026-10-16T14:17:00Z",
+  "next" : {
+    "kind" : "break",
+    "minutes" : 10,
+    "startsAt" : "2026-10-16T14:25:00Z"
+  },
+  "openEnded" : false,
+  "revision" : 42,
+  "schema" : "local.sam.nidus.plaque-focus",
+  "sequence" : {
+    "count" : 3,
+    "name" : "Grant morning",
+    "step" : 1
+  },
+  "session" : {
+    "id" : "6D0C0F4E-2E35-4C2B-9C8E-0A1B2C3D4E5F",
+    "startedAt" : "2026-10-16T13:45:00Z"
+  },
+  "state" : "focusing",
+  "strict" : false,
+  "text" : {
+    "goal" : "Update Specific Aims",
+    "project" : "R01 renewal"
+  },
+  "updatedAt" : "2026-10-16T14:02:00Z",
+  "version" : 1
+}

@@ -34,6 +34,17 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
     /// when there was no goal or no answer. Older files have none.
     var finished: Bool?
 
+    // 0.4. Older entries have none of these and stay valid without them.
+
+    /// The project it counted toward, and the project's name then: a project
+    /// renamed or deleted since still reads as it did.
+    var projectID: UUID?
+    var projectName: String?
+    /// The saved setup it came from.
+    var setupID: UUID?
+    /// Its place in a sequence run, when it was a work block of one.
+    var sequenceStep: SequenceStepRef?
+
     /// The entry for a session that just ended, or nil for one too short to
     /// count (started by mistake and ended at once).
     init?(ended state: SessionState, outcome: SessionEndReason) {
@@ -49,6 +60,10 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
         quits = state.quitCounts
         foreground = state.foreground
         names = state.names
+        projectID = state.plan.projectID
+        projectName = state.plan.projectName
+        setupID = state.plan.setupID
+        sequenceStep = state.plan.sequenceStep
     }
 
     init(start: Date, end: Date, focused: TimeInterval, planned: TimeInterval?, outcome: SessionEndReason, goal: String = "",
@@ -70,12 +85,55 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
     static let minimumFocus: TimeInterval = 60
 }
 
+extension SessionEntry {
+    enum CodingKeys: String, CodingKey {
+        case id, start, end, focused, planned, outcome, goal, blocks, quits, foreground, names, finished
+        case projectID, projectName, setupID, sequenceStep
+    }
+
+    /// 0.3's fields as before; 0.4's each on its own, so one written wrongly
+    /// is dropped and the entry, and the history around it, is kept.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        start = try c.decode(Date.self, forKey: .start)
+        end = try c.decode(Date.self, forKey: .end)
+        focused = try c.decode(TimeInterval.self, forKey: .focused)
+        planned = try c.decodeIfPresent(TimeInterval.self, forKey: .planned)
+        outcome = try c.decode(SessionEndReason.self, forKey: .outcome)
+        goal = try c.decode(String.self, forKey: .goal)
+        blocks = try c.decode([String: Int].self, forKey: .blocks)
+        quits = try c.decode([String: Int].self, forKey: .quits)
+        foreground = try c.decode([String: TimeInterval].self, forKey: .foreground)
+        names = try c.decode([String: String].self, forKey: .names)
+        finished = try c.decodeIfPresent(Bool.self, forKey: .finished)
+        projectID = c.decodeTolerant(UUID.self, forKey: .projectID)
+        projectName = c.decodeTolerant(String.self, forKey: .projectName)
+        setupID = c.decodeTolerant(UUID.self, forKey: .setupID)
+        sequenceStep = c.decodeTolerant(SequenceStepRef.self, forKey: .sequenceStep)
+    }
+}
+
 /// The history file. Kept to the most recent `limit` sessions.
 @MainActor
 final class FocusHistory {
     struct File: Codable {
         var version = 1
         var sessions: [SessionEntry]
+
+        init(version: Int = 1, sessions: [SessionEntry]) {
+            self.version = version
+            self.sessions = sessions
+        }
+
+        /// Entry by entry: one that doesn't decode is dropped, not the file.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
+            sessions = try c.decode(LossyArray<SessionEntry>.self, forKey: .sessions).elements
+        }
+
+        enum CodingKeys: String, CodingKey { case version, sessions }
     }
 
     static let limit = 5000
@@ -85,9 +143,22 @@ final class FocusHistory {
 
     init(url: URL) {
         self.url = url
-        if let data = try? Data(contentsOf: url), let file = try? JSONDecoder().decode(File.self, from: data) {
+        guard let data = try? Data(contentsOf: url) else { return }
+        if let file = try? JSONDecoder().decode(File.self, from: data) {
             sessions = file.sessions
+        } else {
+            // Not a history file Nidus can read. Starting empty would write
+            // over it at the next session, so it is put aside first, intact.
+            Self.setAside(url)
         }
+    }
+
+    /// Renames an unreadable file to `history.unreadable-<time>.json` beside it.
+    nonisolated static func setAside(_ url: URL, now: Date = Date()) {
+        let stamp = Int(now.timeIntervalSince1970)
+        let aside = url.deletingLastPathComponent()
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + ".unreadable-\(stamp)." + url.pathExtension)
+        try? FileManager.default.moveItem(at: url, to: aside)
     }
 
     func append(_ entry: SessionEntry) {

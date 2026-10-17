@@ -188,11 +188,20 @@ final class NidusModel: NSObject, ObservableObject {
             mode: mode,
             categories: chosen,
             reopensQuitApps: reopensQuitApps,
-            launchApps: launchApps.map(\.bundleID),
-            startShortcut: startShortcut,
-            endShortcut: endShortcut
+            launchApps: request.launchApps ?? launchApps.map(\.bundleID),
+            startShortcut: request.startShortcut.map { $0.isEmpty ? nil : $0 } ?? startShortcut,
+            endShortcut: request.endShortcut.map { $0.isEmpty ? nil : $0 } ?? endShortcut
         )
         plan.strict = request.strict ?? strictMode
+        plan.setupID = request.setupID
+        plan.projectID = request.projectID
+        plan.projectName = request.projectID.flatMap(projectNameForPlan)
+        // A request's own break, else Settings' (`breakLength` nil), as before.
+        plan.breakLength = request.breakMinutes.map { TimeInterval(max(0, $0) * 60) }
+        plan.breakRules = request.breakRules ?? defaultBreakRules
+        plan.websiteExceptions = mode == .block ? websiteExceptions(for: chosen, adding: request.websiteExceptions) : []
+        plan.resources = request.resources
+        plan.sequenceStep = request.sequenceStep
         controller.start(plan)
         noteFixedEnd(request.hasFixedEnd || meetingMinutes != nil)
         rememberGoal(plan.goal)
@@ -464,13 +473,19 @@ extension NidusModel {
         host?.preferences.value(forKey: key, default: value) ?? value
     }
 
+    /// A saved list, keeping every element that still decodes. For every
+    /// list of things the user made (setups, schedules, projects, sequences).
+    func preferenceList<Element: Codable>(_ key: String, default value: [Element] = []) -> [Element] {
+        host?.preferences.list(forKey: key, default: value) ?? value
+    }
+
     func setPreference<Value: Codable>(_ value: Value, _ key: String) {
         host?.preferences.setValue(value, forKey: key)
         objectWillChange.send()
     }
 
     var categories: [FocusCategory] {
-        get { preference(Key.categories, default: FocusCategory.presets) }
+        get { preferenceList(Key.categories, default: FocusCategory.presets) }
         set { setPreference(newValue, Key.categories) }
     }
 
@@ -776,6 +791,27 @@ struct SessionRequest: Equatable, Sendable {
     /// meeting's start). No break follows it: the next session would run a
     /// full length again, past the time it was meant to stop at.
     var hasFixedEnd = false
+
+    // 0.4. Each nil (or empty) is what 0.3 did: Settings' value, or nothing.
+
+    /// The setup it is started from, and the project it counts toward.
+    var setupID: UUID?
+    var projectID: UUID?
+    /// Apps opened at the start, by bundle identifier. nil: Settings' list.
+    var launchApps: [String]?
+    /// Shortcut names. nil: Settings'; "" for none even when Settings has one.
+    var startShortcut: String?
+    var endShortcut: String?
+    /// Minutes of break after it. nil: Settings'; 0 for none.
+    var breakMinutes: Int?
+    /// What stays blocked during that break. nil: Settings' default rules.
+    var breakRules: BreakRules?
+    /// Exceptions on top of the chosen categories' own. Block mode only.
+    var websiteExceptions: [WebsiteException] = []
+    /// Documents, folders and pages to open at the start.
+    var resources: [WorkspaceResource] = []
+    /// Set by a sequence for its work blocks.
+    var sequenceStep: SequenceStepRef?
 }
 
 /// What `focus.json` holds.

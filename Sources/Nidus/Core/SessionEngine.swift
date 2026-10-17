@@ -45,6 +45,32 @@ struct SessionPlan: Codable, Equatable, Sendable {
     /// mid-session changes nothing.
     var strict: Bool = false
 
+    // Added in 0.4. A plan is the snapshot of a running session: everything
+    // below is resolved when it starts (setup over Settings), so editing a
+    // setup, a project or Settings mid-session changes nothing it committed to.
+
+    /// The saved setup it came from.
+    var setupID: UUID?
+    /// The project it counts toward, and that project's name when it started,
+    /// so history still says which project after a rename or a delete.
+    var projectID: UUID?
+    var projectName: String?
+    /// The break after it, when it runs its full length. nil: the break in
+    /// Settings (`SessionEngine.breakLength`), as before 0.4. 0: none.
+    var breakLength: TimeInterval?
+    /// What stays blocked during that break. nil or empty: nothing.
+    var breakRules: BreakRules?
+    /// Pages let through inside the block list. Block mode only.
+    var websiteExceptions: [WebsiteException] = []
+    /// Documents, folders and pages opened when it starts.
+    var resources: [WorkspaceResource] = []
+    /// Set on a plan the engine starts again by itself when a break ends: its
+    /// apps and Shortcuts run again, its documents and pages are not opened a
+    /// second time.
+    var isContinuation: Bool = false
+    /// Its place in a sequence, when it is a sequence's work block.
+    var sequenceStep: SequenceStepRef?
+
     static let maximumDuration: TimeInterval = 24 * 60 * 60
 
     var cappedDuration: TimeInterval {
@@ -87,12 +113,21 @@ struct SessionState: Codable, Equatable, Sendable {
     var focusedTime: TimeInterval?
 }
 
-/// A break after a completed session. Nothing is blocked; when it ends, the
-/// plan it carries starts again.
+/// A break after a completed session. Nothing is blocked unless it has
+/// rules; when it ends, the plan it carries starts.
 struct BreakState: Codable, Equatable, Sendable {
     var plan: SessionPlan
     var endsAt: Date
     var length: TimeInterval
+    /// What stays blocked until it ends. nil or empty: nothing (0.3's break).
+    var rules: BreakRules?
+
+    init(plan: SessionPlan, endsAt: Date, length: TimeInterval, rules: BreakRules? = nil) {
+        self.plan = plan
+        self.endsAt = endsAt
+        self.length = length
+        self.rules = rules
+    }
 }
 
 /// What is blocked at this moment, after snoozes. nil while idle, on a
@@ -137,6 +172,16 @@ struct SessionRecord: Codable, Equatable, Sendable {
     var session: SessionState?
     var lastPlan: SessionPlan?
     var pendingBreak: BreakState?
+    /// The sequence the session or break belongs to. 0.4.
+    var sequence: SequenceRun?
+
+    init(session: SessionState? = nil, lastPlan: SessionPlan? = nil, pendingBreak: BreakState? = nil,
+         sequence: SequenceRun? = nil) {
+        self.session = session
+        self.lastPlan = lastPlan
+        self.pendingBreak = pendingBreak
+        self.sequence = sequence
+    }
 }
 
 @MainActor
@@ -173,6 +218,9 @@ final class SessionEngine {
     private(set) var lastPlan: SessionPlan?
     /// Set between sessions while a break runs.
     private(set) var breakState: BreakState?
+    /// The sequence the session or break belongs to, saved and restored with
+    /// them. Its steps are a snapshot taken when it started.
+    private(set) var sequence: SequenceRun?
     /// The break after a completed, timed session; 0 for none.
     var breakLength: TimeInterval = 0
     /// A break that ran out more than this long ago, while the Mac slept or
@@ -257,6 +305,7 @@ final class SessionEngine {
         session = record.session
         // A break that ran out while Nidus was away: see `tick()`.
         breakState = record.pendingBreak
+        sequence = record.sequence
         guard var session else { return }
         switch session.phase {
         case .running(let deadline) where deadline <= now():
@@ -468,7 +517,7 @@ final class SessionEngine {
     }
 
     private func save() {
-        store?.save(SessionRecord(session: session, lastPlan: lastPlan, pendingBreak: breakState))
+        store?.save(SessionRecord(session: session, lastPlan: lastPlan, pendingBreak: breakState, sequence: sequence))
     }
 }
 
@@ -481,6 +530,8 @@ final class SessionEngine {
 extension SessionPlan {
     enum CodingKeys: String, CodingKey {
         case goal, duration, mode, apps, websites, reopensQuitApps, launchApps, startShortcut, endShortcut, strict
+        case setupID, projectID, projectName, breakLength, breakRules, websiteExceptions, resources
+        case isContinuation, sequenceStep
     }
 
     init(from decoder: Decoder) throws {
@@ -497,6 +548,43 @@ extension SessionPlan {
             endShortcut: try c.decodeIfPresent(String.self, forKey: .endShortcut),
             strict: try c.decodeIfPresent(Bool.self, forKey: .strict) ?? false
         )
+        // 0.4's fields, each on its own: one written wrongly is dropped, and
+        // the session keeps its blocking rules.
+        setupID = c.decodeTolerant(UUID.self, forKey: .setupID)
+        projectID = c.decodeTolerant(UUID.self, forKey: .projectID)
+        projectName = c.decodeTolerant(String.self, forKey: .projectName)
+        breakLength = c.decodeTolerant(TimeInterval.self, forKey: .breakLength).map { max(0, $0) }
+        breakRules = c.decodeTolerant(BreakRules.self, forKey: .breakRules)
+        websiteExceptions = c.decodeLossy([WebsiteException].self, forKey: .websiteExceptions)
+        resources = c.decodeLossy([WorkspaceResource].self, forKey: .resources)
+        isContinuation = c.decodeTolerant(Bool.self, forKey: .isContinuation) ?? false
+        sequenceStep = c.decodeTolerant(SequenceStepRef.self, forKey: .sequenceStep)
+    }
+}
+
+extension BreakState {
+    enum CodingKeys: String, CodingKey { case plan, endsAt, length, rules }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        plan = try c.decode(SessionPlan.self, forKey: .plan)
+        endsAt = try c.decode(Date.self, forKey: .endsAt)
+        length = try c.decode(TimeInterval.self, forKey: .length)
+        rules = c.decodeTolerant(BreakRules.self, forKey: .rules)
+    }
+}
+
+extension SessionRecord {
+    enum CodingKeys: String, CodingKey { case session, lastPlan, pendingBreak, sequence }
+
+    /// Each part on its own: a break or sequence that doesn't decode is
+    /// dropped, and the session that was running still resumes.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        session = c.decodeTolerant(SessionState.self, forKey: .session)
+        lastPlan = c.decodeTolerant(SessionPlan.self, forKey: .lastPlan)
+        pendingBreak = c.decodeTolerant(BreakState.self, forKey: .pendingBreak)
+        sequence = c.decodeTolerant(SequenceRun.self, forKey: .sequence)
     }
 }
 

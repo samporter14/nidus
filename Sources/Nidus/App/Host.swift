@@ -50,6 +50,13 @@ final class NidusHost {
             return decoded
         }
 
+        /// A saved list, element by element: one element that doesn't decode
+        /// is dropped, not every other with it.
+        func list<Element: Codable>(forKey key: String, default value: [Element]) -> [Element] {
+            guard let data = defaults.data(forKey: key) else { return value }
+            return LossyJSON.list(Element.self, from: data) ?? value
+        }
+
         func setValue<Value: Codable>(_ value: Value, forKey key: String) {
             guard write(value, forKey: key) else { return }
             didChange.send(key)

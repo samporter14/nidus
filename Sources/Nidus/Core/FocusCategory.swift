@@ -24,6 +24,8 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
     var symbol: String
     var apps: [BlockedApp]
     var websites: [String]
+    /// Pages let through although one of `websites` covers them. 0.4.
+    var websiteExceptions: [WebsiteException] = []
 
     var isEmpty: Bool { apps.isEmpty && websites.isEmpty }
 
@@ -35,6 +37,22 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
 
     private static func count(_ n: Int, _ noun: String) -> String? {
         n == 0 ? nil : "\(n) \(noun)\(n == 1 ? "" : "s")"
+    }
+}
+
+extension FocusCategory {
+    enum CodingKeys: String, CodingKey { case id, name, symbol, apps, websites, websiteExceptions }
+
+    /// 0.3's fields as before; the exceptions on their own, so a category
+    /// saved before 0.4 (or one exception written wrongly) still loads.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        symbol = try c.decode(String.self, forKey: .symbol)
+        apps = try c.decode([BlockedApp].self, forKey: .apps)
+        websites = try c.decode([String].self, forKey: .websites)
+        websiteExceptions = c.decodeLossy([WebsiteException].self, forKey: .websiteExceptions)
     }
 }
 
