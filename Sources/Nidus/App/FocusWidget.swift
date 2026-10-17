@@ -150,6 +150,9 @@ struct FocusWidget: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+
+            // "Inbox · 3", only when something is waiting.
+            FocusInboxRow(model: model)
         }
     }
 
@@ -386,6 +389,8 @@ struct FocusWidget: View {
             if !model.isOpenEnded {
                 progressBar
             }
+            // "Save a thought" while it runs, and "Inbox · 3" when items wait.
+            FocusInboxRow(model: model)
         }
         .onChange(of: model.isActive) { _, active in
             if !active { cancelStrictEnd() }
@@ -505,6 +510,7 @@ struct FocusWidget: View {
                 .padding(.bottom, 8)
             }
             ProgressTrack(progress: model.breakProgress, tint: .gray)
+            FocusInboxRow(model: model)
         }
     }
 

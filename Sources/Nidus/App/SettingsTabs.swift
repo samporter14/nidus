@@ -74,6 +74,7 @@ struct SettingsRoute: Equatable, Sendable {
         // (checked below, with its colon) is one setup inside it.
         if let tab = SettingsTab(rawValue: pageID) { return SettingsRoute(tab: tab, pushes: false) }
         if pageID == NidusModel.launchAppsPageID { return SettingsRoute(tab: .general, pushes: true) }
+        if pageID == NidusModel.inboxPageID { return SettingsRoute(tab: .general, pushes: true) }
         if pageID.hasPrefix(NidusModel.categoryPagePrefix) { return SettingsRoute(tab: .blocking, pushes: true) }
         if pageID.hasPrefix(NidusModel.setupPagePrefix) { return SettingsRoute(tab: .setups, pushes: true) }
         if pageID.hasPrefix(NidusModel.schedulePagePrefix) { return SettingsRoute(tab: .schedules, pushes: true) }

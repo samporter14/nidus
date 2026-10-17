@@ -66,6 +66,17 @@ and the categories to block, and press Start. Until the session ends:
   a snooze about to run out, and how the session went.
 
   <img src="docs/card-blocked.png" width="420" alt="A card: Slack quit. Write the launch post, 25 min left. Snooze 3 min"> <img src="docs/card-finish.png" width="420" alt="A card: Session complete. 25 min focused, blocked 4 times. Did you finish Write the launch post? Not yet, Yes">
+- **A distraction inbox.** A thought you can't shake or a link you want later
+  goes in the inbox instead of pulling you off task: press a shortcut you set
+  in Settings (off until you do), or "Save a thought" in the popover, type it,
+  press Return, and the session carries on. The block page has a Save for later
+  button beside Snooze, which keeps the blocked address and nothing else (it
+  doesn't unblock, snooze or open it, and strict sessions have it too). After a
+  session the card says how many were saved, with a button to the inbox;
+  nothing opens by itself. Items live in Settings → General → Inbox, where you
+  open a link, finish an item or delete it. Finished items go after 30 days,
+  the rest stay until you delete them, and Clear Inbox empties it. Nothing is
+  fetched: no titles, icons or previews, just what you typed or the address.
 - **Any length.** Pick one, or type it: "40", "1h30", "until 3:30". With
   your permission, "Until next meeting" ends a session when your next calendar
   event starts.
@@ -199,7 +210,7 @@ short enough to read first.
 
 Quit Nidus (right-click the glyph, then Quit Nidus), delete it from
 Applications, and delete `~/Library/Application Support/Nidus`, which holds
-your session history.
+your session history and your inbox.
 
 ## Build it yourself
 

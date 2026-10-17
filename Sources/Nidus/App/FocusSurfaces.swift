@@ -226,17 +226,22 @@ extension NidusModel {
         // A break follows a completed session when breaks are on.
         let breakMinutes = engine?.breakState.map { Int(($0.length / 60).rounded()) }
         let rest = breakMinutes.map { "\($0) min break" }
+        // What was put in the inbox while it ran. The card only says so: the
+        // inbox opens when its button is pressed, never by itself.
+        let saved = savedForLater(since: final.startedAt)
         let detail = [ "\(time) focused", blocks, days, rest ].compactMap { $0 }.joined(separator: " · ")
         let mediumDetail = [ "\(time) focused", days ?? (rest == nil ? blocks : nil), rest ].compactMap { $0 }.joined(separator: " · ")
         let shortDetail = rest.map { "\(time) · \($0)" } ?? streak.map { "\(time) · day \($0)" }
             ?? (blocked == 0 ? "\(time) focused" : "\(time) · \(blocked) blocked")
         let request = DropletHUDRequest(
             id: Self.completedHUDID,
-            // Long enough to answer the question, when there is one.
-            duration: goal == nil ? 6 : 12,
+            // Long enough to answer the question, when there is one, or to
+            // reach the button for what was saved.
+            duration: goal == nil ? (saved > 0 ? 10 : 6) : 12,
             priority: .normal,
             accessibilityLabel: "\(title). \(time) focused, \(blocks)\(days.map { ", \($0)" } ?? "")\(rest.map { ". A \($0) now" } ?? "")."
-                + (goal.map { " Did you finish \($0)?" } ?? ""),
+                + (goal.map { " Did you finish \($0)?" } ?? "")
+                + (Self.savedForLaterText(saved).map { " \($0)." } ?? ""),
             isExpanded: true,
             expandedContentHeight: goal == nil ? 64 : 96
         ) {
@@ -255,6 +260,11 @@ extension NidusModel {
                     shortButton: breakMinutes == nil ? "Again" : "Skip",
                     question: goal,
                     reply: reply,
+                    saved: saved,
+                    openInbox: {
+                        self?.openInbox()
+                        self?.host?.hud.dismiss(id: Self.completedHUDID)
+                    },
                     answer: { self?.answerFinished($0) },
                     again: {
                         if self?.isOnBreak == true { self?.skipBreak() } else { self?.startAgain() }
@@ -288,6 +298,10 @@ struct FocusWrapUpCard: View {
     var question: String? = nil
     /// The answer to it, once given.
     var reply: Bool? = nil
+    /// How many thoughts and links were saved for later during the session.
+    /// Over zero adds a row with a button to the inbox.
+    var saved = 0
+    var openInbox: () -> Void = {}
     var answer: (Bool) -> Void = { _ in }
     let again: () -> Void
 
@@ -315,6 +329,7 @@ struct FocusWrapUpCard: View {
                 }
                 .transition(.opacity)
             }
+            if saved > 0 { FocusSavedForLaterRow(count: saved, open: openInbox) }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: reply)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

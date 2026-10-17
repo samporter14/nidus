@@ -67,6 +67,14 @@ final class NidusModel: NSObject, ObservableObject {
     /// (FocusCalendar.swift). Neither does anything until `activate` starts it.
     let scheduler = FocusScheduler()
     let meetings = MeetingFinder()
+    /// The distraction inbox (Core/FocusInbox.swift), opened in `activate`.
+    /// Saving to it never touches a session.
+    var inbox: FocusInbox?
+    /// The capture panel and its global shortcut (FocusCapture.swift).
+    let capture = CaptureCoordinator()
+    /// Opens an inbox item's address. Used only by that item's Open button;
+    /// a test replaces it to see that nothing else opens anything.
+    var inboxURLOpener: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
 
     // MARK: Lifecycle
 
@@ -77,6 +85,7 @@ final class NidusModel: NSObject, ObservableObject {
         self.controller = controller
         plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
+        startInbox(host: host)
 
         controller.onBlocked = { [weak self] item in
             self?.presentBlockedHUD(for: item)
@@ -144,6 +153,7 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask?.cancel()
         welcomeTask = nil
         stopWeeklyRecap()
+        stopInbox()
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
         // Quitting puts blocked tabs back; demos and renders never touch
         // real browsers.
@@ -285,6 +295,10 @@ final class NidusModel: NSObject, ObservableObject {
         host?.hud.dismiss(id: Self.blockedHUDID)
     }
 
+    /// Tests only: gives a model that was never activated (activating needs a
+    /// host, which writes real preferences) a controller to run a session on.
+    func adoptForTesting(controller: FocusController) { self.controller = controller }
+
     func openSettings() { host?.workspace.openSettings() }
 
     /// Settings on a given tab, with nothing pushed on it, for what lives
@@ -311,6 +325,7 @@ final class NidusModel: NSObject, ObservableObject {
             return
         case "welcome": controller.end(); return presentWelcomeHUD()
         case "setups": controller.end(); return seedSampleSetups()
+        case "inbox": controller.end(); return seedSampleInbox()
         case "goals":
             controller.end()
             if recentGoals.isEmpty {
@@ -353,6 +368,21 @@ final class NidusModel: NSObject, ObservableObject {
             presentBrowserAccessHUD(for: .chrome, needsConsent: true)
         case "strict":
             presentBlockedHUD(for: .app(bundleID: "com.tinyspeck.slackmacgap", name: "Slack", quit: true))
+        case "wrapup-saved":
+            // Items put in during this session, then the card that counts them.
+            guard var final = controller.engine.session else { break }
+            seedSampleInbox()
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            presentWrapUpHUD(for: final, completed: true)
+        case "finish-saved":
+            // The same, with the question asked as well.
+            guard var final = controller.engine.session else { break }
+            seedSampleInbox()
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3]
+            pendingFinish = (id: UUID(), goal: final.plan.goal)
+            presentWrapUpHUD(for: final, completed: true, askAbout: final.plan.goal)
         case "wrapup-break":
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60

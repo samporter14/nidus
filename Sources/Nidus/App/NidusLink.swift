@@ -7,6 +7,8 @@
 //  carries a parsed link out.
 //
 //    nidus://snooze?site=youtube.com        the block page's Snooze link
+//    nidus://save?u=<address>&k=<token>     the block page's Save for later: puts
+//                                           the address in the inbox, nothing else
 //    nidus://start?goal=…&minutes=25&categories=social,video&mode=block&strict=1
 //    nidus://end                            refused during a strict session
 //    nidus://toggle                         what the keyboard shortcut does
@@ -14,13 +16,18 @@
 //
 //  Any web page can open a nidus:// link (the browser asks first), so a link
 //  can start a session, but nothing in this file lets one get around strict
-//  mode.
+//  mode. A save link is ignored unless it carries the block page's token (see
+//  InboxSaveToken); the token is checked when the link is routed, not here.
 //
 
 import Foundation
 
 enum NidusLink: Equatable, Sendable {
     case snooze(site: String)
+    /// The block page's Save for later: an http(s) address and the token the
+    /// page was installed with. The token's value is checked against the one
+    /// on disk when the link is routed.
+    case save(url: String, token: String)
     case start(Start)
     case end
     case toggle
@@ -75,6 +82,7 @@ enum NidusLink: Equatable, Sendable {
         do {
             switch url.host(percentEncoded: false)?.lowercased() {
             case "snooze": return .success(.snooze(site: try parseSite(query)))
+            case "save": return .success(try parseSave(query))
             case "start": return .success(.start(try parseStart(query)))
             case "end": return .success(.end)
             case "toggle": return .success(.toggle)
@@ -95,6 +103,19 @@ enum NidusLink: Equatable, Sendable {
             throw .invalid(parameter: "site")
         }
         return domain
+    }
+
+    /// Both parameters are required. The address must be one the inbox keeps
+    /// (http or https, with a host); the token must be the shape Nidus
+    /// writes. Neither value is ever put in a rejection.
+    private static func parseSave(_ query: Query) throws(Rejection) -> NidusLink {
+        guard let address = try query.nonEmptyValue("u"), address.count <= InboxURL.limit, InboxURL.clean(address) != nil else {
+            throw .invalid(parameter: "u")
+        }
+        guard let token = try query.nonEmptyValue("k"), InboxSaveToken.isWellFormed(token) else {
+            throw .invalid(parameter: "k")
+        }
+        return .save(url: address, token: token)
     }
 
     private static func parseStart(_ query: Query) throws(Rejection) -> Start {
