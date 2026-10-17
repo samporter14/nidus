@@ -169,6 +169,29 @@ struct WebsiteExceptionRule: Sendable, Hashable {
         }
     }
 
+    // MARK: Saying what it does
+
+    /// "Only youtube.com/watch?v=abc".
+    var permits: String {
+        switch kind {
+        case .exact:
+            return parameters.isEmpty ? "Only \(address), with any ?parameters" : "Only \(address)"
+        case .subtree:
+            return segments.isEmpty ? "All of \(address)" : "Everything at \(address) and below"
+        }
+    }
+
+    /// What the exception lets through and what stays blocked, in one
+    /// sentence: "Only youtube.com/watch?v=abc. The rest of youtube.com
+    /// stays blocked." The preview before adding and the list afterwards
+    /// both say exactly this.
+    var summary: String {
+        if kind == .subtree, segments.isEmpty {
+            return permits + ". Subdomains like m.\(host) stay blocked."
+        }
+        return permits + ". The rest of \(host) stays blocked."
+    }
+
     // MARK: Reading an address
 
     /// A host as exceptions compare it: one trailing dot and one leading
@@ -340,26 +363,11 @@ struct WebsiteExceptionDraft: Sendable, Equatable {
     var host: String { rule.host }
 
     /// "Only youtube.com/watch?v=abc".
-    var permits: String {
-        let address = rule.address
-        switch rule.kind {
-        case .exact:
-            return rule.parameters.isEmpty
-                ? "Only \(address), with any ?parameters"
-                : "Only \(address)"
-        case .subtree:
-            return rule.segments.isEmpty ? "All of \(address)" : "Everything at \(address) and below"
-        }
-    }
+    var permits: String { rule.permits }
 
     /// The whole sentence the person reads before adding it: what is let
     /// through, and what stays blocked.
-    var summary: String {
-        if rule.kind == .subtree, rule.segments.isEmpty {
-            return permits + ". Subdomains like m.\(rule.host) stay blocked."
-        }
-        return permits + ". The rest of \(rule.host) stays blocked."
-    }
+    var summary: String { rule.summary }
 
     /// What is required, as the address would have to carry it ("v=abc"),
     /// or nil when no parameter is.

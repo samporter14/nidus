@@ -145,13 +145,12 @@ struct WebsiteExceptionsEditor: View {
         addressFocused = true
     }
 
-    /// The line under a listed exception: how much it lets through, and a
-    /// word when it would do nothing.
+    /// The line under a listed exception: the sentence the preview showed
+    /// when it was added, and a word when it would do nothing.
     private func detail(of exception: WebsiteException) -> String {
         guard let rule = exception.rule else { return "Not a web address, so it does nothing." }
-        var line = exception.kindTitle
-        if rule.kind == .exact, rule.parameters.isEmpty { line += ", with any ?parameters" }
-        if !rule.isReachable(by: websites) { line += ". No website above blocks it, so it does nothing." }
+        var line = rule.summary
+        if !rule.isReachable(by: websites) { line += " No website above blocks it, so it does nothing." }
         return line
     }
 }

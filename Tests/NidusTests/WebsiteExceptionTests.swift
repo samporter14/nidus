@@ -657,6 +657,15 @@ struct ExceptionDraftTests {
         }
     }
 
+    @Test func theListSaysTheSameSentenceThePreviewDid() throws {
+        for (address, kind) in [("https://youtube.com/watch?v=abc&t=3", WebsiteException.Kind.exact),
+                                ("youtube.com/@lab", .subtree), ("youtube.com", .subtree), ("example.com/paper", .exact)] {
+            let d = try draft(address, kind)
+            #expect(d.exception.rule?.summary == d.summary, "\(address)")
+        }
+        #expect(exact("youtube.com/watch?v=abc").rule?.summary == "Only youtube.com/watch?v=abc. The rest of youtube.com stays blocked.")
+    }
+
     @Test func errorsComeInPlainWords() {
         #expect(WebsiteExceptionProblem.notAWebAddress.message?.contains("web address") == true)
         #expect(WebsiteExceptionProblem.empty.message == nil)
