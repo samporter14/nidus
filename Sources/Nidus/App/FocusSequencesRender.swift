@@ -117,7 +117,7 @@ extension NidusModel {
         case "break-rules":
             // An ordinary repeating break that keeps Social and Slack blocked.
             controller.end()
-            var next = SessionPlan(goal: "Write the launch post", duration: 25 * 60, mode: .block, apps: [], websites: [])
+            var next = SessionPlan(goal: "Update Specific Aims", duration: 25 * 60, mode: .block, apps: [], websites: [])
             next.breakRules = Self.sampleBreakRules
             controller.engine.startBreak(plan: next, length: 5 * 60)
         default:
