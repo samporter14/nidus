@@ -48,6 +48,14 @@ struct FocusSchedule: Codable, Identifiable, Equatable, Sendable {
     var strict: Bool
     /// Empty for none.
     var goal: String
+    /// 0.4. Off by default: look at the calendar at the heads-up and offer to
+    /// shorten, delay or skip a block that runs into a meeting.
+    var checksCalendar = false
+    /// Minutes kept clear before a meeting: one of `bufferChoices`.
+    var calendarBuffer = 0
+
+    /// What the page offers for the gap before a meeting.
+    static let bufferChoices = [0, 5, 10, 15]
 
     static let workweek: Set<Int> = [2, 3, 4, 5, 6]
     static let weekend: Set<Int> = [1, 7]
@@ -55,7 +63,8 @@ struct FocusSchedule: Codable, Identifiable, Equatable, Sendable {
 
     init(id: String = UUID().uuidString, isOn: Bool = true, weekdays: Set<Int> = FocusSchedule.workweek,
          start: ScheduleTime = ScheduleTime(hour: 9), end: ScheduleTime = ScheduleTime(hour: 12),
-         categoryIDs: [String] = [], mode: SessionPlan.Mode = .block, strict: Bool = false, goal: String = "") {
+         categoryIDs: [String] = [], mode: SessionPlan.Mode = .block, strict: Bool = false, goal: String = "",
+         checksCalendar: Bool = false, calendarBuffer: Int = 0) {
         self.id = id
         self.isOn = isOn
         self.weekdays = weekdays
@@ -65,6 +74,8 @@ struct FocusSchedule: Codable, Identifiable, Equatable, Sendable {
         self.mode = mode
         self.strict = strict
         self.goal = goal
+        self.checksCalendar = checksCalendar
+        self.calendarBuffer = Self.bufferChoices.contains(calendarBuffer) ? calendarBuffer : 0
     }
 
     /// Moves the start and keeps the length, as Calendar does, unless the day
@@ -83,7 +94,7 @@ struct FocusSchedule: Codable, Identifiable, Equatable, Sendable {
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, isOn, weekdays, start, end, categoryIDs, mode, strict, goal
+        case id, isOn, weekdays, start, end, categoryIDs, mode, strict, goal, checksCalendar, calendarBuffer
     }
 
     /// Every field but the id may be missing, so a later version that adds a
@@ -100,7 +111,11 @@ struct FocusSchedule: Codable, Identifiable, Equatable, Sendable {
             categoryIDs: try c.decodeIfPresent([String].self, forKey: .categoryIDs) ?? [],
             mode: (try? c.decodeIfPresent(SessionPlan.Mode.self, forKey: .mode)) ?? .block,
             strict: try c.decodeIfPresent(Bool.self, forKey: .strict) ?? false,
-            goal: try c.decodeIfPresent(String.self, forKey: .goal) ?? ""
+            goal: try c.decodeIfPresent(String.self, forKey: .goal) ?? "",
+            // Added in 0.4. A schedule saved by 0.3 has neither key and keeps
+            // behaving as it did; a malformed one loses only itself.
+            checksCalendar: c.decodeTolerant(Bool.self, forKey: .checksCalendar) ?? false,
+            calendarBuffer: c.decodeTolerant(Int.self, forKey: .calendarBuffer) ?? 0
         )
     }
 }
@@ -208,12 +223,15 @@ extension FocusSchedule {
     /// What to do with a run found in progress. On time, it starts. Late
     /// (the Mac was asleep, or Nidus was not running), it starts only with at
     /// least five minutes of the window left.
-    static func decide(_ occurrence: Occurrence, now: Date) -> Decision {
+    ///
+    /// `slack` is the leeway at the end (see `minutes(until:from:slack:)`); a
+    /// run that ends where a meeting starts passes none.
+    static func decide(_ occurrence: Occurrence, now: Date, slack: TimeInterval = 10) -> Decision {
         let late = now.timeIntervalSince(occurrence.start)
         let left = occurrence.end.timeIntervalSince(now)
         let missed = late > onTimeGrace
         guard left > 0, !missed || left >= missedStartMinimum,
-              let minutes = minutes(until: occurrence.end, from: now) else { return .skip(.tooLate) }
+              let minutes = minutes(until: occurrence.end, from: now, slack: slack) else { return .skip(.tooLate) }
         return .start(minutes: minutes, missed: missed)
     }
 
@@ -229,6 +247,84 @@ extension FocusSchedule {
     /// inside the same window.
     static func isHandled(_ occurrence: Occurrence, in handled: [String: Date]) -> Bool {
         handled[occurrence.schedule.id].map { occurrence.start <= $0 } ?? false
+    }
+}
+
+// MARK: - Meetings in the way
+
+/// A stretch of the calendar that is taken: a start and an end, nothing else.
+/// There is no title here, so none can be stored, logged or shown from a
+/// schedule's check.
+struct BusySpan: Equatable, Sendable {
+    var start: Date
+    var end: Date
+}
+
+/// What a meeting does to one run of a schedule, and what could be done about
+/// it. An option that would leave the block under ten minutes is nil.
+struct ScheduleConflict: Equatable, Sendable {
+    /// The first busy stretch the run meets, overlapping events joined.
+    var span: BusySpan
+    /// The run would start inside it (or inside the gap kept before it
+    /// would end): there is no "shorten" to offer, only starting later.
+    var startsDuring: Bool
+    /// End the block here, before the meeting and the gap kept ahead of it.
+    var shortenEnd: Date?
+    /// Start the block here, after the meeting and the same gap, ending where
+    /// it always does.
+    var delayStart: Date?
+}
+
+extension FocusSchedule {
+    /// The shortest block that is worth starting; Shorten and Delay are not
+    /// offered when they would leave less.
+    static let shortestBlock: TimeInterval = 10 * 60
+
+    /// Overlapping spans joined, earliest first. Spans closer than the buffer
+    /// are joined as well: delaying to the end of the first would otherwise
+    /// start the block inside the gap kept before the next, or inside the
+    /// next itself. A span that ends before it starts is ignored.
+    static func merged(_ spans: [BusySpan], buffer: Int) -> [BusySpan] {
+        let gap = TimeInterval(buffer * 60)
+        var result: [BusySpan] = []
+        for span in spans.filter({ $0.end > $0.start }).sorted(by: { ($0.start, $0.end) < ($1.start, $1.end) }) {
+            if var last = result.last, span.start <= last.end.addingTimeInterval(gap) {
+                last.end = max(last.end, span.end)
+                result[result.count - 1] = last
+            } else {
+                result.append(span)
+            }
+        }
+        return result
+    }
+
+    /// The first meeting the run meets, with what could be done: the run is
+    /// `start` to `end`, and `now` is the moment of asking, since a block that
+    /// has begun is only measured from now. A meeting meets the run if it
+    /// overlaps it, is on at the start, or begins within the buffer after the
+    /// end; one that ended before the start does not, whatever the buffer.
+    ///
+    /// Everything is instants, so the clock changes in between make no
+    /// difference to the answer; the run itself was resolved in the calendar
+    /// and zone of the moment it was asked for.
+    static func conflict(start: Date, end: Date, spans: [BusySpan], buffer: Int, now: Date) -> ScheduleConflict? {
+        let from = max(start, now)
+        let gap = TimeInterval(buffer * 60)
+        guard let span = merged(spans, buffer: buffer).first(where: {
+            $0.start.addingTimeInterval(-gap) < end && $0.end > from
+        }) else { return nil }
+        let shorten = span.start.addingTimeInterval(-gap)
+        let delay = span.end.addingTimeInterval(gap)
+        return ScheduleConflict(
+            span: span,
+            startsDuring: span.start <= from,
+            shortenEnd: shorten.timeIntervalSince(from) >= shortestBlock ? shorten : nil,
+            delayStart: end.timeIntervalSince(delay) >= shortestBlock ? delay : nil
+        )
+    }
+
+    static func conflict(for run: Occurrence, spans: [BusySpan], now: Date) -> ScheduleConflict? {
+        conflict(start: run.start, end: run.end, spans: spans, buffer: run.schedule.calendarBuffer, now: now)
     }
 }
 
@@ -297,5 +393,34 @@ extension ScheduleTime {
     init(_ date: Date, calendar: Calendar) {
         let parts = calendar.dateComponents([.hour, .minute], from: date)
         self.init(hour: parts.hour ?? 0, minute: parts.minute ?? 0)
+    }
+}
+
+extension ScheduleConflict {
+    /// A time of day as the card says it, in the calendar's zone and locale.
+    static func clock(_ date: Date, calendar: Calendar) -> String {
+        let formatter = DateFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.locale = calendar.locale ?? .current
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: date)
+    }
+
+    /// The card's second line. It names the time and never the meeting.
+    func line(calendar: Calendar) -> String {
+        startsDuring
+            ? "In a meeting until \(Self.clock(span.end, calendar: calendar)) \u{2014} your block starts during it"
+            : "Meeting at \(Self.clock(span.start, calendar: calendar)) \u{2014} your block runs into it"
+    }
+
+    /// What each button does, for the tooltip and VoiceOver.
+    func shortenDetail(calendar: Calendar) -> String? {
+        shortenEnd.map { "End the session at \(Self.clock($0, calendar: calendar))" }
+    }
+
+    func delayDetail(calendar: Calendar) -> String? {
+        delayStart.map { "Start at \(Self.clock($0, calendar: calendar))" }
     }
 }

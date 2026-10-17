@@ -74,6 +74,32 @@ and the categories to block, and press Start. Until the session ends:
   right-click menu.
 - **Schedules.** "Weekdays, 9 to 12" starts a session on its own, with a card
   a minute before that lets you skip it or start now.
+  - **Check my calendar first** (off until you turn it on, per schedule).
+    A minute before a block starts, Nidus looks for a meeting in the way: one
+    that overlaps the block or is already on when it begins, not declined,
+    not cancelled, not all-day, not marked Free. If it finds one, the card
+    says when ("Meeting at 10:30 AM — your block runs into it") and offers
+    **Shorten** (end before the meeting), **Delay** (start after it, ending
+    where the block did) or **Skip**. A gap of 0, 5, 10 or 15 minutes can be
+    kept clear on either side. An option that would leave under 10 minutes
+    isn't offered. Leave the card alone and the block starts as scheduled.
+    Nothing checks the calendar between the card and the start, and the check
+    is repeated when you press a button, in case the meeting moved.
+  - **Privacy.** Only the start and end of an event are read: its title is
+    never read for this, kept, logged or shown, and nothing is saved about
+    your events. Calendar access is asked only from the **Allow Calendar
+    Access** button on the schedule's page, never by turning the option on.
+    If it was refused, isn't granted yet or can't be read, that isn't treated
+    as "no meetings": the schedule runs as it would without the option, and
+    its page says the calendar couldn't be checked.
+  - **Limits.** A delayed start (and a shortened end) is held in memory and
+    does not survive quitting Nidus: reopen it before the delayed time and
+    that run doesn't start, and the original run is not made up. It is not
+    started if a session or break is already on, or if the Mac wakes with
+    under 5 minutes of the block left. A block that starts because the Mac
+    woke or Nidus opened inside its window has no card, so it isn't checked.
+    Moving the schedule, turning it off, or a change of time zone drops a
+    delay that was waiting.
 - **Breaks, Focus modes and apps to open.** Breaks can run between sessions,
   Pomodoro style. A session can open the apps you work in, and turn on Do Not
   Disturb or any other Focus mode, then off again at the end.
@@ -160,6 +186,9 @@ short enough to read first.
 - "Until next meeting" asks for Calendar access the first time you choose
   it. Nidus reads your calendar on this Mac for the time of your next event,
   and nothing else.
+- A schedule's "Check my calendar first" asks for the same access, only when
+  you press Allow Calendar Access on that schedule's page. It reads the times
+  of your events, not their titles.
 - If you used Nidus as a droplet in Droppy, remove it there, so two copies
   don't block the same things twice.
 
