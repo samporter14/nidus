@@ -115,7 +115,10 @@ final class NidusModel: NSObject, ObservableObject {
         controller.onBreakEnding = { [weak self] end, plan in self?.presentBreakEndingHUD(at: end, next: plan) }
         controller.onWorkspaceOpened = { [weak self] report, plan in self?.workspaceDidOpen(report, for: plan) }
         // A demo or a render opens no app, file, page or Shortcut on this Mac.
-        if Demo.isActive { controller.opener = NullWorkspaceOpener() }
+        if Demo.isActive {
+            controller.opener = NullWorkspaceOpener()
+            controller.appFinder = NullAppFinder()
+        }
         // Views observe the model; forward the controller's once-a-second
         // clock and the preferences, so one object drives every surface.
         controller.objectWillChange
