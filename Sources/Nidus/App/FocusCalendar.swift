@@ -26,6 +26,22 @@ struct CalendarEvent: Equatable, Sendable {
     /// You declined it.
     var isDeclined = false
     var isCancelled = false
+    /// Marked Free (transparent): it does not take your time.
+    var isFree = false
+
+    /// Whether it takes your time, for a schedule's check: timed, not
+    /// declined, not cancelled, not marked Free. Accepted, tentative, not yet
+    /// answered, yours, and with no one else invited all count. (Until next
+    /// meeting keeps its own, older rule in `Meeting.next`, which does not
+    /// look at Free.)
+    var takesYourTime: Bool { !isAllDay && !isDeclined && !isCancelled && !isFree }
+}
+
+extension [CalendarEvent] {
+    /// The stretches of time these events take, as start and end only.
+    var busySpans: [BusySpan] {
+        filter(\.takesYourTime).map { BusySpan(start: $0.start, end: $0.end) }
+    }
 }
 
 /// The next meeting today.
@@ -68,8 +84,24 @@ protocol CalendarSource: AnyObject {
     var access: CalendarAccess { get }
     /// Shows macOS's own prompt, the first time. Call it only from a click.
     func requestAccess() async -> Bool
-    /// Empty unless access was granted.
-    func events(from start: Date, to end: Date) -> [CalendarEvent]
+    /// Empty unless access was granted. With `includingTitles` false the
+    /// titles are not read at all: a schedule's check needs only the times.
+    func events(from start: Date, to end: Date, includingTitles: Bool) -> [CalendarEvent]
+}
+
+extension CalendarSource {
+    func events(from start: Date, to end: Date) -> [CalendarEvent] {
+        events(from: start, to: end, includingTitles: true)
+    }
+
+    /// When the calendar is taken between `start` and `end`, or nil when it
+    /// can't be read (access not given, refused, or taken back). nil is
+    /// "unknown", never "free": an empty list means access was there and
+    /// nothing was in the way.
+    func busySpans(from start: Date, to end: Date) -> [BusySpan]? {
+        guard access == .authorized else { return nil }
+        return events(from: start, to: end, includingTitles: false).busySpans
+    }
 }
 
 /// Calendar on this Mac. The store is made on first use, so opening Nidus
@@ -96,21 +128,28 @@ final class EventKitCalendarSource: CalendarSource {
         return granted
     }
 
-    func events(from start: Date, to end: Date) -> [CalendarEvent] {
+    func events(from start: Date, to end: Date, includingTitles: Bool) -> [CalendarEvent] {
         guard access == .authorized else { return [] }
         let store = self.store ?? EKEventStore()
         self.store = store
         let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
-        return store.events(matching: predicate).map { event in
-            CalendarEvent(
-                title: event.title ?? "",
-                start: event.startDate,
-                end: event.endDate,
-                isAllDay: event.isAllDay,
-                isDeclined: event.attendees?.contains { $0.isCurrentUser && $0.participantStatus == .declined } ?? false,
-                isCancelled: event.status == .canceled
-            )
-        }
+        return store.events(matching: predicate).map { Self.event(from: $0, includingTitle: includingTitles) }
+    }
+
+    /// The only place an EKEvent is read. Thin on purpose: every rule about
+    /// which events count is on `CalendarEvent`, where it is tested.
+    private static func event(from event: EKEvent, includingTitle: Bool) -> CalendarEvent {
+        CalendarEvent(
+            title: includingTitle ? event.title ?? "" : "",
+            start: event.startDate,
+            end: event.endDate,
+            isAllDay: event.isAllDay,
+            // Only a refusal by you excludes an event: accepted, tentative,
+            // not yet answered and your own all count.
+            isDeclined: event.attendees?.contains { $0.isCurrentUser && $0.participantStatus == .declined } ?? false,
+            isCancelled: event.status == .canceled,
+            isFree: event.availability == .free
+        )
     }
 }
 
@@ -136,8 +175,13 @@ final class FakeCalendarSource: CalendarSource {
         return access == .authorized
     }
 
-    func events(from start: Date, to end: Date) -> [CalendarEvent] {
-        access == .authorized ? events.filter { $0.start < end && $0.end > start } : []
+    func events(from start: Date, to end: Date, includingTitles: Bool) -> [CalendarEvent] {
+        guard access == .authorized else { return [] }
+        return events.filter { $0.start < end && $0.end > start }.map { event in
+            var event = event
+            if !includingTitles { event.title = "" }
+            return event
+        }
     }
 }
 
@@ -224,6 +268,26 @@ extension NidusModel {
 
     /// "Until next meeting" is the popover's length, and there is a meeting.
     var endsAtNextMeeting: Bool { meetings.isChosen && meetings.offeredMinutes() != nil }
+
+    /// The button on a schedule's page. Like the first click on "Until next
+    /// meeting", it is the only way a schedule asks for Calendar access: the
+    /// switch that turns the check on asks nothing, and nothing asks later.
+    func allowCalendarAccess() {
+        Task { @MainActor [weak self] in
+            guard let self, meetings.access == .notDetermined else { return }
+            // The prompt comes from macOS, over whatever is in front.
+            NSApp.activate()
+            await meetings.requestAccess()
+            objectWillChange.send()
+        }
+    }
+
+    /// System Settings, Privacy & Security, Calendars: macOS asks only once,
+    /// so after a refusal this is where it is changed.
+    func openCalendarSettings() {
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Calendars") else { return }
+        NSWorkspace.shared.open(url)
+    }
 
     /// Looks the next meeting up. Call it when the popover opens; nothing else
     /// does, so Calendar is read only when someone is about to use it.
