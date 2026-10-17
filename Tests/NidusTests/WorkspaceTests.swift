@@ -865,7 +865,7 @@ struct WorkspaceConflictTests {
             .conflicts(in: T.categories)
         #expect(allow.count == 2)
         #expect(NidusModel.workspaceCardTitle(setupName: "G", report: clean, conflicts: allow) == "G: 2 pages are blocked")
-        #expect(NidusModel.workspaceCardLines(report: clean, conflicts: allow).first?.contains("Open the setup to allow them") == true)
+        #expect(NidusModel.workspaceCardLines(report: clean, conflicts: allow).first?.contains("Open the setup to allow the ones you want") == true)
     }
 
     @MainActor

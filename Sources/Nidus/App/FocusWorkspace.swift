@@ -342,8 +342,8 @@ extension NidusModel {
             lines.append(c.sentence + (c.fix != nil ? " Allowing it applies from the next start."
                                                     : " It opens, then the block page replaces it."))
         default:
-            let names = WorkspaceReport.list(conflicts.map(\.page))
-            lines.append("\(names) are blocked by this setup\u{2019}s own rules. Open the setup to allow them.")
+            // The title counts them and the setup's page names them.
+            lines.append("This setup\u{2019}s own rules block them. Open the setup to allow the ones you want.")
         }
         return lines
     }
@@ -380,7 +380,7 @@ struct WorkspaceNoticeCard: View {
                     Text(verbatim: line)
                         .font(.system(size: 12))
                         .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
-                        .lineLimit(3)
+                        .lineLimit(4)
                 }
                 if state.allowed {
                     Label("Allowed from the next start", systemImage: "checkmark")
