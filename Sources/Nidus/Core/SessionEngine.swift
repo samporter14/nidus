@@ -329,6 +329,8 @@ final class SessionEngine {
         // doesn't match (the sequence field was written wrongly, or the plan
         // was) is let go, and the session carries on as an ordinary one.
         if let run = sequence {
+            // A step the run doesn't have (a file edited by hand) is no run.
+            if !run.steps.indices.contains(run.index) { sequence = nil }
             if let session, session.plan.sequenceStep?.runID != run.id { sequence = nil }
             if session == nil, let pending = breakState, pending.plan.sequenceStep?.runID != run.id { sequence = nil }
         }
@@ -507,8 +509,9 @@ final class SessionEngine {
     private func startAfterBreak(_ pending: BreakState) {
         var plan = pending.plan
         if let run = sequence, let step = plan.sequenceStep, step.runID == run.id {
+            // As `advanceSequence` set it: a block opens its documents and
+            // pages unless the one before it opened the very same.
             sequence?.index = step.index
-            plan.isContinuation = false
         } else {
             sequence = nil
             plan.sequenceStep = nil
@@ -572,7 +575,7 @@ final class SessionEngine {
         // The next block of a sequence that starts with no break between.
         var following: SessionPlan?
         if sequence != nil || ended.plan.sequenceStep != nil {
-            following = advanceSequence(after: reason)
+            following = advanceSequence(after: reason, from: ended.plan)
         } else if reason == .completed, ended.plan.duration != nil {
             // A completed, timed session earns the break; one ended early, or
             // open-ended, does not. The plan's own length, else Settings'.
@@ -613,19 +616,27 @@ final class SessionEngine {
         return true
     }
 
+    /// Whether a sequence's next block would only open again what the block
+    /// before it opened: the same setup's documents and pages, in a run of
+    /// one setup. They are still open, so the block counts as a continuation
+    /// and opens nothing (its apps and Shortcuts still run, as at any start).
+    nonisolated static func opensWhatIsOpen(_ previous: SessionPlan, then next: SessionPlan) -> Bool {
+        !next.resources.isEmpty && next.resources == previous.resources
+    }
+
     /// Moves the run on after a block ended. Only a completed block goes on:
     /// ending one early, or finding its deadline passed while Nidus was away,
     /// ends the run. Returns a block to start straight away, or sets the break
     /// that comes first, or ends the run after its last block. The ordinary
     /// break (the plan's, or Settings') is never added in a run.
-    private func advanceSequence(after reason: SessionEndReason) -> SessionPlan? {
+    private func advanceSequence(after reason: SessionEndReason, from previous: SessionPlan) -> SessionPlan? {
         guard reason == .completed, var run = sequence, let next = run.nextBlock() else {
             sequence = nil
             return nil
         }
         var plan = next.plan
         plan.sequenceStep = run.ref(at: next.index)
-        plan.isContinuation = false
+        plan.isContinuation = Self.opensWhatIsOpen(previous, then: plan)
         if let rest = next.rest {
             run.index = rest.index
             sequence = run

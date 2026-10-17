@@ -79,6 +79,11 @@ extension SessionRequest {
         plan.websiteExceptions = mode == .block ? Self.exceptions(of: chosen, adding: websiteExceptions) : []
         plan.resources = resources
         plan.sequenceStep = sequenceStep
+        // A fixed end (a schedule's, a meeting's start) earns no break: the
+        // next session would only run again past the time it was meant to
+        // stop at. Settled in the plan, so a break with rules never begins
+        // (quitting apps, moving tabs) only to be called off a moment later.
+        if hasFixedEnd || fromMeeting { plan.breakLength = 0 }
         return ResolvedSession(plan: plan, endsAtMeeting: fromMeeting)
     }
 

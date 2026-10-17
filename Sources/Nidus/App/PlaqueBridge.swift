@@ -96,6 +96,25 @@ final class PlaqueBridge {
 
     func noteFinished(_ finished: Finished?) { self.finished = finished }
 
+    /// Once "finished" has been shown long enough, `action` writes idle. The
+    /// clock is stopped between sessions, so this is timed on its own; a
+    /// newer finish, or quitting, cancels it.
+    private var lingerTask: Task<Void, Never>?
+
+    func afterFinishedLinger(_ action: @escaping @MainActor () -> Void) {
+        lingerTask?.cancel()
+        lingerTask = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(PlaqueFocusSnapshot.finishedLinger + 1))
+            guard !Task.isCancelled else { return }
+            action()
+        }
+    }
+
+    func cancelPending() {
+        lingerTask?.cancel()
+        lingerTask = nil
+    }
+
     /// The finished session, while it is still recent enough to show.
     func recentFinish(at time: Date) -> Finished? {
         guard let finished, time.timeIntervalSince(finished.at) < PlaqueFocusSnapshot.finishedLinger else { return nil }
@@ -151,10 +170,7 @@ extension NidusModel {
         plaqueBridge.noteFinished(PlaqueBridge.Finished(
             sessionID: PlaqueFocusSnapshot.sessionID(startedAt: final.startedAt), startedAt: final.startedAt,
             at: Date(), goal: final.plan.goal, project: final.plan.projectName, nextStep: nil))
-        Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(PlaqueFocusSnapshot.finishedLinger + 1))
-            self?.publishPlaqueFocus()
-        }
+        plaqueBridge.afterFinishedLinger { [weak self] in self?.publishPlaqueFocus() }
     }
 
     /// The next step written on the finish card, for a finished snapshot.
@@ -221,7 +237,7 @@ extension NidusModel {
 
     /// "Block 2 of 3": work blocks only. On a break, the block that comes next.
     static func plaqueSequence(_ run: SequenceRun?) -> PlaqueFocusSnapshot.Sequence? {
-        guard let run else { return nil }
+        guard let run, run.steps.indices.contains(run.index) else { return nil }
         let work = run.steps.filter(\.isWork).count
         guard work > 0 else { return nil }
         let throughCurrent = run.steps.prefix(run.index + 1).filter(\.isWork).count

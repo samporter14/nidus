@@ -173,6 +173,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     func deactivate() {
         publishFocus(quitting: true)
+        plaqueBridge?.cancelPending()
         // Everything activate() started is torn down here, before Nidus quits.
         stopSchedules()
         welcomeTask?.cancel()

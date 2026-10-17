@@ -346,7 +346,7 @@ final class FocusController: ObservableObject {
         default:
             break
         }
-        applyEnforcement()
+        applyEnforcement(sessionStarted: event == .started)
         updateClock()
         onSessionEvent(event)
         // After the session's own surfaces have reacted to the start, so a
@@ -400,12 +400,19 @@ final class FocusController: ObservableObject {
     /// sequence) is one change from rule to rule: a page both block is never
     /// put back in between, one only the old rule blocked is, and one only the
     /// new rule blocks is caught by the sweep that follows.
-    private func applyEnforcement() {
+    /// `sessionStarted`: a session has just begun. It takes stock of what is
+    /// open now, as every start did when blocking stopped between sessions:
+    /// an allow list hides those apps rather than quitting them. A block that
+    /// follows a break with rules, or another block, inherits a running
+    /// blocker, so it is restarted here; and tabs on the block page are
+    /// judged again by the new session's own exceptions.
+    private func applyEnforcement(sessionStarted: Bool = false) {
         var target = engine.enforcement
         // Nothing is quit and no browser asked: a demo's sample break can
         // carry rules, and a rule set that is empty blocks nothing.
         if blocksNothing, target != nil { target = Enforcement(mode: .block, apps: [], websites: []) }
-        guard target != enforcing else { return }
+        let restarting = Self.restartsBlocker(sessionStarted: sessionStarted, from: enforcing, to: target)
+        guard target != enforcing || restarting else { return }
         let before = enforcing
         enforcing = target
 
@@ -414,6 +421,7 @@ final class FocusController: ObservableObject {
             if Self.tabHandling(from: before, to: nil) == .restoreAll { restoreTabs(keepBlocked: nil) }
             return
         }
+        if restarting { appBlocker.stop() }
         appBlocker.mode = target.mode == .block ? .block(target.apps) : .allow(target.apps)
         appBlocker.start()
         if case .keepBlocked(let rule) = Self.tabHandling(from: before, to: target) {
@@ -431,6 +439,14 @@ final class FocusController: ObservableObject {
         /// Rules changed: tabs the new rules no longer block go back, and
         /// those they still block stay put.
         case keepBlocked(by: Enforcement)
+    }
+
+    /// Whether a start hands over from one set of rules to another without
+    /// blocking stopping in between (a break with rules, or a block straight
+    /// after a block), so the blocker must start afresh to take stock of
+    /// what is open now.
+    nonisolated static func restartsBlocker(sessionStarted: Bool, from old: Enforcement?, to new: Enforcement?) -> Bool {
+        sessionStarted && old != nil && new != nil
     }
 
     nonisolated static func tabHandling(from old: Enforcement?, to new: Enforcement?) -> TabHandling {

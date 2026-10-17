@@ -146,7 +146,9 @@ struct FocusSequence: Codable, Identifiable, Equatable, Sendable {
             let c = try decoder.container(keyedBy: CodingKeys.self)
             id = try c.decode(UUID.self, forKey: .id)
             kind = try c.decode(Kind.self, forKey: .kind)
-            minutes = c.decodeTolerant(Int.self, forKey: .minutes) ?? (kind == .work ? 25 : 10)
+            // Held to a day, as a session is: a hand-edited number can't
+            // overflow the sums below.
+            minutes = min(24 * 60, max(0, c.decodeTolerant(Int.self, forKey: .minutes) ?? (kind == .work ? 25 : 10)))
             setupID = c.decodeTolerant(UUID.self, forKey: .setupID)
             goal = c.decodeTolerant(String.self, forKey: .goal) ?? ""
             projectID = c.decodeTolerant(UUID.self, forKey: .projectID)
