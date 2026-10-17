@@ -66,6 +66,17 @@ and the categories to block, and press Start. Until the session ends:
   a snooze about to run out, and how the session went.
 
   <img src="docs/card-blocked.png" width="420" alt="A card: Slack quit. Write the launch post, 25 min left. Snooze 3 min"> <img src="docs/card-finish.png" width="420" alt="A card: Session complete. 25 min focused, blocked 4 times. Did you finish Write the launch post? Not yet, Yes">
+- **A distraction inbox.** A thought you can't shake or a link you want later
+  goes in the inbox instead of pulling you off task: press a shortcut you set
+  in Settings (off until you do), or "Save a thought" in the popover, type it,
+  press Return, and the session carries on. The block page has a Save for later
+  button beside Snooze, which keeps the blocked address and nothing else (it
+  doesn't unblock, snooze or open it, and strict sessions have it too). After a
+  session the card says how many were saved, with a button to the inbox;
+  nothing opens by itself. Items live in Settings → General → Inbox, where you
+  open a link, finish an item or delete it. Finished items go after 30 days,
+  the rest stay until you delete them, and Clear Inbox empties it. Nothing is
+  fetched: no titles, icons or previews, just what you typed or the address.
 - **Any length.** Pick one, or type it: "40", "1h30", "until 3:30". With
   your permission, "Until next meeting" ends a session when your next calendar
   event starts.
@@ -74,16 +85,154 @@ and the categories to block, and press Start. Until the session ends:
   right-click menu.
 - **Schedules.** "Weekdays, 9 to 12" starts a session on its own, with a card
   a minute before that lets you skip it or start now.
+  - **Check my calendar first** (off until you turn it on, per schedule).
+    A minute before a block starts, Nidus looks for a meeting in the way: one
+    that overlaps the block or is already on when it begins, not declined,
+    not cancelled, not all-day, not marked Free. If it finds one, the card
+    says when ("Meeting at 10:30 AM — your block runs into it") and offers
+    **Shorten** (end before the meeting), **Delay** (start after it, ending
+    where the block did) or **Skip**. A gap of 0, 5, 10 or 15 minutes can be
+    kept clear on either side. An option that would leave under 10 minutes
+    isn't offered. Leave the card alone and the block starts as scheduled.
+    Nothing checks the calendar between the card and the start, and the check
+    is repeated when you press a button, in case the meeting moved. A
+    shortened or delayed block waits while the screen is locked; when you're
+    back it starts late only if at least five minutes of it are left.
+  - **Privacy.** Only the start and end of an event are read: its title is
+    never read for this, kept, logged or shown, and nothing is saved about
+    your events. Calendar access is asked only from the **Allow Calendar
+    Access** button on the schedule's page, never by turning the option on.
+    If it was refused, isn't granted yet or can't be read, that isn't treated
+    as "no meetings": the schedule runs as it would without the option, and
+    its page says the calendar couldn't be checked.
+  - **Limits.** A delayed start (and a shortened end) is held in memory and
+    does not survive quitting Nidus: reopen it before the delayed time and
+    that run doesn't start, and the original run is not made up. It is not
+    started if a session or break is already on, or if the Mac wakes with
+    under 5 minutes of the block left. A block that starts because the Mac
+    woke or Nidus opened inside its window has no card, so it isn't checked.
+    Moving the schedule, turning it off, or a change of time zone drops a
+    delay that was waiting.
 - **Breaks, Focus modes and apps to open.** Breaks can run between sessions,
-  Pomodoro style. A session can open the apps you work in, and turn on Do Not
-  Disturb or any other Focus mode, then off again at the end.
+  Pomodoro style, and can [keep some things blocked](#breaks-that-keep-things-blocked).
+  A session can open the apps you work in, and turn on Do Not Disturb or any
+  other Focus mode, then off again at the end.
+- **Sequences.** [A run of different blocks](#sequences-of-work-blocks): 40
+  minutes of writing, a 10 minute break, then 25 minutes of figures, started
+  in one click.
+- **Projects.** Name what your sessions are for ("R01 renewal", "Lab
+  notebook") under Stats in Settings. Once you have one, the popover offers a
+  small project menu, and the project you pick counts the next session toward
+  it (it stays picked, like the categories, until you change it). Each
+  project has a page with the time you focused on it, its sessions, the goals
+  you answered "Not yet" to and haven't finished since, its resume notes, and
+  Start a session. Rename, archive or delete a project whenever you like:
+  your history is never rewritten, so past sessions keep the name they had,
+  and a deleted project reads "Name (deleted)" in the list.
+- **Pick up where you left off.** After you answer "Did you finish?" on the
+  card, you can type what the next step is (up to 160 characters) and attach
+  a document, a folder or a web page to open with it. Both are optional, and
+  "Not yet" keeps the note just as "Yes" does. The newest note waiting shows
+  as one row at the top of the popover: Resume starts a session with the step
+  as its goal, and opens its link, on that click and no other; Dismiss puts it
+  away. Resume never replaces a session or break that is on, and says why it
+  can't.
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
   session, how many goals you finished and what you blocked most. On Monday a
   card sums up last week. Export your history as CSV or JSON whenever you
-  like. Categories for social media, messaging, video, news and mail are
-  ready to use, and you can make your own.
+  like (the CSV ends with a `project` column). Categories for social media,
+  messaging, video, news and mail are ready to use, and you can make your
+  own.
 
 <img src="docs/settings.png" width="420" alt="Nidus Settings on its Blocking tab, with toolbar tabs for General, Blocking, Setups, Schedules, Stats and About, the blocking choices, and the categories"> <img src="docs/stats.png" width="420" alt="The Stats tab: 2 hr 27 min this week, a 6-day streak, 76 sessions, six months of focus as a graph, and the most blocked app">
+
+### Breaks that keep things blocked
+
+A break blocks nothing, unless you say so. Turn breaks on in Settings →
+General (Break after a session) and a **During a break** section appears: pick
+the categories to keep blocked, add other apps and websites one by one, and
+write a reminder to yourself ("Stretch, water"). Leave it empty and a break is
+the same free time it always was.
+
+- **While the break runs**, only what you chose is blocked. The session's own
+  blocking is let go, so a page the session and the break both block is never
+  put back on screen in between, and a page only the session blocked comes
+  back. A tab that stays blocked is not put back until the break's blocking
+  ends: when the break ends or you end it, the session starts again, or
+  everything is put back.
+- **The popover and the card** say what stays blocked and until when
+  ("Social and Slack stay blocked until 10:40") and show the reminder. The
+  block page says it is blocked until your break ends, and has no Snooze: a
+  break is not a session to be let out of.
+- **A session sets its own break.** A plan can carry its own break length and
+  rules; one that doesn't takes Settings'. Settings' length and no rules are
+  exactly the break Nidus has always had.
+- **Ending a break** (Stop here, the right-click menu, a link or Shortcut)
+  stops, with no session after it, and puts everything back, as ending a
+  session does. Skipping starts the next session now. Quitting Nidus puts
+  blocked tabs back, and a break that is still running when it opens again
+  blocks them again. Break time is never counted as focus time.
+- When a break ends by itself the session starts again with the same plan: its
+  apps and Focus Shortcut run again, as they always did.
+
+### Sequences of work blocks
+
+A sequence is a list of work blocks and breaks, saved once. Settings → Setups
+has a **Sequences** section: add one and it starts as a block, a break and a
+block. Each work block has a goal, a length and, if you like, a setup (which
+decides what it blocks and whether it is strict) and a project. Each break has
+a length and what stays blocked during it: what the next block's setup says
+(or Settings' break rules), nothing, or rules of its own. Add, remove and
+reorder steps with the buttons on the page, and the page shows the plan as a
+line ("40 min writing → 10 min break → 25 min figures") and says what stops
+it from starting: it needs a work block, finite lengths, no break at the start
+or end or two in a row, and setups that still exist and can start.
+
+Start one from the popover (the list icon beside the plus), from the
+right-click menu, or from its page.
+
+- **Everything is decided when it starts.** Each block is resolved into the
+  same plan a session started from that setup would have, and the run keeps
+  that. Editing the sequence, a setup or Settings afterwards leaves a run
+  under way alone.
+- **Blocks run one after another.** A break between two blocks keeps what you
+  chose blocked; a block straight after a block starts at once; the last block
+  ends the run with no break after it. The usual break after a session never
+  comes in a run. Each block is recorded in your history once, on its own.
+- **The popover says where you are**: "Block 2 of 3 · next: 10 min break",
+  and on a break, "Next: 25 min Figures".
+- **Skip break** starts the next block now. **End break** ends the whole run,
+  and so does ending a block that isn't strict. There is no way to skip a
+  block. A strict block can't be paused, snoozed, shortened or skipped; it
+  ends early only behind its phrase in the popover, which ends the run too.
+- **Away.** Sleep and the lock screen pause a block as they pause any
+  session. A break that ran out more than a minute ago (the Mac slept, or
+  Nidus wasn't running) ends the run rather than starting a block for someone
+  who may not be there. A block whose time passed while Nidus wasn't running
+  is recorded as ended while away and ends the run: missed blocks are not
+  replayed. Quit Nidus mid-block or mid-break and the run is where you left it
+  when it opens again.
+
+## What projects and notes keep
+
+- **Projects** are a short list in Nidus's settings: a name, whether it is
+  archived, and a stable id. A project's time, sessions and unfinished goals
+  are worked out from your history each time its page opens; nothing about
+  them is stored separately.
+- **Resume notes** are in `resume-notes.json` beside your history, on this
+  Mac only. A note holds the step, the goal and project it followed, the
+  history entry it followed when there is one, its link (a bookmark to a file
+  or folder, or the web address you typed) and when it was made or dismissed.
+  Nothing is fetched from a link: no title, icon or preview, ever.
+- **Sessions not recorded.** With "Record sessions" off, no session is
+  counted toward a project. Notes are still offered, because they are your own
+  words rather than history; the card says "Saved as a note. Session history
+  is off." and the note has no history entry.
+- **Editing a note never edits history.** Dismissing, changing or removing a
+  note leaves every session, and its "Did you finish?" answer, as it was.
+- **Clear History** removes the sessions, the stats and each project's numbers
+  that come from them, your recent goals, and your resume notes. Your
+  projects themselves stay; delete one on its page.
 
 ### Letting one page through
 
@@ -135,6 +284,12 @@ running, and its own blocking in place. In Settings, open the setup. Under
 - **Shortcuts** to run when it starts and when it ends, or Settings' choice.
 - **Exceptions** are pages let through on top of the ones its categories
   already carry. They apply to block lists only.
+- **Project and break.** A setup can count toward a project of its own, give
+  its own break length, and keep its own things blocked during that break.
+  Each says "Uses Settings" (or "Uses the popover's", for the project) until
+  you change it, and can be set to none: no project even when the popover has
+  one chosen, no break, or a break that blocks nothing even when Settings has
+  rules. A sequence's block from a setup takes these too.
 
 Documents, folders and pages open once, when you start. They do not open
 again when a break hands over to the same session, and not when Nidus opens
@@ -225,6 +380,9 @@ short enough to read first.
 - "Until next meeting" asks for Calendar access the first time you choose
   it. Nidus reads your calendar on this Mac for the time of your next event,
   and nothing else.
+- A schedule's "Check my calendar first" asks for the same access, only when
+  you press Allow Calendar Access on that schedule's page. It reads the times
+  of your events, not their titles.
 - If you used Nidus as a droplet in Droppy, remove it there, so two copies
   don't block the same things twice.
 
@@ -232,7 +390,7 @@ short enough to read first.
 
 Quit Nidus (right-click the glyph, then Quit Nidus), delete it from
 Applications, and delete `~/Library/Application Support/Nidus`, which holds
-your session history.
+your session history and your inbox.
 
 ## Build it yourself
 

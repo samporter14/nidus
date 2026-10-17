@@ -40,6 +40,7 @@ struct FocusSetupsPage: View {
                     }
                 }
             }
+            FocusSequencesSection(model: model)
         }
     }
 }

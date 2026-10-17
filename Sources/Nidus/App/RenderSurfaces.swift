@@ -100,9 +100,12 @@ enum RenderSurfaces {
             // After Settings, so the Stats page above is drawn without them.
             await shootPopoverVariants(model: model, settings: settings, in: directory)
             await renderSetups(model: model, settings: settings, in: directory)
+            await renderSequences(model: model, settings: settings, host: host, in: directory)
             await renderWorkspaces(model: model, settings: settings, host: host, in: directory)
             await renderExceptions(model: model, settings: settings, in: directory)
             await renderSchedules(model: model, settings: settings, host: host, in: directory)
+            await renderInbox(model: model, settings: settings, host: host, in: directory)
+            await renderProjects(model: model, settings: settings, host: host, in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }

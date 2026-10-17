@@ -246,22 +246,65 @@ struct WorkspaceRequestTests {
         #expect(setup.exceptionsSummary == "1 page")
     }
 
-    /// `startSession` is the one place that turns a request into a plan, and
-    /// it is in a type the tests can't build (it opens the real settings). So
-    /// this reads it: each field a setup sets must be copied into the plan,
-    /// or a merge that drops a line would quietly stop a setup opening its
-    /// documents.
-    @Test func startSessionCopiesEverythingASetupSetsIntoThePlan() throws {
-        let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-        let text = try String(contentsOf: root.appendingPathComponent("Sources/Nidus/App/NidusModel.swift"), encoding: .utf8)
-        for needle in ["plan.setupID = request.setupID",
-                       "launchApps: request.launchApps ?? launchApps.map(\\.bundleID)",
-                       "startShortcut: request.startShortcut.map",
-                       "endShortcut: request.endShortcut.map",
-                       "adding: request.websiteExceptions",
-                       "plan.resources = request.resources"] {
-            #expect(text.contains(needle), "startSession no longer has: \(needle)")
-        }
+    private func defaults() -> StartDefaults {
+        StartDefaults(mode: .block, selectedCategoryIDs: ["social"], categories: T.categories,
+                      launchApps: ["settings.app"], startShortcut: "Settings on", endShortcut: "Settings off",
+                      defaultBreakRules: BreakRules(websites: ["x.com"]), projectName: { _ in "R01 renewal" })
+    }
+
+    private func resolvedPlan(for setup: FocusSetup, defaults: StartDefaults) throws -> SessionPlan {
+        try #require(setup.request(categories: T.categories).resolved(with: defaults, length: { (25, false) })?.plan)
+    }
+
+    /// The one resolution `startSession` and a sequence's blocks share turns a
+    /// setup's request into the plan: everything the setup sets is in it.
+    @Test func resolvingASetupsRequestCommitsEverythingItSetsToThePlan() throws {
+        let ex = WebsiteException(kind: .exact, address: "youtube.com/watch?v=abc")
+        let project = UUID()
+        let doc = WorkspaceResource(kind: .document, displayName: "Aims.docx", path: "/tmp/Aims.docx")
+        let own = FocusSetup(name: "Grant", categoryIDs: ["video"],
+                             launchApps: [BlockedApp(bundleID: "com.microsoft.Word", name: "Word")],
+                             startShortcut: "On", endShortcut: "Off", websiteExceptions: [ex], resources: [doc],
+                             project: .project(project), breakMinutes: 10, breakRules: BreakRules(apps: ["a.b"]))
+        let plan = try resolvedPlan(for: own, defaults: defaults())
+        #expect(plan.setupID == own.id)
+        #expect(plan.launchApps == ["com.microsoft.Word"] && plan.startShortcut == "On" && plan.endShortcut == "Off")
+        #expect(plan.resources == [doc] && plan.websiteExceptions == [ex])
+        #expect(plan.projectID == project && plan.projectName == "R01 renewal")
+        #expect(plan.breakLength == 10 * 60 && plan.breakRules == BreakRules(apps: ["a.b"]))
+        #expect(!plan.isContinuation)
+    }
+
+    @Test func aSetupThatInheritsTakesSettingsAndNoneIsNotInheriting() throws {
+        let inherits = try resolvedPlan(for: FocusSetup(name: "I", categoryIDs: ["social"]), defaults: defaults())
+        #expect(inherits.launchApps == ["settings.app"] && inherits.startShortcut == "Settings on" && inherits.endShortcut == "Settings off")
+        #expect(inherits.breakLength == nil, "Settings' break")
+        #expect(inherits.breakRules == BreakRules(websites: ["x.com"]), "Settings' default rules")
+        #expect(inherits.projectID == nil)
+
+        let none = try resolvedPlan(for: FocusSetup(name: "N", categoryIDs: ["social"], launchApps: [], startShortcut: "", endShortcut: "",
+                                            breakMinutes: 0, breakRules: BreakRules()), defaults: defaults())
+        #expect(none.launchApps.isEmpty, "no apps even though Settings has one")
+        #expect(none.startShortcut == nil && none.endShortcut == nil, "no Shortcut even though Settings has one")
+        #expect(none.breakLength == 0)
+        #expect(none.breakRules == BreakRules(), "an unrestricted break even though Settings has rules")
+    }
+
+    @Test func exceptionsAreInTheBlockListsPlanOnly() throws {
+        let own = WebsiteException(kind: .exact, address: "youtube.com/watch?v=abc")
+        var categories = T.categories
+        let video = try #require(categories.firstIndex { $0.id == "video" })
+        let theirs = WebsiteException(kind: .subtree, address: "youtube.com/@labtalks")
+        categories[video].websiteExceptions = [theirs]
+        var d = defaults()
+        d.categories = categories
+        let setup = FocusSetup(name: "E", categoryIDs: ["video"], websiteExceptions: [own, theirs])
+        let block = try #require(setup.request(categories: categories).resolved(with: d, length: { (25, false) })?.plan)
+        #expect(block.websiteExceptions == [theirs, own], "the category's, then the setup's, each once")
+        var allow = setup
+        allow.mode = .allow
+        let plan = try #require(allow.request(categories: categories).resolved(with: d, length: { (25, false) })?.plan)
+        #expect(plan.websiteExceptions.isEmpty, "an allow list already says what is let through")
     }
 }
 
@@ -275,29 +318,30 @@ struct WorkspaceSnapshotTests {
                                launchApps: [BlockedApp(bundleID: "com.microsoft.Word", name: "Word")],
                                startShortcut: "On", endShortcut: "Off",
                                websiteExceptions: [WebsiteException(kind: .exact, address: "youtube.com/watch?v=abc")],
-                               resources: [try page("example.org/guide")])
-        let request = setup.request(categories: FocusSetupTests.categories)
-        var committed = plan()
-        committed.setupID = request.setupID
-        committed.launchApps = request.launchApps ?? []
-        committed.startShortcut = request.startShortcut
-        committed.endShortcut = request.endShortcut
-        committed.websiteExceptions = request.websiteExceptions
-        committed.resources = request.resources
+                               resources: [try page("example.org/guide")],
+                               project: .project(UUID()), breakMinutes: 10, breakRules: BreakRules(websites: ["x.com"]))
+        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: [], categories: FocusSetupTests.categories,
+                                     projectName: { _ in "R01 renewal" })
+        let committed = try #require(setup.request(categories: FocusSetupTests.categories)
+            .resolved(with: defaults, length: { (25, false) })?.plan)
         h.engine.start(committed)
 
+        // Every field of the setup changes, and it is renamed.
         setup.launchApps = nil
         setup.startShortcut = ""
         setup.endShortcut = nil
         setup.websiteExceptions = []
         setup.resources = []
+        setup.project = .noProject
+        setup.breakMinutes = 0
+        setup.breakRules = BreakRules()
         setup.name = "Renamed"
 
         let running = try #require(h.engine.session?.plan)
         #expect(running == committed)
         #expect(running.resources.count == 1 && running.launchApps == ["com.microsoft.Word"])
         #expect(running.websiteExceptions.count == 1 && running.startShortcut == "On" && running.endShortcut == "Off")
-        #expect(request.resources.count == 1, "and a request already made is a copy")
+        #expect(running.projectName == "R01 renewal" && running.breakLength == 600 && running.breakRules?.websites == ["x.com"])
 
         // And a relaunch gives the same plan back.
         let (again, _) = h.relaunch()
@@ -310,8 +354,9 @@ struct WorkspaceSnapshotTests {
 @MainActor
 struct WorkspaceLaunchTests {
     /// A controller whose Mac is a fake. Its session files are in `dir`.
-    static func controller(in dir: URL, bookmarks: FakeBookmarks = FakeBookmarks()) -> (FocusController, FakeOpener) {
-        let controller = FocusController(directory: dir)
+    static func controller(in dir: URL, bookmarks: FakeBookmarks = FakeBookmarks(),
+                           now: @escaping () -> Date = Date.init) -> (FocusController, FakeOpener) {
+        let controller = FocusController(directory: dir, now: now)
         let opener = FakeOpener()
         controller.opener = opener
         controller.launcher = WorkspaceLauncher(bookmarks: bookmarks)
@@ -352,26 +397,64 @@ struct WorkspaceLaunchTests {
         defer { controller.end(); controller.stop() }
         let p = workspacePlan(resources: try Self.resources(w))
         controller.start(p)
-        controller.start(p.fresh)
+        controller.start(p)
         #expect(opener.opened.count == 6)
+    }
+
+    @Test func aPlanThatWasAContinuationStartsAsANewSessionWhenThePersonStartsIt() throws {
+        // "Again" and the toggle start the last plan, which may be a session
+        // that followed a break: the person asked, so it opens its documents.
+        let w = try Workspace()
+        let (controller, opener) = Self.controller(in: w.root.appendingPathComponent("state"))
+        controller.start()
+        defer { controller.end(); controller.stop() }
+        var p = workspacePlan(resources: try Self.resources(w))
+        p.isContinuation = true
+        controller.start(p)
+        #expect(opener.opened.count == 3)
+        #expect(controller.engine.session?.plan.isContinuation == false)
     }
 
     @Test func aSessionThatContinuesAfterABreakOpensNoDocumentsButStillRunsAppsAndTheShortcut() async throws {
         let w = try Workspace()
-        let (controller, opener) = Self.controller(in: w.root.appendingPathComponent("state"))
+        let clock = TestClock()
+        let (controller, opener) = Self.controller(in: w.root.appendingPathComponent("state"), now: { clock.now })
         var reports = 0
         controller.onWorkspaceOpened = { _, _ in reports += 1 }
+        controller.breakLength = 5 * minute
         controller.start()
         defer { controller.end(); controller.stop() }
-        let first = workspacePlan(resources: try Self.resources(w), apps: ["com.microsoft.Word"], start: "Focus on")
-        controller.start(first)
-        controller.start(first.continuing)
+        controller.start(workspacePlan(resources: try Self.resources(w), apps: ["com.microsoft.Word"], start: "Focus on"))
+        #expect(opener.opened.count == 3)
+
+        // It runs its full length, the break runs out, and the same session starts again.
+        clock.advance(25 * minute)
+        controller.engine.tick()
+        #expect(controller.engine.isOnBreak)
+        clock.advance(5 * minute)
+        controller.engine.tick()
+        #expect(controller.engine.session?.plan.isContinuation == true)
 
         #expect(opener.opened.count == 3, "documents, folders and pages opened once")
         #expect(reports == 1)
         #expect(opener.apps.count == 2, "apps open at every work start, how Apple Focus comes back on")
         await controller.settleShortcuts()
         #expect(opener.shortcuts == ["Focus on", "Focus on"])
+    }
+
+    @Test func skippingTheBreakOpensNoDocumentsEither() throws {
+        let w = try Workspace()
+        let clock = TestClock()
+        let (controller, opener) = Self.controller(in: w.root.appendingPathComponent("state"), now: { clock.now })
+        controller.breakLength = 5 * minute
+        controller.start()
+        defer { controller.end(); controller.stop() }
+        controller.start(workspacePlan(resources: try Self.resources(w)))
+        clock.advance(25 * minute)
+        controller.engine.tick()
+        controller.skipBreak()
+        #expect(controller.engine.session != nil)
+        #expect(opener.opened.count == 3)
     }
 
     @Test func theEngineMarksTheSessionItRestartsAfterABreakAsAContinuation() throws {
@@ -399,7 +482,8 @@ struct WorkspaceLaunchTests {
         #expect(h.engine.session?.plan.isContinuation == true)
 
         // Starting it again by hand is a start of its own.
-        #expect(h.engine.lastPlan?.fresh.isContinuation == false)
+        h.engine.start(try #require(h.engine.lastPlan))
+        #expect(h.engine.session?.plan.isContinuation == false)
     }
 
     @Test func aRestoreEmitsNoStartAndOpensNothing() throws {
@@ -818,5 +902,208 @@ struct WorkspaceCardSizeTests {
         #expect(one.width == HUDPresenter.width && two.width == HUDPresenter.width)
         #expect(two.height > one.height)
         #expect(one.height > 62, "two lines of text and a title do not fit a one-line card")
+    }
+}
+
+
+// MARK: - Project and break, each inherit / none / its own
+
+struct SetupProjectAndBreakTests {
+    typealias T = FocusSetupTests
+
+    @Test func aZeroPointThreeSetupHasNoProjectOrBreakOfItsOwn() throws {
+        let setup = try JSONDecoder().decode(FocusSetup.self, from: Data(WorkspaceStorageTests.legacy.utf8))
+        #expect(setup.project == nil && setup.breakMinutes == nil && setup.breakRules == nil)
+        let request = setup.request(categories: T.categories, popoverProject: nil)
+        #expect(request.projectID == nil && request.breakMinutes == nil && request.breakRules == nil)
+    }
+
+    @Test func theProjectIsThePopoversUnlessTheSetupNamesOneOrNone() {
+        let popover = UUID(), own = UUID()
+        func project(_ choice: SetupProject?) -> UUID? {
+            FocusSetup(name: "P", categoryIDs: ["social"], project: choice)
+                .request(categories: T.categories, popoverProject: popover).projectID
+        }
+        #expect(project(nil) == popover, "inherit: the popover's current project")
+        #expect(project(.noProject) == nil, "none, even with one chosen in the popover")
+        #expect(project(.project(own)) == own)
+        // No popover choice (a link, a sequence): inherit is no project.
+        #expect(FocusSetup(name: "P", categoryIDs: ["social"]).request(categories: T.categories).projectID == nil)
+    }
+
+    @Test func aProjectArchivedOrDeletedSinceCountsAsNone() {
+        let live = FocusProject(name: "Live"), archived = FocusProject(name: "Old", isArchived: true)
+        func start(_ choice: SetupProject?, popover: UUID? = nil) -> UUID? {
+            FocusSetup(name: "P", categoryIDs: ["social"], project: choice)
+                .startRequest(categories: T.categories, goalDraft: "", popoverProject: popover, projects: [live, archived]).projectID
+        }
+        #expect(start(.project(live.id)) == live.id)
+        #expect(start(.project(archived.id)) == nil)
+        #expect(start(.project(UUID())) == nil, "deleted")
+        #expect(start(nil, popover: live.id) == live.id)
+        #expect(start(.noProject, popover: live.id) == nil)
+    }
+
+    @Test func breakMinutesAreInheritedNoneOrOwn() {
+        func minutes(_ value: Int?) -> Int? {
+            FocusSetup(name: "B", categoryIDs: ["social"], breakMinutes: value).request(categories: T.categories).breakMinutes
+        }
+        #expect(minutes(nil) == nil, "Settings' break")
+        #expect(minutes(0) == 0, "none, even if Settings has one")
+        #expect(minutes(10) == 10)
+    }
+
+    @Test func breakRulesAreInheritedNoneOrOwn() {
+        func rules(_ value: BreakRules?) -> BreakRules? {
+            FocusSetup(name: "B", categoryIDs: ["social"], breakRules: value).request(categories: T.categories).breakRules
+        }
+        #expect(rules(nil) == nil, "Settings' default rules")
+        #expect(rules(BreakRules()) == BreakRules(), "an unrestricted break, as an explicit value")
+        #expect(rules(BreakRules(websites: ["x.com"], reminder: "Stretch"))?.websites == ["x.com"])
+    }
+
+    @Test func theThreeStatesSurviveARoundTripAndABadValueLosesOnlyItself() throws {
+        let setup = FocusSetup(name: "R", project: .noProject, breakMinutes: 0, breakRules: BreakRules())
+        let back = try JSONDecoder().decode(FocusSetup.self, from: JSONEncoder().encode(setup))
+        #expect(back.project == .noProject && back.breakMinutes == 0 && back.breakRules == BreakRules())
+        let id = UUID()
+        let own = FocusSetup(name: "O", project: .project(id), breakMinutes: 15, breakRules: BreakRules(apps: ["a"], reminder: "Water"))
+        #expect(try JSONDecoder().decode(FocusSetup.self, from: JSONEncoder().encode(own)) == own)
+
+        let json = #"""
+        {"id":"\#(UUID().uuidString)","name":"Odd","minutes":30,"project":"zzz","breakMinutes":"ten","breakRules":5}
+        """#
+        let odd = try JSONDecoder().decode(FocusSetup.self, from: Data(json.utf8))
+        #expect(odd.name == "Odd" && odd.minutes == 30)
+        #expect(odd.project == nil && odd.breakMinutes == nil && odd.breakRules == nil, "each reads as inherit")
+        let long = #"{"id":"\#(UUID().uuidString)","name":"Long","breakMinutes":99999}"#
+        #expect(try JSONDecoder().decode(FocusSetup.self, from: Data(long.utf8)).breakMinutes == FocusSetup.breakMinutesLimit)
+    }
+
+    @Test func theSummariesSayWhatEachLineUses() {
+        let live = FocusProject(name: "R01 renewal"), old = FocusProject(name: "Teaching", isArchived: true)
+        var setup = FocusSetup(name: "S")
+        #expect(setup.projectSummary(in: [live]) == "Uses the popover\u{2019}s")
+        #expect(setup.breakSummary == "Uses Settings" && setup.breakRulesSummary(categories: T.categories, appName: { $0 }) == "Uses Settings")
+        setup.project = .noProject
+        #expect(setup.projectSummary(in: [live]) == "No project")
+        setup.project = .project(live.id)
+        #expect(setup.projectSummary(in: [live, old]) == "R01 renewal")
+        setup.project = .project(old.id)
+        #expect(setup.projectSummary(in: [live, old]) == "Teaching (archived)")
+        setup.project = .project(UUID())
+        #expect(setup.projectSummary(in: [live]).hasSuffix("(deleted)") || setup.projectSummary(in: [live]) == "A deleted project")
+        setup.breakMinutes = 0
+        #expect(setup.breakSummary == "No break")
+        setup.breakMinutes = 90
+        #expect(setup.breakSummary == "1 hr 30 min")
+        setup.breakRules = BreakRules()
+        #expect(setup.breakRulesSummary(categories: T.categories, appName: { $0 }) == "Nothing blocked")
+        setup.breakRules = BreakRules(websites: ["x.com"])
+        #expect(setup.breakRulesSummary(categories: T.categories, appName: { $0 }) == "x.com")
+        setup.breakRules = BreakRules(reminder: "Water")
+        #expect(setup.breakRulesSummary(categories: T.categories, appName: { $0 }) == "Reminder only")
+    }
+
+    @MainActor
+    @Test func theBreakPickerKeepsAnOwnLengthItDoesNotListByDefault() {
+        #expect(SetupWorkspaceSections.breakChoices(including: nil) == [5, 10, 15])
+        #expect(SetupWorkspaceSections.breakChoices(including: 10) == [5, 10, 15])
+        #expect(SetupWorkspaceSections.breakChoices(including: 20) == [5, 10, 15, 20])
+        #expect(SetupWorkspaceSections.breakChoices(including: 0) == [5, 10, 15])
+    }
+
+    @Test func theResolutionPassesAllThreeToThePlan() throws {
+        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: [], categories: T.categories,
+                                     defaultBreakRules: BreakRules(websites: ["x.com"]), projectName: { _ in "R01" })
+        let project = UUID()
+        func plan(_ setup: FocusSetup) throws -> SessionPlan {
+            try #require(setup.request(categories: T.categories).resolved(with: defaults, length: { (25, false) })?.plan)
+        }
+        let own = try plan(FocusSetup(name: "O", categoryIDs: ["social"], project: .project(project), breakMinutes: 5,
+                                      breakRules: BreakRules(apps: ["a"])))
+        #expect(own.projectID == project && own.projectName == "R01" && own.breakLength == 300 && own.breakRules == BreakRules(apps: ["a"]))
+        let none = try plan(FocusSetup(name: "N", categoryIDs: ["social"], project: .noProject, breakMinutes: 0, breakRules: BreakRules()))
+        #expect(none.projectID == nil && none.breakLength == 0 && none.breakRules == BreakRules())
+        let inherit = try plan(FocusSetup(name: "I", categoryIDs: ["social"]))
+        #expect(inherit.breakLength == nil && inherit.breakRules == BreakRules(websites: ["x.com"]))
+    }
+}
+
+// MARK: - A sequence block from a workspace setup
+
+@MainActor
+struct WorkspaceSequenceTests {
+    typealias T = FocusSetupTests
+
+    private func defaults() -> StartDefaults {
+        StartDefaults(mode: .block, selectedCategoryIDs: ["social"], categories: T.categories,
+                      projectName: { _ in "R01 renewal" })
+    }
+
+    private func resolve(_ sequence: FocusSequence, setups: [FocusSetup]) throws -> SequenceRun {
+        let d = defaults()
+        return try #require(sequence.resolved(startedAt: Date(), request: {
+            sequence.request(for: $0, setups: setups, categories: T.categories, projectExists: { _ in true })
+        }, plan: { $0.resolved(with: d, length: { (25, false) })?.plan }))
+    }
+
+    @Test func aBlockFromAWorkspaceSetupCarriesItsResourcesAndOpensThemWhenThatBlockStarts() throws {
+        let w = try Workspace()
+        let aims = WorkspaceResource.file(at: try w.file("Aims.docx"), bookmarks: FakeBookmarks())
+        let notes = WorkspaceResource.file(at: try w.file("Notes.md"), bookmarks: FakeBookmarks())
+        let writing = FocusSetup(name: "Writing", categoryIDs: ["social"],
+                                 launchApps: [BlockedApp(bundleID: "com.microsoft.Word", name: "Word")],
+                                 startShortcut: "Focus on", resources: [aims, try page("example.org/guide")])
+        let review = FocusSetup(name: "Review", categoryIDs: ["social"], resources: [notes])
+        let sequence = FocusSequence(steps: [.work(minutes: 25, goal: "Write", setupID: writing.id), .rest(minutes: 5),
+                                             .work(minutes: 25, goal: "Review", setupID: review.id)])
+        let run = try resolve(sequence, setups: [writing, review])
+
+        // Resolved, each block holds its setup's workspace and is not a continuation.
+        guard case .work(let first) = run.steps[0], case .work(let second) = run.steps[2] else { Issue.record("shape"); return }
+        #expect(first.resources == writing.resources && first.launchApps == ["com.microsoft.Word"] && first.startShortcut == "Focus on")
+        #expect(second.resources == [notes])
+        #expect(!first.isContinuation && !second.isContinuation)
+        #expect(first.setupID == writing.id && second.setupID == review.id)
+
+        // Started on a controller with a fake Mac and a clock moved by hand.
+        let clock = TestClock()
+        let (controller, opener) = WorkspaceLaunchTests.controller(in: w.root.appendingPathComponent("state"), now: { clock.now })
+        var reports: [SessionPlan] = []
+        controller.onWorkspaceOpened = { _, plan in reports.append(plan) }
+        controller.start()
+        defer { controller.end(); controller.stop() }
+        #expect(controller.startSequence(run))
+        #expect(opener.opened.map(\.lastPathComponent) == ["Aims.docx", "guide"], "the first block opens its own")
+        #expect(opener.apps == [["com.microsoft.Word"]])
+
+        // The first block completes and the break runs out: the second block
+        // is a start of its own, so it opens its setup's workspace, once.
+        clock.advance(25 * minute)
+        controller.engine.tick()
+        #expect(controller.engine.isOnBreak)
+        #expect(opener.opened.count == 2, "nothing opens during the break")
+        clock.advance(5 * minute)
+        controller.engine.tick()
+        #expect(controller.engine.session?.plan.isContinuation == false)
+        #expect(opener.opened.map(\.lastPathComponent) == ["Aims.docx", "guide", "Notes.md"])
+        #expect(reports.map(\.setupID) == [writing.id, review.id])
+    }
+
+    @Test func aSetupsProjectAndBreakFlowIntoItsBlocksAndAStepsOwnProjectWins() throws {
+        let mine = UUID(), steps = UUID()
+        let setup = FocusSetup(name: "Writing", categoryIDs: ["social"], project: .project(mine), breakMinutes: 10)
+        let inherited = try resolve(FocusSequence(steps: [.work(setupID: setup.id)]), setups: [setup])
+        guard case .work(let a) = inherited.steps[0] else { return }
+        #expect(a.projectID == mine && a.breakLength == 600)
+        let overridden = try resolve(FocusSequence(steps: [.work(setupID: setup.id, projectID: steps)]), setups: [setup])
+        guard case .work(let b) = overridden.steps[0] else { return }
+        #expect(b.projectID == steps)
+        // A setup that follows the popover has no popover here: no project.
+        let follows = FocusSetup(name: "Follows", categoryIDs: ["social"])
+        let none = try resolve(FocusSequence(steps: [.work(setupID: follows.id)]), setups: [follows])
+        guard case .work(let c) = none.steps[0] else { return }
+        #expect(c.projectID == nil)
     }
 }

@@ -174,10 +174,14 @@ extension NidusModel {
         // while that card is the one showing: if another has taken its
         // place, this is news, and the link brings the count back.)
         if let wait = cards.snoozeWait, wait.key == key, host.hud.isShowing(id: Self.snoozeWaitHUDID) { return }
-        let time = isOpenEnded ? "Open-ended" : FocusFormat.short(remaining)
-        let detail = goal.isEmpty ? time : "\(goal) · \(time)"
-        let spokenTime = isOpenEnded ? "open-ended session" : FocusFormat.spoken(remaining)
-        let snoozeTitle: String? = isStrict ? nil : "Snooze \(snoozeMinutes) min"
+        // A break with rules blocks too, with a time of its own and no snooze:
+        // a break is not a session to be let out of.
+        let onBreak = !isActive && isOnBreak
+        let breakUntil = engine?.breakState.map { "Break until \(FocusFormat.clockTime($0.endsAt))" } ?? "On a break"
+        let time = onBreak ? breakUntil : (isOpenEnded ? "Open-ended" : FocusFormat.short(remaining))
+        let detail = goal.isEmpty || onBreak ? time : "\(goal) · \(time)"
+        let spokenTime = onBreak ? breakUntil.lowercased() : (isOpenEnded ? "open-ended session" : FocusFormat.spoken(remaining))
+        let snoozeTitle: String? = isStrict || onBreak ? nil : "Snooze \(snoozeMinutes) min"
         let verb: String
         switch item {
         case .app(_, _, let quit): verb = quit ? "quit" : "hidden"
@@ -214,33 +218,68 @@ extension NidusModel {
     /// `askAbout` is the goal to ask "did you finish?" about, if any. The
     /// card then asks first and offers Again only once it is answered: see
     /// `answerFinished`, which turns the question into its confirmation.
-    func presentWrapUpHUD(for final: SessionState, completed: Bool, streak: Int? = nil, askAbout goal: String? = nil) {
+    /// `nextStep` is the optional note to write about what comes next: under
+    /// the question once it is answered, or at once when there is no question
+    /// to ask (sessions aren't being recorded). The card makes room for it.
+    func presentWrapUpHUD(for final: SessionState, completed: Bool, streak: Int? = nil, askAbout goal: String? = nil,
+                          nextStep: NextStepSession? = nil) {
         guard let host else { return }
         let cards = self.cards
         cards.finishAnswer = nil
+        cards.nextStep = nextStep
         let focused = final.focusedTime ?? 0
         let minutes = Int((focused / 60).rounded())
         let time = minutes < 1 ? "Under a minute" : FocusFormat.duration(minutes: minutes)
         let blocked = final.blocks.values.reduce(0, +)
         let blocks = blocked == 0 ? "nothing needed blocking" : "blocked \(blocked) \(blocked == 1 ? "time" : "times")"
-        let title = completed ? "Session complete" : "Session ended"
+        // A block of a sequence says which, and what follows it.
+        let step = final.plan.sequenceStep
+        let run = engine?.sequence
+        let title: String
+        if completed, let step {
+            if let run, run.id == step.runID {
+                title = "Block \(run.blockNumber(at: step.index)) of \(run.workCount) complete"
+            } else {
+                title = "Sequence complete"
+            }
+        } else {
+            title = completed ? "Session complete" : "Session ended"
+        }
         let days = streak.map { "day \($0) in a row" }
-        // A break follows a completed session when breaks are on.
+        // A break follows a completed session when breaks are on, and a
+        // sequence's next block may already be running.
         let breakMinutes = engine?.breakState.map { Int(($0.length / 60).rounded()) }
-        let rest = breakMinutes.map { "\($0) min break" }
-        let detail = [ "\(time) focused", blocks, days, rest ].compactMap { $0 }.joined(separator: " · ")
-        let mediumDetail = [ "\(time) focused", days ?? (rest == nil ? blocks : nil), rest ].compactMap { $0 }.joined(separator: " · ")
-        let shortDetail = rest.map { "\(time) · \($0)" } ?? streak.map { "\(time) · day \($0)" }
-            ?? (blocked == 0 ? "\(time) focused" : "\(time) · \(blocked) blocked")
+        let following = step != nil ? engine?.session.map { "next: \(SequenceRun.describe($0.plan))" } : nil
+        let rest = breakMinutes.map { "\($0) min break" } ?? following
+        let inSequence = step != nil && (breakMinutes != nil || following != nil)
+        // What a break with rules keeps blocked, and its reminder.
+        var notes: [FocusWrapUpCard.Note] = []
+        if breakMinutes != nil {
+            if let line = breakBlockedLine() { notes.append(.init(symbol: "nosign", text: line)) }
+            if let reminder = breakReminder { notes.append(.init(symbol: "cup.and.saucer", text: reminder)) }
+        }
+        // What was put in the inbox while it ran. The card only says so: the
+        // inbox opens when its button is pressed, never by itself.
+        let saved = savedForLater(since: final.startedAt)
+        let offersButton = following == nil && !(completed && step != nil && breakMinutes == nil)
+        let detail = [ "\(time) focused", blocks, days, rest ].compactMap { $0 }.joined(separator: " \u{00B7} ")
+        let mediumDetail = [ "\(time) focused", days ?? (rest == nil ? blocks : nil), rest ].compactMap { $0 }.joined(separator: " \u{00B7} ")
+        let shortDetail = rest.map { "\(time) \u{00B7} \($0)" } ?? streak.map { "\(time) \u{00B7} day \($0)" }
+            ?? (blocked == 0 ? "\(time) focused" : "\(time) \u{00B7} \(blocked) blocked")
+        let spokenNotes = notes.map { ". " + $0.text }.joined()
         let request = DropletHUDRequest(
             id: Self.completedHUDID,
-            // Long enough to answer the question, when there is one.
-            duration: goal == nil ? 6 : 12,
+            // Long enough to answer the question, when there is one, to type a
+            // next step, to read what a break keeps blocked, or to reach the
+            // button for what was saved.
+            duration: goal != nil ? 12 : (nextStep != nil ? FinishReply.noteLinger : (saved > 0 ? 10 : notes.isEmpty ? 6 : 9)),
             priority: .normal,
-            accessibilityLabel: "\(title). \(time) focused, \(blocks)\(days.map { ", \($0)" } ?? "")\(rest.map { ". A \($0) now" } ?? "")."
-                + (goal.map { " Did you finish \($0)?" } ?? ""),
+            accessibilityLabel: "\(title). \(time) focused, \(blocks)\(days.map { ", \($0)" } ?? "")\(rest.map { ". \($0.hasSuffix("break") ? "A " : "")\($0) now" } ?? "")."
+                + spokenNotes + (goal.map { " Did you finish \($0)?" } ?? "")
+                + (nextStep != nil && goal == nil ? " What\u{2019}s the next step? Optional." : "")
+                + (Self.savedForLaterText(saved).map { " \($0)." } ?? ""),
             isExpanded: true,
-            expandedContentHeight: goal == nil ? 64 : 96
+            expandedContentHeight: (goal == nil ? 64 : 96) + CGFloat(notes.count + (saved > 0 ? 1 : 0)) * FocusWrapUpCard.noteHeight
         ) {
             FocusHUDStrip(symbol: completed ? "checkmark.circle.fill" : "stop.circle", text: time)
         } expanded: { [weak self] in
@@ -253,11 +292,22 @@ extension NidusModel {
                     mediumDetail: mediumDetail,
                     shortDetail: shortDetail,
                     completed: completed,
-                    button: breakMinutes == nil ? "Again" : "Skip break",
-                    shortButton: breakMinutes == nil ? "Again" : "Skip",
+                    button: !offersButton ? nil : (breakMinutes == nil ? "Again" : "Skip break"),
+                    shortButton: !offersButton ? nil : (breakMinutes == nil ? "Again" : "Skip"),
+                    skipLabel: inSequence ? "Skip the break and start the next block" : "Skip the break and start the next session",
+                    notes: notes,
                     question: goal,
                     reply: reply,
+                    saved: saved,
+                    openInbox: {
+                        self?.openInbox()
+                        self?.host?.hud.dismiss(id: Self.completedHUDID)
+                    },
+                    nextStep: nextStep,
                     answer: { self?.answerFinished($0) },
+                    chooseDocument: { self?.chooseNextStepDocument() },
+                    addWebAddress: { self?.addNextStepWebAddress() },
+                    finishNextStep: { self?.finishNextStep() },
                     again: {
                         if self?.isOnBreak == true { self?.skipBreak() } else { self?.startAgain() }
                         self?.host?.hud.dismiss(id: Self.completedHUDID)
@@ -283,15 +333,39 @@ struct FocusWrapUpCard: View {
     let mediumDetail: String
     let shortDetail: String
     let completed: Bool
-    var button = "Again"
+    /// nil when there is nothing to press: a sequence's next block is
+    /// already running, or its last block is done.
+    var button: String? = "Again"
     /// The island's card has room for a shorter word.
-    var shortButton = "Again"
+    var shortButton: String? = "Again"
+    /// What Skip break says to VoiceOver.
+    var skipLabel = "Skip the break and start the next session"
+    /// A line each under the result: what a break keeps blocked, its reminder.
+    var notes: [Note] = []
     /// The goal to ask "did you finish?" about, on a second row.
     var question: String? = nil
     /// The answer to it, once given.
     var reply: Bool? = nil
+    /// How many thoughts and links were saved for later during the session.
+    /// Over zero adds a row with a button to the inbox.
+    var saved = 0
+    var openInbox: () -> Void = {}
+    /// The next step being written, under the question once it is answered
+    /// (or from the start when there is no question).
+    var nextStep: NextStepSession? = nil
     var answer: (Bool) -> Void = { _ in }
+    var chooseDocument: () -> Void = {}
+    var addWebAddress: () -> Void = {}
+    var finishNextStep: () -> Void = {}
     let again: () -> Void
+
+    struct Note: Equatable {
+        var symbol: String
+        var text: String
+    }
+
+    /// A note's line: 12 point text and the spacing above it.
+    static let noteHeight: CGFloat = 23
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -302,6 +376,18 @@ struct FocusWrapUpCard: View {
                 row(detail, button: question == nil ? button : nil, last: false)
                 row(mediumDetail, button: question == nil ? button : nil, last: false)
                 row(shortDetail, button: question == nil ? shortButton : nil, last: true)
+            }
+            ForEach(notes, id: \.text) { note in
+                Label {
+                    Text(verbatim: note.text).lineLimit(1).truncationMode(.tail)
+                } icon: {
+                    Image(systemName: note.symbol).frame(width: 14)
+                }
+                .font(.system(size: 12))
+                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                // In line with the title above, past the mark.
+                .padding(.leading, 28 + DroppySpacing.md)
+                .accessibilityElement(children: .combine)
             }
             if let question {
                 Group {
@@ -317,6 +403,11 @@ struct FocusWrapUpCard: View {
                 }
                 .transition(.opacity)
             }
+            if let nextStep, question == nil || reply != nil {
+                NextStepRow(step: nextStep, chooseDocument: chooseDocument, addWebAddress: addWebAddress, done: finishNextStep)
+                    .transition(.opacity)
+            }
+            if saved > 0 { FocusSavedForLaterRow(count: saved, open: openInbox) }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: reply)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -349,7 +440,7 @@ struct FocusWrapUpCard: View {
         Button(title, action: again)
             .buttonStyle(.bordered)
             .fixedSize()
-            .accessibilityLabel(title == "Again" ? "Start the same session again" : "Skip the break and start the next session")
+            .accessibilityLabel(title == "Again" ? "Start the same session again" : skipLabel)
     }
 }
 
@@ -384,7 +475,7 @@ extension FocusWrapUpCard {
                 .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
                 .lineLimit(1)
             Spacer(minLength: DroppySpacing.sm)
-            againButton(button)
+            if let button { againButton(button) }
         }
     }
 }
@@ -398,6 +489,11 @@ enum FinishReply {
     /// How long the card stays after an answer, to be read: as long as a
     /// card with nothing to ask.
     static let linger: TimeInterval = 6
+
+    /// How long it stays once a next step can be written: time to type it,
+    /// and more for as long as the field holds the keyboard or the pointer
+    /// is on the card. Each edit gives it this much again.
+    static let noteLinger: TimeInterval = 20
 }
 
 /// Hands the card the reply to its question. The reply is kept in `cards`,
@@ -598,6 +694,8 @@ final class FocusCardState {
     /// keys) and until when their own block card stays quiet.
     var workspaceQuietKeys: Set<String> = []
     var workspaceQuietUntil = Date.distantPast
+    /// The next step the wrap-up card is collecting, if it offers one.
+    var nextStep: NextStepSession?
 }
 
 extension NidusModel.Key {

@@ -328,6 +328,7 @@ final class FakeScheduleHost: ScheduleHost {
     var schedules: [FocusSchedule] = []
     var scheduleHandled: [String: Date] = [:]
     var isSessionOrBreakOn = false
+    var isScreenLocked = false
     var startSucceeds = true
     var started: [(id: String, minutes: Int, asks: Bool, missed: Bool)] = []
     var headsUps: [FocusSchedule.Occurrence] = []

@@ -276,15 +276,21 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
                 note.isEnabled = false
                 menu.addItem(note)
             } else {
-                menu.addItem(action("End session", #selector(endSession)))
+                menu.addItem(action(model.runningSequence == nil ? "End session" : "End sequence", #selector(endSession)))
             }
         } else if model.isOnBreak {
             let header = NSMenuItem()
             header.view = NSHostingView(rootView: FocusMenuHeader(model: model))
             menu.addItem(header)
             menu.addItem(.separator())
-            menu.addItem(action("Start next session now", #selector(skipBreak)))
-            menu.addItem(action("End break", #selector(endBreak)))
+            if let blocked = model.breakBlockedLine() {
+                let note = NSMenuItem(title: blocked, action: nil, keyEquivalent: "")
+                note.isEnabled = false
+                menu.addItem(note)
+            }
+            let inSequence = model.runningSequence != nil
+            menu.addItem(action(inSequence ? "Start next block now" : "Start next session now", #selector(skipBreak)))
+            menu.addItem(action(inSequence ? "End sequence" : "End break", #selector(endBreak)))
         } else {
             if let pending = model.pendingFinish {
                 // Asked on the wrap-up card too; here until answered or the
@@ -295,12 +301,17 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
                 menu.addItem(action("Yes, finished", #selector(answeredYes)))
                 menu.addItem(action("Not yet", #selector(answeredNo)))
                 menu.addItem(.separator())
+            } else if model.canAddNextStep {
+                // The card's next-step field, reached from the keyboard.
+                menu.addItem(action("Add a next step\u{2026}", #selector(addNextStep)))
+                menu.addItem(.separator())
             }
             let start = action("Start focus", #selector(startSession))
             let setups = model.setupMenuItems()
-            // With setups listed beside it, Start focus takes an icon too,
-            // so the group's titles line up.
-            if !setups.isEmpty { start.image = FocusSetupsMenu.symbolImage("play") }
+            let sequences = model.sequenceMenuItems()
+            // With setups or sequences listed beside it, Start focus takes an
+            // icon too, so the group's titles line up.
+            if !setups.isEmpty || !sequences.isEmpty { start.image = FocusSetupsMenu.symbolImage("play") }
             let plan = "\(model.lengthLabel) · \(model.selectionSummary)"
             if #available(macOS 14.4, *) {
                 start.subtitle = plan
@@ -312,6 +323,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
                 menu.addItem(detail)
             }
             setups.forEach(menu.addItem)
+            sequences.forEach(menu.addItem)
             menu.addItem(.separator())
             menu.addItem(action("Stats…", #selector(openStats)))
             menu.addItem(action("Nidus settings…", #selector(openSettings)))
@@ -336,6 +348,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     @objc private func skipBreak() { model?.skipBreak() }
     @objc private func answeredYes() { model?.answerFinished(true) }
     @objc private func answeredNo() { model?.answerFinished(false) }
+    @objc private func addNextStep() { model?.focusNextStep() }
     @objc private func endBreak() { model?.endBreak() }
     @objc private func openSettings() { model?.openSettings() }
     @objc private func openStats() { model?.openStats() }

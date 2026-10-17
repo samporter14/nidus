@@ -117,8 +117,10 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
 - Capture: a configurable global shortcut (off until set) opens a small
   panel; also a popover button while a session runs. Saving never changes
   the session.
-- Block page: a "Save for later" link `nidus://save?u=<encoded url>` beside
-  Snooze. It saves the URL and nothing else: no snooze, no unblock, no
+- Block page: a "Save for later" link `nidus://save?u=<encoded url>&k=<token>`
+  beside Snooze. The token is random per install (`block-page-token`, 0600,
+  in Nidus's folder) and written into the block page; a save link without it
+  is ignored, so another web page can't fill the inbox. It saves the URL and nothing else: no snooze, no unblock, no
   navigation; the page says "Saved". Repeated sweeps or reloads of the same
   URL within 10 minutes, or an open item with the same URL, add nothing.
 - Only http(s) URLs are kept (others are dropped, the text is kept). Text is
@@ -194,9 +196,15 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
 ### 7. Calendar-aware schedules
 - Per schedule, off by default: "Check my calendar first" with a buffer
   (0, 5, 10, 15 min). Calendar access is asked only from a button.
-- Checked once at the heads-up before a scheduled start and again at the
-  moment of starting (revalidate). No polling between; no event titles are
-  stored (only start/end of the blocking events, in memory).
+- Checked once at the heads-up before a scheduled start, and read again when
+  Shorten or Delay is pressed (a suggestion is never acted on from a stale
+  read). A card left alone starts the block as scheduled: the person saw the
+  conflict and chose nothing. A delayed run gets its own heads-up and check.
+  No polling between; no event titles are read for this or stored (only the
+  start and end of the events in the way, in memory).
+- A shortened or delayed run waits while the screen is locked; on unlock the
+  usual late-start rule decides (it starts with at least five minutes left).
+  Ordinary schedules keep 0.3's behaviour.
 - A conflict (an event overlapping the block's window, or one ongoing at
   the start) offers: Shorten (end at the event's start minus the buffer),
   Delay (start at the event's end plus the buffer, keeping the end), Skip.

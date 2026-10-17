@@ -51,6 +51,10 @@ final class FocusController: ObservableObject {
         set { appBlocker.action = newValue }
     }
     var snoozeLength: TimeInterval = SessionEngine.defaultSnooze
+    /// Demos, renders and tests: whatever the engine says to block, nothing is
+    /// quit and no browser is asked. A sample break with rules can be drawn
+    /// without touching the Mac it is drawn on.
+    var blocksNothing = false
 
     var onBlocked: (BlockedItem) -> Void = { _ in }
     var onSessionEvent: (SessionEvent) -> Void = { _ in }
@@ -109,6 +113,8 @@ final class FocusController: ObservableObject {
     private var warnedBreakEnd: Date?
     private var lockObservers: [NSObjectProtocol] = []
     private var isScreenLocked = false
+    /// The screen is locked: someone may not be there.
+    var screenIsLocked: Bool { isScreenLocked }
     /// What macOS broadcasts as the screen locks and unlocks.
     static let screenLockedNotification = Notification.Name("com.apple.screenIsLocked")
     static let screenUnlockedNotification = Notification.Name("com.apple.screenIsUnlocked")
@@ -116,10 +122,11 @@ final class FocusController: ObservableObject {
     /// cannot leave a Focus mode off.
     private var shortcutChain: Task<Void, Never>?
 
-    init(directory: URL, dropletID: String = "focus") {
+    /// `now` is the engine's clock; tests move it by hand.
+    init(directory: URL, dropletID: String = "focus", now: @escaping () -> Date = Date.init) {
         blockPage = BlockPage(directory: directory, dropletID: dropletID)
         browsers = BrowserBlocker(blockPage: blockPage)
-        engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")))
+        engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")), now: now)
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
     }
@@ -135,7 +142,7 @@ final class FocusController: ObservableObject {
         engine.restore()
         if FileManager.default.fileExists(atPath: tabsRestoredMarker.path) {
             try? FileManager.default.removeItem(at: tabsRestoredMarker)
-            quietsNextSweep = engine.session != nil
+            quietsNextSweep = engine.session != nil || engine.isOnBreak
         }
 
         let center = NSWorkspace.shared.notificationCenter
@@ -176,7 +183,7 @@ final class FocusController: ObservableObject {
                     count + ((try? browsers.restore(browser))?.count ?? 0)
                 }
             }
-            if restored > 0, engine.session != nil {
+            if Self.marksTabsRestored(restored: restored, hasSession: engine.session != nil, isOnBreak: engine.isOnBreak) {
                 FileManager.default.createFile(atPath: tabsRestoredMarker.path, contents: Data())
             }
         }
@@ -262,6 +269,13 @@ final class FocusController: ObservableObject {
         now = Date()
         engine.start(plan)
     }
+    /// Starts a resolved sequence's first block. Called only by the model's
+    /// guarded start path; the engine itself refuses while anything is on.
+    @discardableResult
+    func startSequence(_ run: SequenceRun) -> Bool {
+        now = Date()
+        return engine.startSequence(run)
+    }
     func pause() { engine.pause() }
     func resume() { engine.resume() }
     func end() { engine.end() }
@@ -318,7 +332,9 @@ final class FocusController: ObservableObject {
                 opened = (launcher.open(plan.resources, using: opener), plan)
             }
         case .ended(let reason, let final):
-            if final.plan.reopensQuitApps { reopen(final.quitApps) }
+            // Not the apps whatever follows blocks again at once: a break with
+            // rules, or the next block of a sequence.
+            if final.plan.reopensQuitApps { reopen(Self.appsToReopen(final.quitApps, under: engine.enforcement)) }
             if let name = final.plan.endShortcut { runShortcut(name) }
             if recordsHistory, let entry = SessionEntry(ended: final, outcome: reason) {
                 history.append(entry)
@@ -377,30 +393,79 @@ final class FocusController: ObservableObject {
         opener.openApplications(bundleIDs, activating: true)
     }
 
-    /// Brings the blockers in line with the engine: on, off, or new rules.
+    /// Brings the blockers in line with the engine: on, off, or new rules. A
+    /// session that gives way to a break with rules (or to the next block of a
+    /// sequence) is one change from rule to rule: a page both block is never
+    /// put back in between, one only the old rule blocked is, and one only the
+    /// new rule blocks is caught by the sweep that follows.
     private func applyEnforcement() {
-        let target = engine.enforcement
+        var target = engine.enforcement
+        // Nothing is quit and no browser asked: a demo's sample break can
+        // carry rules, and a rule set that is empty blocks nothing.
+        if blocksNothing, target != nil { target = Enforcement(mode: .block, apps: [], websites: []) }
         guard target != enforcing else { return }
-        let wasEnforcing = enforcing != nil
+        let before = enforcing
         enforcing = target
 
         guard let target else {
             appBlocker.stop()
-            if wasEnforcing { restoreTabs(keepBlocked: nil) }
+            if Self.tabHandling(from: before, to: nil) == .restoreAll { restoreTabs(keepBlocked: nil) }
             return
         }
         appBlocker.mode = target.mode == .block ? .block(target.apps) : .allow(target.apps)
         appBlocker.start()
-        // A snooze narrows the rule: put back the tabs it no longer blocks.
-        if wasEnforcing { restoreTabs(keepBlocked: websiteRule(for: target)) }
+        if case .keepBlocked(let rule) = Self.tabHandling(from: before, to: target) {
+            restoreTabs(keepBlocked: websiteRule(for: rule))
+        }
         sweepBrowsers()
+    }
+
+    /// What happens to tabs sitting on the block page when the rules change.
+    enum TabHandling: Equatable, Sendable {
+        /// Nothing was blocking, so no tab is on the page.
+        case leave
+        /// Blocking ended: every tab goes back.
+        case restoreAll
+        /// Rules changed: tabs the new rules no longer block go back, and
+        /// those they still block stay put.
+        case keepBlocked(by: Enforcement)
+    }
+
+    nonisolated static func tabHandling(from old: Enforcement?, to new: Enforcement?) -> TabHandling {
+        guard old != nil else { return .leave }
+        guard let new else { return .restoreAll }
+        return .keepBlocked(by: new)
+    }
+
+    /// The website rule an enforcement stands for. A running session's own
+    /// snoozes and its plan's website exceptions go in with it. A break's rule
+    /// has neither (no session is running): it blocks what its rules list.
+    nonisolated static func websiteRule(for enforcement: Enforcement, session: SessionState? = nil) -> WebsiteRule {
+        WebsiteRule(enforcement: enforcement, session: session)
+    }
+
+    /// The quit apps worth opening again: not those the rules now in force
+    /// would quit straight away.
+    nonisolated static func appsToReopen(_ quit: [String], under enforcement: Enforcement?) -> [String] {
+        guard let enforcement else { return quit }
+        switch enforcement.mode {
+        case .block: return quit.filter { !enforcement.apps.contains($0) }
+        case .allow: return quit.filter { enforcement.apps.contains($0) }
+        }
+    }
+
+    /// Quitting leaves a marker when it put tabs back from a session or a
+    /// break that will resume, so the next start blocks them again quietly.
+    nonisolated static func marksTabsRestored(restored: Int, hasSession: Bool, isOnBreak: Bool) -> Bool {
+        restored > 0 && (hasSession || isOnBreak)
     }
 
     /// What the sweep and a restore judge tabs by. The session's snoozes and
     /// its plan's website exceptions go in; the plan is the snapshot taken
     /// when the session started, so a category edited since changes nothing.
+    /// On a break there is no session, so the break's rule stands alone.
     private func websiteRule(for enforcement: Enforcement) -> WebsiteRule {
-        WebsiteRule(enforcement: enforcement, session: engine.session)
+        Self.websiteRule(for: enforcement, session: engine.session)
     }
 
     private func sweepBrowsers() {
@@ -411,14 +476,16 @@ final class FocusController: ObservableObject {
         let rule = websiteRule(for: enforcing)
         let browsers = self.browsers
         let goal = engine.session?.plan.goal ?? ""
-        // 0 hides the block page's Snooze: a strict session has none.
-        let minutes = engine.session?.plan.strict == true ? 0 : Int((snoozeLength / 60).rounded())
+        // 0 hides the block page's Snooze: a strict session has none, and
+        // neither has a break (the page would offer what nothing can do).
+        let onBreak = engine.session == nil
+        let minutes = onBreak || engine.session?.plan.strict == true ? 0 : Int((snoozeLength / 60).rounded())
         browserQueue.async { [weak self] in
             var redirected: [String] = []
             var access: [String: AppleEventError] = [:]
             for browser in BrowserProfile.known {
                 do throws(AppleEventError) {
-                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes)
+                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes, onBreak: onBreak)
                 } catch {
                     access[browser.bundleID] = error
                 }

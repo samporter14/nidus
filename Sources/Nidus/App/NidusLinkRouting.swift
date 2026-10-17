@@ -33,6 +33,8 @@ extension NidusModel {
             }
             // Through the pause, if one is set: the page can't skip it.
             requestSnooze(site)
+        case .save(let url, let token):
+            saveFromLink(url: url, token: token)
         case .start(let start):
             startFromLink(start)
         case .end:
@@ -41,6 +43,24 @@ extension NidusModel {
             toggleFromOutside()
         case .popover:
             showPopover()
+        }
+    }
+
+    /// Save for later, from the block page. It puts the address in the inbox
+    /// and does nothing else: no snooze, no unblock, no opening the address,
+    /// no change to the session (a strict one included). A link without the
+    /// block page's token is ignored. The log never holds the address or the
+    /// token.
+    private func saveFromLink(url: String, token: String) {
+        guard let inbox else {
+            host?.log.notice("ignored save link: no inbox")
+            return
+        }
+        switch inbox.saveFromBlockPage(url: url, token: token) {
+        case .saved: host?.log.debug("saved a page for later")
+        case .duplicate: host?.log.debug("save link: already in the inbox")
+        case .badToken: host?.log.notice("ignored save link: not from the block page")
+        case .notAWebAddress: host?.log.notice("ignored save link: not a web address")
         }
     }
 

@@ -32,6 +32,8 @@ struct SettingsRouteTests {
         (NidusModel.categoryPagePrefix + "5C1D", .blocking, true),
         (NidusModel.setupPagePrefix + "0F6A3C1E-3B6E-4C57-A2A1-6E0A6B1F4D2B", .setups, true),
         (NidusModel.schedulePagePrefix + "sample-deep-work", .schedules, true),
+        // A project's page opens over Stats, where the Projects list is.
+        (NidusModel.projectPagePrefix + "5B0F6C0E-1D2A-4F55-9B7A-3C1E0A5D7001", .stats, true),
         // Anything else is General, as itself.
         ("", .general, false),
         ("nowhere", .general, false),
@@ -159,6 +161,9 @@ struct SettingsTabTests {
         #expect(model.makeSettingsPage(id: NidusModel.launchAppsPageID) != nil)
         #expect(model.makeSettingsPage(id: NidusModel.categoryPagePrefix + "deleted") == nil)
         #expect(model.makeSettingsPage(id: "nowhere") == nil)
+        // A project that isn't in the list (deleted, or never was) has no page.
+        #expect(model.makeSettingsPage(id: NidusModel.projectPagePrefix + UUID().uuidString) == nil)
+        #expect(model.makeSettingsPage(id: NidusModel.projectPagePrefix + "not-an-id") == nil)
     }
 }
 

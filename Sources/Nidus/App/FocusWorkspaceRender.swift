@@ -21,6 +21,7 @@ extension NidusModel {
     func seedSampleWorkspace(in folder: URL) -> FocusSetup? {
         guard Demo.isActive else { return nil }
         seedSampleCategory()
+        seedSampleWorkspaceProjects()
         let manager = FileManager.default
         let references = folder.appendingPathComponent("References", isDirectory: true)
         try? manager.createDirectory(at: references, withIntermediateDirectories: true)
@@ -39,7 +40,19 @@ extension NidusModel {
                           goal: "Revise Specific Aims",
                           launchApps: [BlockedApp(bundleID: "com.microsoft.Word", name: "Word"),
                                        BlockedApp(bundleID: "org.zotero.zotero", name: "Zotero")],
-                          startShortcut: "Nidus \u{00B7} Work on", resources: resources)
+                          startShortcut: "Nidus \u{00B7} Work on", resources: resources,
+                          project: .project(Self.sampleProject), breakMinutes: 10,
+                          breakRules: BreakRules(apps: [], websites: ["x.com", "reddit.com"], reminder: "Stretch, water"))
+    }
+}
+
+extension NidusModel {
+    /// Demo only: the two projects a setup can count toward. Not the
+    /// projects render's, which also writes sessions into the history.
+    func seedSampleWorkspaceProjects() {
+        guard Demo.isActive else { return }
+        projects = [FocusProject(id: Self.sampleProject, name: "R01 renewal"), FocusProject(name: "Lab notebook")]
+        selectedProjectID = nil
     }
 }
 
@@ -56,17 +69,18 @@ extension RenderSurfaces {
         // back before each shot (see renderSetups).
         func stage() {
             model.seedSampleCategory()
+            model.seedSampleWorkspaceProjects()
             model.setups = others + [sample]
         }
         let page = NidusModel.setupPagePrefix + sample.id.uuidString
 
         stage()
         await shootSettings(model, settings, page: page, title: sample.displayName,
-                            name: "settings-setup-workspace", height: 1250, in: directory)
+                            name: "settings-setup-workspace", height: 1500, in: directory)
         stage()
-        await shoot(FocusSetupPage(model: model, setupID: sample.id, opened: [.apps, .documents, .pages, .shortcuts, .exceptions])
+        await shoot(FocusSetupPage(model: model, setupID: sample.id, opened: [.apps, .documents, .pages, .shortcuts, .exceptions, .project, .breakLength, .breakRules])
                         .background(Color(nsColor: .windowBackgroundColor)),
-                    width: 640, height: 2300, name: "settings-setup-workspace-open", in: directory)
+                    width: 640, height: 3100, name: "settings-setup-workspace-open", in: directory)
         stage()
         await shootSettings(model, settings, page: NidusModel.setupsPageID, title: "Setups",
                             name: "settings-setups-workspace", height: 520, in: directory)

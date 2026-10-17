@@ -36,11 +36,7 @@ final class HUDPresenter {
         let card = HUDCardView(content: request.content)
         let hosting = NSHostingView(rootView: card)
         hosting.sizingOptions = []
-        // Measured on a second view: with no sizing options this one has no
-        // fitting size, and the card would open 0 by 0.
-        let probe = NSHostingView(rootView: card)
-        probe.frame = NSRect(x: 0, y: 0, width: Self.width, height: 10)
-        let size = NSSize(width: Self.width, height: ceil(probe.fittingSize.height))
+        let size = Self.size(of: request)
         hosting.frame = NSRect(origin: .zero, size: size)
         panel.contentView = hosting
 
@@ -77,6 +73,36 @@ final class HUDPresenter {
         return true
     }
 
+    /// The card at its width, as tall as its content is now. Measured on a
+    /// second view: with no sizing options the one on screen has no fitting
+    /// size, and the card would open 0 by 0.
+    private static func size(of request: DropletHUDRequest) -> NSSize {
+        let probe = NSHostingView(rootView: HUDCardView(content: request.content))
+        probe.frame = NSRect(x: 0, y: 0, width: width, height: 10)
+        return NSSize(width: width, height: ceil(probe.fittingSize.height))
+    }
+
+    /// A card is measured when it comes up, and stays that size. One whose
+    /// content gains a row (the finish card, once answered, making room for
+    /// the next step) asks to be measured again: it keeps its top edge and
+    /// grows down. Does nothing if another card has taken its place.
+    func remeasure(id: String) {
+        guard isShowing(id: id), let panel, let request = lastRequest, request.id == id else { return }
+        let size = Self.size(of: request)
+        guard abs(size.height - panel.frame.height) > 0.5 else { return }
+        let frame = NSRect(x: panel.frame.midX - size.width / 2, y: panel.frame.maxY - size.height,
+                           width: size.width, height: size.height)
+        panel.setFrame(frame, display: true, animate: !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+    }
+
+    /// Lets a card's text field take typing, without making Nidus the active
+    /// app. Only for something the person asked for (a menu item): a card
+    /// never takes the keyboard on its own.
+    func makeKey(id: String) {
+        guard isShowing(id: id) else { return }
+        panel?.makeKey()
+    }
+
     func dismiss(id: String) {
         guard shownID == id else { return }
         hide()
@@ -108,8 +134,9 @@ final class HUDPresenter {
         dismissTask?.cancel()
         dismissTask = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
-            // Kept while the pointer rests on it, so a button can be reached.
-            while !Task.isCancelled, let panel = self?.panel, panel.frame.contains(NSEvent.mouseLocation) {
+            // Kept while the pointer rests on it, so a button can be reached,
+            // and while it holds the keyboard, so a sentence can be finished.
+            while !Task.isCancelled, let panel = self?.panel, panel.frame.contains(NSEvent.mouseLocation) || panel.isKeyWindow {
                 try? await Task.sleep(for: .seconds(1))
             }
             guard !Task.isCancelled else { return }

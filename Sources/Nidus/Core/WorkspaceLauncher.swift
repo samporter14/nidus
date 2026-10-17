@@ -351,23 +351,3 @@ extension WorkspaceResource {
         return chosen
     }
 }
-
-// MARK: - A plan that follows a break
-
-extension SessionPlan {
-    /// The same session carried on after a break: its apps and Shortcuts run
-    /// again, its documents and pages are not opened a second time.
-    var continuing: SessionPlan {
-        var copy = self
-        copy.isContinuation = true
-        return copy
-    }
-
-    /// The same session started again by the person (Again, the toggle):
-    /// that is a start of its own, so it opens its documents and pages.
-    var fresh: SessionPlan {
-        var copy = self
-        copy.isContinuation = false
-        return copy
-    }
-}

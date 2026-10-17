@@ -207,6 +207,34 @@ extension FocusSetup {
     }
 }
 
+// MARK: - Project and break summaries
+
+extension FocusSetup {
+    /// "Uses the popover's", "No project", or the project's name.
+    func projectSummary(in projects: [FocusProject]) -> String {
+        switch project {
+        case nil: return "Uses the popover\u{2019}s"
+        case .noProject: return "No project"
+        case .project(let id): return ProjectLabel.of(id: id, storedName: nil, in: projects)?.text ?? "No project"
+        }
+    }
+
+    /// "Uses Settings", "No break" or the length.
+    var breakSummary: String {
+        guard let breakMinutes else { return "Uses Settings" }
+        return breakMinutes == 0 ? "No break" : FocusFormat.duration(minutes: breakMinutes)
+    }
+
+    /// "Uses Settings", "Nothing blocked", or what stays blocked.
+    func breakRulesSummary(categories: [FocusCategory], appName: (String) -> String) -> String {
+        guard let breakRules else { return "Uses Settings" }
+        if let names = breakRules.blockedNames(categories: categories, appName: appName) {
+            return BreakRules.list(names).text
+        }
+        return breakRules.displayReminder == nil ? "Nothing blocked" : "Reminder only"
+    }
+}
+
 // MARK: - Saying how a start went
 
 /// What the workspace card remembers while it is up.
@@ -269,6 +297,8 @@ extension NidusModel {
                 state.allowed = true
                 self.host?.hud.refresh(id: Self.workspaceHUDID, duration: 6,
                                        announcing: "Allowed. It applies from the next start.")
+                // The card gains a line saying so.
+                self.host?.hud.remeasure(id: Self.workspaceHUDID)
             }
         }
         let request = DropletHUDRequest(

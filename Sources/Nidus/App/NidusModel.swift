@@ -55,9 +55,24 @@ final class NidusModel: NSObject, ObservableObject {
     private var welcomeTask: Task<Void, Never>?
     /// Browsers already warned about this session, so each is said once.
     private var warnedBrowsers: Set<String> = []
+    /// A sequence's block ended and the next began in the same moment: the
+    /// `.started` that follows must not take down the card for the first.
+    private var nextBlockFollowedEnd = false
     /// The last recorded session with a goal, until "did you finish?" is
     /// answered or the next session starts. The menu bar asks too.
     private(set) var pendingFinish: (id: SessionEntry.ID, goal: String)?
+    /// The resume notes (ResumeNotes.swift): made when the model activates,
+    /// so a model that was never activated has none and keeps none.
+    var resumeNotes: ResumeNoteStore?
+    /// Why the last Resume did nothing, beside the note it was pressed on.
+    @Published var resumeNotice: ResumeNotice?
+    /// Opens the link a resume note carries, when it is resumed. Replaced in tests.
+    var urlOpener: (URL) -> Bool = { NSWorkspace.shared.open($0) }
+    /// Demo only: the question the wrap-up card is asking, or none.
+    func setDemoQuestion(goal: String?) {
+        guard Demo.isActive else { return }
+        pendingFinish = goal.map { (id: UUID(), goal: $0) }
+    }
     /// Listens for the moments Monday's recap may be offered (WeeklyRecapCard.swift).
     var recapWatcher: WeeklyRecapWatcher?
     /// What the cards remember: a snooze waiting out its pause, and the
@@ -67,6 +82,14 @@ final class NidusModel: NSObject, ObservableObject {
     /// (FocusCalendar.swift). Neither does anything until `activate` starts it.
     let scheduler = FocusScheduler()
     let meetings = MeetingFinder()
+    /// The distraction inbox (Core/FocusInbox.swift), opened in `activate`.
+    /// Saving to it never touches a session.
+    var inbox: FocusInbox?
+    /// The capture panel and its global shortcut (FocusCapture.swift).
+    let capture = CaptureCoordinator()
+    /// Opens an inbox item's address. Used only by that item's Open button;
+    /// a test replaces it to see that nothing else opens anything.
+    var inboxURLOpener: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
 
     // MARK: Lifecycle
 
@@ -75,8 +98,13 @@ final class NidusModel: NSObject, ObservableObject {
         let controller = FocusController(directory: host.environment.containerDirectory,
                                          dropletID: Self.id)
         self.controller = controller
+        // A demo or render draws sample sessions and breaks, some with rules
+        // of their own: none of them may quit an app or ask a browser.
+        controller.blocksNothing = Demo.isActive
+        resumeNotes = ResumeNoteStore(url: host.environment.containerDirectory.appendingPathComponent(ResumeNoteStore.fileName))
         plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
+        startInbox(host: host)
 
         controller.onBlocked = { [weak self] item in
             self?.presentBlockedHUD(for: item)
@@ -147,6 +175,7 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask?.cancel()
         welcomeTask = nil
         stopWeeklyRecap()
+        stopInbox()
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID,
                    Self.workspaceHUDID] { host?.hud.dismiss(id: id) }
         // Quitting puts blocked tabs back; demos and renders never touch
@@ -168,7 +197,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// Starts a session from the popover: its goal, length and categories.
     func startSession() {
-        startSession(SessionRequest(goal: goalDraft))
+        startSession(SessionRequest(goal: goalDraft, projectID: selectedProjectID))
     }
 
     /// Starts a session from anywhere: the popover, a nidus:// link, a
@@ -179,50 +208,43 @@ final class NidusModel: NSObject, ObservableObject {
     /// when a block list session would block nothing.
     @discardableResult
     func startSession(_ request: SessionRequest) -> Bool {
-        guard let controller, !isActive, !isOnBreak else { return false }
-        let mode = request.mode ?? mode
-        let ids = request.categoryIDs ?? selectedCategoryIDs
-        let chosen = categories.filter { ids.contains($0.id) }
-        guard mode == .allow || !chosen.allSatisfy(\.isEmpty) else { return false }
-        // A length the request didn't give: the next meeting if it was chosen
-        // (read again now, in case it moved), else an "until" time, else the
-        // popover's length.
-        let meetingMinutes = request.minutes == nil ? meetings.minutesToChosenMeeting() : nil
-        let minutes = request.minutes ?? meetingMinutes ?? minutesForNextStart()
-        var plan = SessionPlan(
-            goal: (request.goal ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-            duration: minutes > 0 ? TimeInterval(minutes * 60) : nil,
-            mode: mode,
-            categories: chosen,
-            reopensQuitApps: reopensQuitApps,
-            launchApps: request.launchApps ?? launchApps.map(\.bundleID),
-            startShortcut: request.startShortcut.map { $0.isEmpty ? nil : $0 } ?? startShortcut,
-            endShortcut: request.endShortcut.map { $0.isEmpty ? nil : $0 } ?? endShortcut
-        )
-        plan.strict = request.strict ?? strictMode
-        plan.setupID = request.setupID
-        plan.projectID = request.projectID
-        plan.projectName = request.projectID.flatMap(projectNameForPlan)
-        // A request's own break, else Settings' (`breakLength` nil), as before.
-        plan.breakLength = request.breakMinutes.map { TimeInterval(max(0, $0) * 60) }
-        plan.breakRules = request.breakRules ?? defaultBreakRules
-        plan.websiteExceptions = mode == .block ? websiteExceptions(for: chosen, adding: request.websiteExceptions) : []
-        plan.resources = request.resources
-        plan.sequenceStep = request.sequenceStep
+        guard let controller, canStartNew else { return false }
+        guard let resolved = resolveSession(request) else { return false }
+        let plan = resolved.plan
         controller.start(plan)
-        noteFixedEnd(request.hasFixedEnd || meetingMinutes != nil)
+        noteFixedEnd(request.hasFixedEnd || resolved.endsAtMeeting)
         rememberGoal(plan.goal)
         host?.feedback.play(.success)
         if request.asksBrowserAccess { askBrowsersNeedingConsent() }
         return true
     }
 
+    /// Nothing is on: no session, no break (and so no sequence). The guard of
+    /// every new start, a sequence's first block included.
+    var canStartNew: Bool { !isActive && !isOnBreak }
+
+    /// The plan a request starts, from Settings and the popover's choices:
+    /// what `startSession` commits to, and what each work block of a sequence
+    /// is resolved to when the sequence starts. Starts nothing.
+    func resolveSession(_ request: SessionRequest) -> ResolvedSession? {
+        request.resolved(with: startDefaults) {
+            let meeting = meetings.minutesToChosenMeeting()
+            return (meeting ?? minutesForNextStart(), meeting != nil)
+        }
+    }
+
+    /// What a request leaves unsaid.
+    var startDefaults: StartDefaults {
+        StartDefaults(mode: mode, selectedCategoryIDs: selectedCategoryIDs, categories: categories,
+                      reopensQuitApps: reopensQuitApps, launchApps: launchApps.map(\.bundleID),
+                      startShortcut: startShortcut, endShortcut: endShortcut, strict: strictMode,
+                      defaultBreakRules: defaultBreakRules, projectName: { [self] in projectNameForPlan($0) })
+    }
+
     /// Starts the last session again, from the wrap-up card.
     func startAgain() {
         guard let controller, let last = controller.engine.lastPlan else { return startSession() }
-        // Pressing Again is a start of its own, even when the last plan was a
-        // session that followed a break: it opens its documents again.
-        controller.start(last.fresh)
+        controller.start(withCurrentProject(last))
         host?.feedback.play(.success)
         askBrowsersNeedingConsent()
     }
@@ -239,7 +261,7 @@ final class NidusModel: NSObject, ObservableObject {
         } else if isOnBreak {
             skipBreak()
         } else if let last = controller.engine.lastPlan {
-            controller.start(last.fresh)
+            controller.start(withCurrentProject(last))
             host?.feedback.play(.success)
             askBrowsersNeedingConsent()
         } else {
@@ -268,8 +290,12 @@ final class NidusModel: NSObject, ObservableObject {
         controller?.markFinished(pending.id, finished)
         pendingFinish = nil
         cards.finishAnswer = finished
-        host?.hud.refresh(id: Self.completedHUDID, duration: FinishReply.linger,
-                          announcing: FinishReply.confirmation(finished))
+        // With a next step to write the card makes room for its field and
+        // stays long enough to type in it.
+        let hasNextStep = cards.nextStep != nil
+        host?.hud.refresh(id: Self.completedHUDID, duration: hasNextStep ? noteLinger : FinishReply.linger,
+                          announcing: FinishReply.confirmation(finished) + (hasNextStep ? " What\u{2019}s the next step? Optional." : ""))
+        if hasNextStep { host?.hud.remeasure(id: Self.completedHUDID) }
         host?.feedback.play(finished ? .success : .tick)
     }
 
@@ -290,6 +316,10 @@ final class NidusModel: NSObject, ObservableObject {
         controller?.snooze(key)
         host?.hud.dismiss(id: Self.blockedHUDID)
     }
+
+    /// Tests only: gives a model that was never activated (activating needs a
+    /// host, which writes real preferences) a controller to run a session on.
+    func adoptForTesting(controller: FocusController) { self.controller = controller }
 
     func openSettings() { host?.workspace.openSettings() }
 
@@ -315,8 +345,13 @@ final class NidusModel: NSObject, ObservableObject {
             controller.engine.startBreak(plan: next, length: 5 * 60)
             presentBreakEndingHUD(at: Date().addingTimeInterval(12), next: next)
             return
+        case "break-rules", "sequence-block", "sequence-break", "sequence-direct", "sequences":
+            return runSequenceScenario(scenario)
         case "welcome": controller.end(); return presentWelcomeHUD()
         case "setups": controller.end(); return seedSampleSetups()
+        case "inbox": controller.end(); return seedSampleInbox()
+        case "projects": controller.end(); return seedSampleProjects()
+        case "projects-quiet": controller.end(); return seedSampleProjects(notes: false)
         case "goals":
             controller.end()
             if recentGoals.isEmpty {
@@ -350,6 +385,8 @@ final class NidusModel: NSObject, ObservableObject {
             presentWrapUpHUD(for: final, completed: true, askAbout: final.plan.goal)
             if scenario.hasSuffix("-yes") { answerFinished(true) }
             if scenario == "finish-notyet" { answerFinished(false) }
+        case "finish-next", "finish-next-empty", "finish-next-notyet", "finish-next-off":
+            presentSampleNextStep(scenario)
         case "wrapup", "streak":
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60
@@ -359,10 +396,35 @@ final class NidusModel: NSObject, ObservableObject {
             presentBrowserAccessHUD(for: .chrome, needsConsent: true)
         case "strict":
             presentBlockedHUD(for: .app(bundleID: "com.tinyspeck.slackmacgap", name: "Slack", quit: true))
+        case "wrapup-saved":
+            // Items put in during this session, then the card that counts them.
+            guard var final = controller.engine.session else { break }
+            seedSampleInbox()
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            presentWrapUpHUD(for: final, completed: true)
+        case "finish-saved":
+            // The same, with the question asked as well.
+            guard var final = controller.engine.session else { break }
+            seedSampleInbox()
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3]
+            pendingFinish = (id: UUID(), goal: final.plan.goal)
+            presentWrapUpHUD(for: final, completed: true, askAbout: final.plan.goal)
         case "wrapup-break":
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60
             final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            controller.end()
+            controller.engine.startBreak(plan: final.plan, length: 5 * 60)
+            presentWrapUpHUD(for: final, completed: true)
+        case "wrapup-break-rules":
+            // The card as a break with rules begins: what stays blocked and
+            // until when, and the reminder.
+            guard var final = controller.engine.session else { break }
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            final.plan.breakRules = Self.sampleBreakRules
             controller.end()
             controller.engine.startBreak(plan: final.plan, length: 5 * 60)
             presentWrapUpHUD(for: final, completed: true)
@@ -384,12 +446,20 @@ final class NidusModel: NSObject, ObservableObject {
         switch event {
         case .started:
             warnedBrowsers.removeAll()
-            pendingFinish = nil
+            // A sequence's next block that began the moment the last one
+            // ended leaves that block's card, question and next step up.
+            let straightAfterEnd = nextBlockFollowedEnd
+            nextBlockFollowedEnd = false
+            if !straightAfterEnd {
+                pendingFinish = nil
+                cards.nextStep = nil
+                // Its question has no answer to take now.
+                host?.hud.dismiss(id: Self.completedHUDID)
+            }
+            resumeNotice = nil
             // A one-off belongs to the Start it was set for, however it came.
             untilTarget = nil
             customLengthDraft = nil
-            // Its question has no answer to take now.
-            host?.hud.dismiss(id: Self.completedHUDID)
             host?.hud.dismiss(id: Self.breakHUDID)
             // Last week's recap can wait; this session is now.
             host?.hud.dismiss(id: Self.recapHUDID)
@@ -405,10 +475,12 @@ final class NidusModel: NSObject, ObservableObject {
                 let entry = controller?.history.sessions.last(where: { $0.start == final.startedAt })
                 pendingFinish = entry.flatMap { $0.goal.isEmpty ? nil : (id: $0.id, goal: $0.goal) }
                 presentWrapUpHUD(for: final, completed: reason == .completed, streak: streakMilestone(for: final),
-                                 askAbout: pendingFinish?.goal)
+                                 askAbout: pendingFinish?.goal, nextStep: beginNextStep(for: final, entry: entry))
             }
             goalDraft = ""
-            menuBar?.sessionDidEnd(completed: reason == .completed)
+            // The next block is already running: the glyph stays a brain.
+            nextBlockFollowedEnd = engine?.session != nil
+            if !nextBlockFollowedEnd { menuBar?.sessionDidEnd(completed: reason == .completed) }
         case .paused, .resumed, .breakEnded:
             menuBar?.sync()
         default:
@@ -591,7 +663,7 @@ extension NidusModel {
 
     static let recentGoalLimit = 5
 
-    fileprivate func rememberGoal(_ goal: String) {
+    func rememberGoal(_ goal: String) {
         let goal = goal.trimmingCharacters(in: .whitespacesAndNewlines)
         guard recordsHistory, !goal.isEmpty else { return }
         var goals = recentGoals.filter { $0.caseInsensitiveCompare(goal) != .orderedSame }
@@ -657,9 +729,17 @@ extension NidusModel {
         FocusStats(sessions: controller?.history.sessions ?? [])
     }
 
+    /// The history, the goals remembered from it, and the resume notes (which
+    /// are written after sessions and quote them). Projects themselves stay;
+    /// what was counted toward them was worked out from the history and goes
+    /// with it.
     func clearHistory() {
         controller?.clearHistory()
         recentGoals = []
+        resumeNotes?.clear()
+        cards.nextStep = nil
+        resumeNotice = nil
+        objectWillChange.send()
     }
 
     /// The streak the session that just ended carried on, if it was the

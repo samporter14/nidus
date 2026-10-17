@@ -25,6 +25,7 @@ private struct Keyed<Value>: Identifiable {
 /// The lines of the page that open.
 enum SetupPart: Hashable, Sendable {
     case apps, documents, pages, shortcuts, exceptions
+    case project, breakLength, breakRules
 }
 
 struct SetupWorkspaceSections: View {
@@ -51,6 +52,7 @@ struct SetupWorkspaceSections: View {
             Group {
                 startSection(setup, conflicts: conflicts)
                 exceptionsSection(setup)
+                projectAndBreakSection(setup)
             }
             .task(id: setup.resources) { locations = Self.locate(setup.resources) }
             .task { await loadShortcuts() }
@@ -411,6 +413,145 @@ struct SetupWorkspaceSections: View {
 
     private var exceptionsBinding: Binding<[WebsiteException]> {
         Binding(get: { setup?.websiteExceptions ?? [] }, set: { list in update { $0.websiteExceptions = list } })
+    }
+
+    // MARK: Project and break
+
+    private func projectAndBreakSection(_ setup: FocusSetup) -> some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Project and break",
+                                  detail: "What its sessions count toward, and the break after them. Each line can use the popover\u{2019}s or Settings\u{2019} choice instead.")
+        } content: {
+            DropletSettingsCard {
+                // The popover offers a project only once there is one to pick;
+                // so does this, unless the setup already has a choice to undo.
+                if model.offersProjectPicker || setup.project != nil {
+                    line(.project, "Project", summary: setup.projectSummary(in: model.projects)) { projectRows(setup) }
+                }
+                line(.breakLength, "Break", summary: setup.breakSummary) { breakRows(setup) }
+                line(.breakRules, "Break rules",
+                     summary: setup.breakRulesSummary(categories: model.categories,
+                                                      appName: { BreakRulesNames.app($0, categories: model.categories) })) {
+                    breakRulesRows(setup)
+                }
+            }
+        }
+    }
+
+    /// How a setup's project is chosen: the popover\u{2019}s, none, or one of its own.
+    private enum ProjectChoice: Hashable { case popover, none, own }
+
+    private var projectChoice: Binding<ProjectChoice> {
+        Binding(
+            get: {
+                switch setup?.project {
+                case nil: return .popover
+                case .noProject?: return .none
+                case .project?: return .own
+                }
+            },
+            set: { choice in
+                update { setup in
+                    switch choice {
+                    case .popover: setup.project = nil
+                    case .none: setup.project = .noProject
+                    // The first project there is; the pop-up below changes it.
+                    case .own: setup.project = FocusProject.active(model.projects).first.map { .project($0.id) } ?? .noProject
+                    }
+                }
+            }
+        )
+    }
+
+    private func projectRows(_ setup: FocusSetup) -> some View {
+        Group {
+            DropletGroupedPickerRow(title: "Counts toward",
+                                    subtitle: setup.project == nil ? "Whichever project the popover has chosen when it starts."
+                                    : "A project in the popover doesn\u{2019}t change it.") {
+                Picker("Project", selection: projectChoice) {
+                    Text("Uses the popover\u{2019}s").tag(ProjectChoice.popover)
+                    Text("No project").tag(ProjectChoice.none)
+                    if !FocusProject.active(model.projects).isEmpty || setup.project?.id != nil {
+                        Text("A project").tag(ProjectChoice.own)
+                    }
+                }
+            }
+            if let id = setup.project?.id {
+                DropletControlRow(title: "Project") {
+                    FocusProjectPicker(
+                        projects: model.projects,
+                        selection: Binding(get: { id }, set: { chosen in
+                            update { $0.project = chosen.map { .project($0) } ?? .noProject }
+                        }),
+                        edit: model.openProjects)
+                }
+            }
+        }
+    }
+
+    private func breakRows(_ setup: FocusSetup) -> some View {
+        DropletGroupedPickerRow(title: "Break after it",
+                                subtitle: setup.breakMinutes == nil
+                                ? "Settings\u{2019} break: \(model.breakMinutes == 0 ? "none" : FocusFormat.duration(minutes: model.breakMinutes))."
+                                : "When it runs its full length, a break starts. Strict or not.") {
+            Picker("Break after it", selection: breakMinutes) {
+                Text("Uses Settings").tag(Int?.none)
+                Text("No break").tag(Int?.some(0))
+                ForEach(Self.breakChoices(including: setup.breakMinutes), id: \.self) { minutes in
+                    Text(FocusFormat.duration(minutes: minutes)).tag(Int?.some(minutes))
+                }
+            }
+        }
+    }
+
+    /// Settings\u{2019} lengths, and the setup\u{2019}s own if it is something else, so
+    /// the pop-up never loses what it holds.
+    static func breakChoices(including own: Int?) -> [Int] {
+        let usual = NidusModel.breakChoices.filter { $0 > 0 }
+        guard let own, own > 0, !usual.contains(own) else { return usual }
+        return (usual + [own]).sorted()
+    }
+
+    private var breakMinutes: Binding<Int?> {
+        Binding(get: { setup?.breakMinutes }, set: { value in update { $0.breakMinutes = value } })
+    }
+
+    private func breakRulesRows(_ setup: FocusSetup) -> some View {
+        Group {
+            DropletGroupedPickerRow(title: "During the break",
+                                    subtitle: setup.breakRules == nil ? ruleLine(model.defaultBreakRules, "Settings")
+                                    : "What stays blocked while the break runs. None chosen blocks nothing, even if Settings has rules.") {
+                Picker("Break rules", selection: ownRules) {
+                    Text("Uses Settings").tag(false)
+                    Text("Its own rules").tag(true)
+                }
+            }
+            if setup.breakRules != nil {
+                BreakRulesEditor(rules: breakRulesBinding, categories: model.categories)
+            }
+            if effectiveBreakMinutes(setup) == 0 {
+                Label("No break follows, so these rules aren\u{2019}t used.", systemImage: "info.circle")
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private func effectiveBreakMinutes(_ setup: FocusSetup) -> Int { setup.breakMinutes ?? model.breakMinutes }
+
+    private func ruleLine(_ rules: BreakRules?, _ owner: String) -> String {
+        guard let rules, let names = rules.blockedNames(categories: model.categories,
+                                                        appName: { BreakRulesNames.app($0, categories: model.categories) }) else {
+            return "\(owner) blocks nothing during a break."
+        }
+        return "\(owner) keeps \(BreakRules.list(names).text) blocked."
+    }
+
+    private var ownRules: Binding<Bool> {
+        Binding(get: { setup?.breakRules != nil }, set: { own in update { $0.breakRules = own ? BreakRules() : nil } })
+    }
+
+    private var breakRulesBinding: Binding<BreakRules> {
+        Binding(get: { setup?.breakRules ?? BreakRules() }, set: { rules in update { $0.breakRules = rules } })
     }
 
     // MARK: Changing the setup

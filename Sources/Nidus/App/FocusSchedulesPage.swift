@@ -192,6 +192,27 @@ struct FocusSchedulePage: View {
                                      isOn: binding(\.strict))
                 }
 
+                DropletSettingsSection {
+                    settingsSectionHeader("Calendar")
+                } content: {
+                    DropletSettingsCard {
+                        DropletToggleRow(title: "Check my calendar first",
+                                         subtitle: "A minute before it starts, offers to shorten, delay or skip a block that runs into a meeting. Only times are read, never titles.",
+                                         isOn: binding(\.checksCalendar))
+                        if schedule.checksCalendar {
+                            DropletGroupedPickerRow(title: "Gap around meetings",
+                                                    subtitle: "A shortened block ends this long before the meeting; a delayed one starts this long after it.") {
+                                Picker("Gap around meetings", selection: binding(\.calendarBuffer)) {
+                                    ForEach(FocusSchedule.bufferChoices, id: \.self) { minutes in
+                                        Text(minutes == 0 ? "No gap" : "\(minutes) min").tag(minutes)
+                                    }
+                                }
+                            }
+                            FocusCalendarAccessRow(model: model)
+                        }
+                    }
+                }
+
                 DropletSettingsCard {
                     DropletControlRow(title: "Delete this schedule") {
                         Button("Delete", role: .destructive) { model.deleteSchedule(scheduleID) }
@@ -245,6 +266,53 @@ struct FocusSchedulePage: View {
         )
         .labelsHidden()
         .fixedSize()
+    }
+}
+
+// MARK: - Calendar access
+
+/// Where Calendar access stands for a schedule that checks it, and the one
+/// action that moves it on. Access is asked for here, from the button, and
+/// nowhere else: switching the option on asks nothing. Without access the
+/// calendar can't be read, which is not the same as having no meetings, and
+/// the schedule runs as it would without the option.
+struct FocusCalendarAccessRow: View {
+    @ObservedObject var model: NidusModel
+
+    var body: some View {
+        DropletControlRow(title: "Calendar access", infoTip: note) {
+            HStack(spacing: DroppySpacing.sm) {
+                Text(label)
+                    .foregroundStyle(.secondary)
+                switch model.calendarAccess {
+                case .notDetermined:
+                    Button("Allow Calendar Access", action: model.allowCalendarAccess)
+                        .buttonStyle(.bordered)
+                case .unavailable:
+                    Button("Open System Settings\u{2026}", action: model.openCalendarSettings)
+                        .buttonStyle(.bordered)
+                case .authorized:
+                    EmptyView()
+                }
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var label: String {
+        switch model.calendarAccess {
+        case .authorized: return "Allowed"
+        case .notDetermined: return "Not asked yet"
+        case .unavailable: return "Off"
+        }
+    }
+
+    private var note: String? {
+        switch model.calendarAccess {
+        case .authorized: return nil
+        case .notDetermined: return "Until you allow it, your calendar can't be checked and this schedule runs as it is."
+        case .unavailable: return "Your calendar can't be checked, so this schedule runs as it is. Allow Nidus under Privacy & Security, Calendars."
+        }
     }
 }
 
@@ -340,9 +408,59 @@ extension RenderSurfaces {
             await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
                         name: "card-schedule-started", in: directory, padded: true)
         }
+        await renderCalendarSchedules(model: model, settings: settings, host: host, in: directory)
         model.schedules = []
         await renderUntilNextMeeting(in: directory)
     }
+
+    /// The calendar option: a schedule's page with it on and Calendar allowed,
+    /// not yet asked, and refused; and the heads-up with a meeting in the way
+    /// (with all three choices, with the meeting already on, and with only
+    /// Skip left). The calendar is a fake throughout, so a render never asks
+    /// for access, and the shared model's own source is put back.
+    private static func renderCalendarSchedules(model: NidusModel, settings: SettingsWindowController,
+                                                host: NidusHost, in directory: URL) async {
+        let calendar = Calendar.autoupdatingCurrent
+        let checked = FocusSchedule(
+            id: "sample-calendar", weekdays: FocusSchedule.workweek,
+            start: ScheduleTime(hour: 9), end: ScheduleTime(hour: 12),
+            categoryIDs: ["social", "messaging"], goal: "Deep work", checksCalendar: true, calendarBuffer: 10)
+        model.schedules = [checked]
+        let original = model.meetings.source
+        defer { model.meetings.source = original }
+
+        for (access, name) in [(CalendarAccess.authorized, "settings-schedule-calendar"),
+                               (.notDetermined, "settings-schedule-calendar-unknown"),
+                               (.unavailable, "settings-schedule-calendar-denied")] {
+            model.meetings.source = FakeCalendarSource(access: access)
+            model.objectWillChange.send()
+            await shootSettings(model, settings, page: "schedule:sample-calendar", title: "Schedule",
+                                name: name, height: 1100, in: directory)
+        }
+        settings.window?.orderOut(nil)
+
+        // The cards: a block starting in a minute, three hours long.
+        let start = Date().addingTimeInterval(58)
+        let run = FocusSchedule.Occurrence(schedule: checked, start: start, end: start.addingTimeInterval(3 * 3600))
+        let meetingStart = calendar.nextDate(after: start.addingTimeInterval(3600), matching: DateComponents(minute: 30),
+                                             matchingPolicy: .nextTime) ?? start.addingTimeInterval(5400)
+        let inTheWay = BusySpan(start: meetingStart, end: meetingStart.addingTimeInterval(1800))
+        let onNow = BusySpan(start: start.addingTimeInterval(-1800), end: start.addingTimeInterval(1800))
+        let tooLong = BusySpan(start: start.addingTimeInterval(300), end: run.end.addingTimeInterval(-300))
+        let cards: [(String, BusySpan)] = [("card-schedule-conflict", inTheWay), ("card-schedule-conflict-on", onNow),
+                                           ("card-schedule-conflict-skip", tooLong)]
+        for (name, span) in cards {
+            let conflict = FocusSchedule.conflict(for: run, spans: [span], now: start.addingTimeInterval(-58))
+            model.presentHeadsUp(for: run, conflict: conflict)
+            if let request = host.hud.lastRequest {
+                // As tall as the card measures in the real presenter.
+                await shoot(HUDCardView(content: request.content), width: HUDPresenter.width, height: 94,
+                            name: name, in: directory, padded: true)
+            }
+        }
+        host.hud.dismiss(id: NidusModel.scheduleHUDID)
+    }
+
 
     /// The length menu's last item in its three states, drawn as plain rows
     /// (a Menu's items do not draw off-screen). The calendar is a fake: a

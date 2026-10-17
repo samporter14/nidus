@@ -67,6 +67,15 @@ struct FocusWidget: View {
                     .accessibilityLabel(model.isStrict ? "Strict session" : "Strict mode on")
             }
             Spacer(minLength: 0)
+            // Inside a sequence: where it stands, in one line.
+            if let line = model.sequenceLine {
+                Text(verbatim: line)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityLabel("Sequence. " + line.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+            }
             if !model.isActive, !model.isOnBreak {
                 Button(action: model.openSettings) {
                     Image(systemName: "gearshape")
@@ -97,6 +106,9 @@ struct FocusWidget: View {
     /// down, and the popover follows its content.
     private var idle: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.md) {
+            // The newest note waiting, if there is one: nothing otherwise.
+            ResumePopoverRow(model: model)
+
             HStack(spacing: DroppySpacing.sm) {
                 TextField("What are you working on?", text: $model.goalDraft)
                     .textFieldStyle(.roundedBorder)
@@ -118,6 +130,9 @@ struct FocusWidget: View {
                     if model.customLengthDraft == nil { goalFocused = true } else { customLengthFocused = true }
                 }
             }
+
+            // Which project this counts toward; draws nothing until there is one.
+            FocusProjectPickerRow(model: model)
 
             // Saved setups, one click each; draws nothing until there are any.
             FocusSetupsBar(model: model)
@@ -150,6 +165,9 @@ struct FocusWidget: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
+
+            // "Inbox · 3", only when something is waiting.
+            FocusInboxRow(model: model)
         }
     }
 
@@ -386,6 +404,8 @@ struct FocusWidget: View {
             if !model.isOpenEnded {
                 progressBar
             }
+            // "Save a thought" while it runs, and "Inbox · 3" when items wait.
+            FocusInboxRow(model: model)
         }
         .onChange(of: model.isActive) { _, active in
             if !active { cancelStrictEnd() }
@@ -431,8 +451,8 @@ struct FocusWidget: View {
                     Image(systemName: "stop.fill")
                 }
                 .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-                .help(model.isStrict ? "End early" : "End session")
-                .accessibilityLabel(model.isStrict ? "End early" : "End session")
+                .help(model.isStrict ? "End early" : (model.runningSequence == nil ? "End session" : "End sequence"))
+                .accessibilityLabel(model.isStrict ? "End early" : (model.runningSequence == nil ? "End session" : "End sequence"))
             }
             .padding(.bottom, 8)
         }
@@ -481,12 +501,14 @@ struct FocusWidget: View {
     // MARK: Break
 
     /// Between sessions: the break's time, quiet rather than clay, with
-    /// Start now and End.
+    /// Start now and End. A break with rules says what stays blocked and
+    /// until when, and shows its reminder. In a sequence the buttons start
+    /// the next block and end the sequence.
     private var breakView: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.sm) {
             HStack(alignment: .bottom, spacing: DroppySpacing.md) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(verbatim: model.nextGoal.isEmpty ? "Next: another session" : "Next: \(model.nextGoal)")
+                    Text(verbatim: breakNextLine)
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -499,12 +521,52 @@ struct FocusWidget: View {
                         Image(systemName: "stop.fill")
                     }
                     .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-                    .help("Stop here: no session follows")
-                    .accessibilityLabel("End the break")
+                    .help(model.runningSequence == nil ? "Stop here: no session follows" : "End the sequence: no block follows")
+                    .accessibilityLabel(model.runningSequence == nil ? "End the break" : "End the sequence")
                 }
                 .padding(.bottom, 8)
             }
             ProgressTrack(progress: model.breakProgress, tint: .gray)
+            breakRestrictions
+            FocusInboxRow(model: model)
+        }
+    }
+
+    /// Above the break's clock: what starts after it. In a sequence the
+    /// header already names the next block, so this says how far along it is.
+    private var breakNextLine: String {
+        if let run = model.runningSequence { return "Block \(run.blockNumber) of \(run.workCount) done" }
+        return model.nextGoal.isEmpty ? "Next: another session" : "Next: \(model.nextGoal)"
+    }
+
+    /// What stays blocked until the break ends, and the note to self. Nothing
+    /// is drawn for a break with neither, so an ordinary break looks as it did.
+    @ViewBuilder
+    private var breakRestrictions: some View {
+        if let line = model.breakBlockedLine() {
+            Label {
+                Text(verbatim: line)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "nosign").frame(width: 14)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+        }
+        if let reminder = model.breakReminder {
+            Label {
+                Text(verbatim: reminder)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "cup.and.saucer").frame(width: 14)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Reminder: \(reminder)")
         }
     }
 
@@ -531,8 +593,8 @@ struct FocusWidget: View {
             Image(systemName: "play.fill")
         }
         .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-        .help("Start the next session now")
-        .accessibilityLabel("Start the next session now")
+        .help(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
+        .accessibilityLabel(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
     }
 
     private var compactRunning: some View {
