@@ -277,7 +277,7 @@ final class FocusInbox {
                 FocusHistory.setAside(url, now: now())
             }
         }
-        if prune() { save() }
+        if pruneExpired() { save() }
     }
 
     // MARK: Reading
@@ -346,7 +346,7 @@ final class FocusInbox {
         let item = InboxItem(text: words.isEmpty ? InboxURL.displayText(for: address ?? "") : words,
                              url: address, source: source, createdAt: time)
         items.append(item)
-        prune()
+        pruneExpired()
         save()
         return .added(item, droppedLink: dropped)
     }
@@ -381,7 +381,7 @@ final class FocusInbox {
     func setCompleted(_ id: InboxItem.ID, _ completed: Bool) -> Bool {
         guard let index = items.firstIndex(where: { $0.id == id }) else { return false }
         items[index].completedAt = completed ? now() : nil
-        prune()
+        pruneExpired()
         save()
         return true
     }
@@ -402,11 +402,19 @@ final class FocusInbox {
         onChange?()
     }
 
-    /// Deletes completed items past their 30 days. Done on load and on every
-    /// save; the Inbox page also calls it when it opens, for a Nidus that has
-    /// been running a long time.
+    /// Deletes completed items past their 30 days, writes the file and tells
+    /// the views when any went. Done on load and on every save; the Inbox page
+    /// also calls it when it opens, for a Nidus that has been running a long
+    /// time.
     @discardableResult
     func prune() -> Bool {
+        guard pruneExpired() else { return false }
+        save()
+        return true
+    }
+
+    @discardableResult
+    private func pruneExpired() -> Bool {
         let time = now()
         let before = items.count
         items.removeAll { item in
