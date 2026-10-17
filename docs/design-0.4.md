@@ -117,8 +117,10 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
 - Capture: a configurable global shortcut (off until set) opens a small
   panel; also a popover button while a session runs. Saving never changes
   the session.
-- Block page: a "Save for later" link `nidus://save?u=<encoded url>` beside
-  Snooze. It saves the URL and nothing else: no snooze, no unblock, no
+- Block page: a "Save for later" link `nidus://save?u=<encoded url>&k=<token>`
+  beside Snooze. The token is random per install (`block-page-token`, 0600,
+  in Nidus's folder) and written into the block page; a save link without it
+  is ignored, so another web page can't fill the inbox. It saves the URL and nothing else: no snooze, no unblock, no
   navigation; the page says "Saved". Repeated sweeps or reloads of the same
   URL within 10 minutes, or an open item with the same URL, add nothing.
 - Only http(s) URLs are kept (others are dropped, the text is kept). Text is
