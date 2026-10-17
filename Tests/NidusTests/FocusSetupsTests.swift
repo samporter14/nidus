@@ -28,10 +28,11 @@ struct FocusSetupTests {
     // MARK: Conversion to a request
 
     @Test func aSetupAsksForExactlyWhatItSays() {
-        let request = Self.setup(["social", "video"], minutes: 45, strict: true, goal: "Draft")
-            .request(categories: Self.categories)
+        let setup = Self.setup(["social", "video"], minutes: 45, strict: true, goal: "Draft")
+        let request = setup.request(categories: Self.categories)
+        // It also says which setup it came from; a 0.3 setup adds nothing else.
         #expect(request == SessionRequest(goal: "Draft", minutes: 45, categoryIDs: ["social", "video"],
-                                          mode: .block, strict: true))
+                                          mode: .block, strict: true, setupID: setup.id))
     }
 
     @Test func noFieldIsLeftNilForThePopoverToFill() {

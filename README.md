@@ -117,6 +117,39 @@ that keeps its page after the `#` or in a script, can't be told apart, so an
 exception for one of their pages covers all of them. It works in the browsers
 listed above and nowhere else.
 
+### A setup that opens your work
+
+A saved setup can open what you work on, so "Grant writing" starts with the
+Specific Aims document and the reference folder open, Word and Zotero
+running, and its own blocking in place. In Settings, open the setup. Under
+**When it starts**, each line is one summary until you open it:
+
+- **Apps** open when the session starts, the first in front. They say
+  "Uses Settings" until you give the setup a list of its own, and an empty
+  list opens none even when Settings has some.
+- **Documents and folders** are chosen in the Open panel. Nidus keeps a
+  bookmark to each, so a file you moved or renamed is still found, and a
+  file in the Trash counts as gone.
+- **Web pages** are http or https addresses, opened in your default browser.
+  Anything else is refused.
+- **Shortcuts** to run when it starts and when it ends, or Settings' choice.
+- **Exceptions** are pages let through on top of the ones its categories
+  already carry. They apply to block lists only.
+
+Documents, folders and pages open once, when you start. They do not open
+again when a break hands over to the same session, and not when Nidus opens
+and finds a session already running. Apps and the start Shortcut run at every
+start of work, after a break too, which is how a Focus mode comes back on.
+
+If a file can't be found, the rest still opens and one card at the top of the
+screen says so: "Opened 2 of 3. Aims.docx can't be found. Choose it again in
+the setup." A setup whose own rules block one of its pages says so on its page
+and on that card, with **Allow only this page**, which adds that one page as an
+exception. Nothing is added unless you press it, and it applies from the next
+start: a running session keeps what it started with. A start never waits for
+this. The blocked page still opens and is then replaced by the block page, as
+any blocked page is.
+
 ## Start it from anywhere
 
 **Shortcuts.** Nidus adds Start Focus (with a setup, if you like), Add Focus

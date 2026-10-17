@@ -58,6 +58,15 @@ final class FocusController: ObservableObject {
     var onSnoozeEnding: (String, Date) -> Void = { _, _ in }
     /// A break is about to end and the next session start: when, and what.
     var onBreakEnding: (Date, SessionPlan) -> Void = { _, _ in }
+    /// A session just opened its documents, folders and pages: how that came
+    /// out, and the plan that asked. Only for a start that opened something.
+    var onWorkspaceOpened: (WorkspaceReport, SessionPlan) -> Void = { _, _ in }
+
+    /// How apps, files, pages and Shortcuts are opened. Tests and demos hand
+    /// in one that records or does nothing.
+    var opener: any WorkspaceOpening = SystemWorkspaceOpener()
+    /// How a document or folder is found again.
+    var launcher = WorkspaceLauncher()
 
     /// The break after a completed, timed session; 0 for none.
     var breakLength: TimeInterval {
@@ -294,11 +303,20 @@ final class FocusController: ObservableObject {
     private static let notWork: Set<String> = ["com.apple.loginwindow", "com.apple.ScreenSaver.Engine"]
 
     private func handle(_ event: SessionEvent) {
+        var opened: (WorkspaceReport, SessionPlan)?
         switch event {
         case .started:
             guard let plan = engine.session?.plan else { break }
+            // Apps and the start Shortcut run at every work start, after a
+            // break too (how Apple Focus comes back on). Documents, folders
+            // and pages open once, at the start the person asked for: not
+            // when a break hands over to the same session again, and not
+            // when a session is restored (that emits no `.started`).
             open(plan.launchApps)
             if let name = plan.startShortcut { runShortcut(name) }
+            if !plan.isContinuation, !plan.resources.isEmpty {
+                opened = (launcher.open(plan.resources, using: opener), plan)
+            }
         case .ended(let reason, let final):
             if final.plan.reopensQuitApps { reopen(final.quitApps) }
             if let name = final.plan.endShortcut { runShortcut(name) }
@@ -313,6 +331,9 @@ final class FocusController: ObservableObject {
         applyEnforcement()
         updateClock()
         onSessionEvent(event)
+        // After the session's own surfaces have reacted to the start, so a
+        // card about the workspace is not dismissed by them.
+        if let (report, plan) = opened { onWorkspaceOpened(report, plan) }
     }
 
     /// Whether the once-a-second clock is running: only while there is a
@@ -338,20 +359,22 @@ final class FocusController: ObservableObject {
 
     private func runShortcut(_ name: String) {
         let previous = shortcutChain
+        let opener = opener
         shortcutChain = Task {
             await previous?.value
-            await FocusShortcuts.run(name)
+            await opener.runShortcut(name)
         }
+    }
+
+    /// Waits for the Shortcuts started so far. For tests.
+    func settleShortcuts() async {
+        await shortcutChain?.value
     }
 
     /// Opens the session's work apps; the first comes to the front.
     private func open(_ bundleIDs: [String]) {
-        for (index, bundleID) in bundleIDs.enumerated() {
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = index == 0
-            NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        }
+        guard !bundleIDs.isEmpty else { return }
+        opener.openApplications(bundleIDs, activating: true)
     }
 
     /// Brings the blockers in line with the engine: on, off, or new rules.
@@ -444,11 +467,7 @@ final class FocusController: ObservableObject {
     }
 
     private func reopen(_ bundleIDs: [String]) {
-        let configuration = NSWorkspace.OpenConfiguration()
-        configuration.activates = false
-        for bundleID in bundleIDs {
-            guard let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) else { continue }
-            NSWorkspace.shared.openApplication(at: url, configuration: configuration)
-        }
+        guard !bundleIDs.isEmpty else { return }
+        opener.openApplications(bundleIDs, activating: false)
     }
 }

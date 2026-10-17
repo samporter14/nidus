@@ -441,7 +441,7 @@ final class SessionEngine {
     /// Starts the next session now instead of waiting.
     func skipBreak() {
         guard let breakState else { return }
-        start(breakState.plan)
+        start(breakState.plan.continuing)
     }
 
     /// Stops here: the break ends and no session follows.
@@ -457,7 +457,7 @@ final class SessionEngine {
         if let pending = breakState {
             guard pending.endsAt <= now() else { return }
             if now().timeIntervalSince(pending.endsAt) <= Self.breakGrace {
-                start(pending.plan)
+                start(pending.plan.continuing)
             } else {
                 endBreak()
             }

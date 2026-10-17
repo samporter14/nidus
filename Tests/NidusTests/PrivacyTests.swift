@@ -69,6 +69,40 @@ struct NoNetworkTests {
     }
 }
 
+// MARK: - No shell
+
+struct NoShellTests {
+    static let sources = NoNetworkTests.dropletSources
+
+    /// The only child process Nidus starts is `/usr/bin/shortcuts`, from
+    /// FocusShortcuts, with the Shortcut's name as one argument.
+    @Test func onlyFocusShortcutsStartsAProcess() throws {
+        for file in Self.sources where file.lastPathComponent != "FocusShortcuts.swift" {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            for needle in ["Process()", "NSTask", "NSAppleScript", "osascript", "/bin/sh", "/bin/zsh", "/bin/bash", "posix_spawn", "popen("] {
+                let hits = text.components(separatedBy: .newlines).filter {
+                    !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") && $0.contains(needle)
+                }
+                #expect(hits.isEmpty, "\(file.lastPathComponent) uses \(needle)")
+            }
+        }
+    }
+
+    @Test func theWorkspaceOpensThingsOnlyThroughTheOpener() throws {
+        let names: Set<String> = ["WorkspaceLauncher.swift", "FocusWorkspace.swift", "FocusSetupWorkspaceViews.swift"]
+        for file in Self.sources where names.contains(file.lastPathComponent) {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            #expect(!text.contains("FocusShortcuts.execute"), "\(file.lastPathComponent) runs the tool itself")
+            if file.lastPathComponent != "WorkspaceLauncher.swift" {
+                #expect(!text.contains("NSWorkspace"), "\(file.lastPathComponent) opens something itself")
+            }
+        }
+        // And the controller does not call NSWorkspace to open a workspace.
+        let controller = try String(contentsOf: Self.sources.first { $0.lastPathComponent == "FocusController.swift" }!, encoding: .utf8)
+        #expect(!controller.contains("openApplication(") && !controller.contains(".open(url"))
+    }
+}
+
 @MainActor
 struct IdleTests {
     @Test func theClockRunsOnlyDuringASession() {

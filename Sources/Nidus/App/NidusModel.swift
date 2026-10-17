@@ -85,6 +85,9 @@ final class NidusModel: NSObject, ObservableObject {
         controller.onSessionEvent = { [weak self] event in self?.sessionDidChange(event) }
         controller.onSnoozeEnding = { [weak self] item, end in self?.presentSnoozeEndingHUD(for: item, at: end) }
         controller.onBreakEnding = { [weak self] end, plan in self?.presentBreakEndingHUD(at: end, next: plan) }
+        controller.onWorkspaceOpened = { [weak self] report, plan in self?.workspaceDidOpen(report, for: plan) }
+        // A demo or a render opens no app, file, page or Shortcut on this Mac.
+        if Demo.isActive { controller.opener = NullWorkspaceOpener() }
         // Views observe the model; forward the controller's once-a-second
         // clock and the preferences, so one object drives every surface.
         controller.objectWillChange
@@ -144,7 +147,8 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask?.cancel()
         welcomeTask = nil
         stopWeeklyRecap()
-        for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID] { host?.hud.dismiss(id: id) }
+        for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID,
+                   Self.workspaceHUDID] { host?.hud.dismiss(id: id) }
         // Quitting puts blocked tabs back; demos and renders never touch
         // real browsers.
         controller?.stop(restoringTabs: !Demo.isActive)
@@ -216,7 +220,9 @@ final class NidusModel: NSObject, ObservableObject {
     /// Starts the last session again, from the wrap-up card.
     func startAgain() {
         guard let controller, let last = controller.engine.lastPlan else { return startSession() }
-        controller.start(last)
+        // Pressing Again is a start of its own, even when the last plan was a
+        // session that followed a break: it opens its documents again.
+        controller.start(last.fresh)
         host?.feedback.play(.success)
         askBrowsersNeedingConsent()
     }
@@ -233,7 +239,7 @@ final class NidusModel: NSObject, ObservableObject {
         } else if isOnBreak {
             skipBreak()
         } else if let last = controller.engine.lastPlan {
-            controller.start(last)
+            controller.start(last.fresh)
             host?.feedback.play(.success)
             askBrowsersNeedingConsent()
         } else {

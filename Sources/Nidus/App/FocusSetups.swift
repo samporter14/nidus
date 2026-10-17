@@ -33,12 +33,35 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     /// Used when no goal is typed in the popover.
     var goal: String?
 
+    // What it opens and runs when it starts (0.4). A setup saved by 0.3 has
+    // none of these and inherits everything. For apps and Shortcuts there
+    // are three states, as on `SessionRequest`: nil takes what Settings
+    // says, an empty list or "" means none even if Settings has some, and a
+    // value is the setup's own.
+
+    /// Apps to open, with their names for lists. nil: Settings' apps.
+    var launchApps: [BlockedApp]?
+    /// Shortcut names. nil: Settings'; "": none.
+    var startShortcut: String?
+    var endShortcut: String?
+    /// Pages let through on top of the exceptions its categories carry. It
+    /// never takes one of theirs away. Block lists only.
+    var websiteExceptions: [WebsiteException]
+    /// Documents, folders and web pages opened when it starts. Settings has
+    /// none, so there is nothing to inherit: empty opens nothing.
+    var resources: [WorkspaceResource]
+
+    /// A setup that opens dozens of things is not what a setup is for.
+    static let resourceLimit = 12
+
     static let defaultName = "New setup"
     static let defaultSymbol = "bolt"
 
     init(id: UUID = UUID(), name: String = FocusSetup.defaultName, symbol: String = FocusSetup.defaultSymbol,
          minutes: Int = 25, categoryIDs: [String] = [], mode: SessionPlan.Mode = .block,
-         strict: Bool = false, goal: String? = nil) {
+         strict: Bool = false, goal: String? = nil, launchApps: [BlockedApp]? = nil,
+         startShortcut: String? = nil, endShortcut: String? = nil,
+         websiteExceptions: [WebsiteException] = [], resources: [WorkspaceResource] = []) {
         self.id = id
         self.name = name
         self.symbol = symbol
@@ -47,6 +70,11 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         self.mode = mode
         self.strict = strict
         self.goal = goal
+        self.launchApps = launchApps
+        self.startShortcut = startShortcut
+        self.endShortcut = endShortcut
+        self.websiteExceptions = websiteExceptions
+        self.resources = resources
     }
 
     /// Only the id and name must be there. A field a later version adds, or
@@ -62,6 +90,14 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         mode = (try? container.decodeIfPresent(SessionPlan.Mode.self, forKey: .mode)) ?? .block
         strict = (try? container.decodeIfPresent(Bool.self, forKey: .strict)) ?? false
         goal = (try? container.decodeIfPresent(String.self, forKey: .goal)) ?? nil
+        // 0.4. A missing field is "inherit", never "none": the apps are read
+        // as a list only when there is one, element by element. One that does
+        // not decode loses itself, not the setup or the list around it.
+        launchApps = container.decodeTolerant(LossyArray<BlockedApp>.self, forKey: .launchApps)?.elements
+        startShortcut = container.decodeTolerant(String.self, forKey: .startShortcut)
+        endShortcut = container.decodeTolerant(String.self, forKey: .endShortcut)
+        websiteExceptions = container.decodeLossy([WebsiteException].self, forKey: .websiteExceptions)
+        resources = container.decodeLossy([WorkspaceResource].self, forKey: .resources)
     }
 
     /// The name as shown: a cleared name is never an empty button or menu item.
@@ -91,12 +127,26 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     /// set, never nil: nil takes the popover's current choice, which would
     /// run a different session from the one on the button. A setup left with
     /// no categories sends `[]`, not nil, for the same reason.
+    ///
+    /// What the setup opens and runs goes in as well, and `setupID` says
+    /// where it came from. `startSession` copies all of it into the plan, so
+    /// editing the setup afterwards changes nothing about a session running.
     func request(categories: [FocusCategory], goalDraft: String = "") -> SessionRequest {
-        SessionRequest(goal: Self.resolvedGoal(typed: goalDraft, saved: goal),
-                       minutes: minutes,
-                       categoryIDs: liveCategoryIDs(in: categories),
-                       mode: mode,
-                       strict: strict)
+        var request = SessionRequest(goal: Self.resolvedGoal(typed: goalDraft, saved: goal),
+                                     minutes: minutes,
+                                     categoryIDs: liveCategoryIDs(in: categories),
+                                     mode: mode,
+                                     strict: strict)
+        request.setupID = id
+        request.launchApps = launchApps.map { apps in
+            var seen = Set<String>()
+            return apps.map(\.bundleID).filter { seen.insert($0).inserted }
+        }
+        request.startShortcut = startShortcut
+        request.endShortcut = endShortcut
+        request.websiteExceptions = websiteExceptions
+        request.resources = resources
+        return request
     }
 
     /// A setup from what the popover has chosen now: its length, categories,
@@ -148,7 +198,16 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
         let names = categories.filter { live.contains($0.id) }.map(\.name)
         var parts = [FocusFormat.duration(minutes: minutes), Self.scope(names: names, mode: mode)]
         if strict { parts.append("strict") }
+        if let opens = opensSummary { parts.append(opens) }
         return parts.joined(separator: " · ")
+    }
+
+    /// "opens 3 items": its own apps, documents, folders and pages. Nothing
+    /// for a setup that opens none, and not counting the apps Settings
+    /// opens for every session.
+    var opensSummary: String? {
+        let count = (launchApps?.count ?? 0) + resources.count
+        return count == 0 ? nil : "opens \(count) \(count == 1 ? "item" : "items")"
     }
 
     /// "Social, Video"; "Only Xcode" for an allow list; a count once the
