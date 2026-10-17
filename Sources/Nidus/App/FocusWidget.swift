@@ -67,6 +67,15 @@ struct FocusWidget: View {
                     .accessibilityLabel(model.isStrict ? "Strict session" : "Strict mode on")
             }
             Spacer(minLength: 0)
+            // Inside a sequence: where it stands, in one line.
+            if let line = model.sequenceLine {
+                Text(verbatim: line)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .accessibilityLabel("Sequence. " + line.replacingOccurrences(of: " \u{00B7} ", with: ", "))
+            }
             if !model.isActive, !model.isOnBreak {
                 Button(action: model.openSettings) {
                     Image(systemName: "gearshape")
@@ -431,8 +440,8 @@ struct FocusWidget: View {
                     Image(systemName: "stop.fill")
                 }
                 .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-                .help(model.isStrict ? "End early" : "End session")
-                .accessibilityLabel(model.isStrict ? "End early" : "End session")
+                .help(model.isStrict ? "End early" : (model.runningSequence == nil ? "End session" : "End sequence"))
+                .accessibilityLabel(model.isStrict ? "End early" : (model.runningSequence == nil ? "End session" : "End sequence"))
             }
             .padding(.bottom, 8)
         }
@@ -481,7 +490,9 @@ struct FocusWidget: View {
     // MARK: Break
 
     /// Between sessions: the break's time, quiet rather than clay, with
-    /// Start now and End.
+    /// Start now and End. A break with rules says what stays blocked and
+    /// until when, and shows its reminder. In a sequence the buttons start
+    /// the next block and end the sequence.
     private var breakView: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.sm) {
             HStack(alignment: .bottom, spacing: DroppySpacing.md) {
@@ -499,12 +510,44 @@ struct FocusWidget: View {
                         Image(systemName: "stop.fill")
                     }
                     .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-                    .help("Stop here: no session follows")
-                    .accessibilityLabel("End the break")
+                    .help(model.runningSequence == nil ? "Stop here: no session follows" : "End the sequence: no block follows")
+                    .accessibilityLabel(model.runningSequence == nil ? "End the break" : "End the sequence")
                 }
                 .padding(.bottom, 8)
             }
             ProgressTrack(progress: model.breakProgress, tint: .gray)
+            breakRestrictions
+        }
+    }
+
+    /// What stays blocked until the break ends, and the note to self. Nothing
+    /// is drawn for a break with neither, so an ordinary break looks as it did.
+    @ViewBuilder
+    private var breakRestrictions: some View {
+        if let line = model.breakBlockedLine() {
+            Label {
+                Text(verbatim: line)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "nosign").frame(width: 14)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+        }
+        if let reminder = model.breakReminder {
+            Label {
+                Text(verbatim: reminder)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            } icon: {
+                Image(systemName: "cup.and.saucer").frame(width: 14)
+            }
+            .font(.system(size: 12))
+            .foregroundStyle(.secondary)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel("Reminder: \(reminder)")
         }
     }
 
@@ -531,8 +574,8 @@ struct FocusWidget: View {
             Image(systemName: "play.fill")
         }
         .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-        .help("Start the next session now")
-        .accessibilityLabel("Start the next session now")
+        .help(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
+        .accessibilityLabel(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
     }
 
     private var compactRunning: some View {

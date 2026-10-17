@@ -35,6 +35,7 @@ extension NidusModel {
         case SettingsTab.stats.pageID: return AnyView(FocusStatsPage(model: self))
         case Self.launchAppsPageID: return AnyView(FocusLaunchAppsPage(model: self))
         case _ where id.hasPrefix("setup"): return makeSetupsPage(id: id)
+        case _ where id.hasPrefix(Self.sequencePagePrefix): return makeSequencePage(id: id)
         default: break
         }
         guard id.hasPrefix(Self.categoryPagePrefix) else { return nil }
@@ -85,6 +86,8 @@ struct FocusGeneralPage: View {
         DropletSettingsPane {
             if model.showsGettingStarted { gettingStarted }
             sessions
+            // Only once breaks are on: with none there is nothing to set.
+            if model.breakMinutes > 0 { breakRules }
             menuBarAndLogin
             whenASessionStarts
         }
@@ -141,6 +144,19 @@ struct FocusGeneralPage: View {
                 DropletToggleRow(title: "Strict mode",
                                  subtitle: "No snooze or pause during a session, and ending one early means typing \u{201C}stop early\u{201D} in the popover. Applies to sessions you start from now on.",
                                  isOn: model.binding(\.strictMode))
+            }
+        }
+    }
+
+    /// What stays blocked while a break runs, and a note to self. Nothing by
+    /// default: a break blocks nothing unless chosen here.
+    private var breakRules: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("During a break",
+                                  detail: "What stays blocked while a break runs, and a note to yourself. Nothing is blocked unless you choose it.")
+        } content: {
+            DropletSettingsCard {
+                BreakRulesEditor(rules: model.defaultBreakRulesBinding, categories: model.categories)
             }
         }
     }

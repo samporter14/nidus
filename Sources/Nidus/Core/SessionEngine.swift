@@ -130,8 +130,9 @@ struct BreakState: Codable, Equatable, Sendable {
     }
 }
 
-/// What is blocked at this moment, after snoozes. nil while idle, on a
-/// break, or paused by the user. A pause for being away (asleep, or the
+/// What is blocked at this moment, after snoozes. nil while idle, on an
+/// unrestricted break, or paused by the user. A break with rules blocks its
+/// own apps and websites, in block mode, and nothing else. A pause for being away (asleep, or the
 /// screen locked) freezes only the countdown and keeps blocking: undoing it
 /// would put blocked tabs back on their pages behind the lock screen, then
 /// block them again, with a card and a count, the moment the user is back.
@@ -279,7 +280,7 @@ final class SessionEngine {
     }
 
     var enforcement: Enforcement? {
-        guard let session else { return nil }
+        guard let session else { return breakEnforcement }
         if case .paused(_, bySleep: false) = session.phase { return nil }
         let snoozed = Set(session.snoozes.keys)
         let launched = Set(session.plan.launchApps)
@@ -294,6 +295,19 @@ final class SessionEngine {
         }
     }
 
+    /// What a break with rules keeps blocked: its own apps and websites, in
+    /// block mode (a break never narrows to an allow list). The work session's
+    /// rules are released while it runs. nil for an unrestricted break, and
+    /// when no break is on.
+    var breakEnforcement: Enforcement? {
+        guard session == nil, let rules = breakState?.rules, !rules.isUnrestricted else { return nil }
+        return Enforcement(mode: .block, apps: Set(rules.apps), websites: Set(rules.websites))
+    }
+
+    /// Whether a sequence is under way: a block running (or paused), or the
+    /// break between two blocks.
+    var isInSequence: Bool { sequence != nil && (session != nil || breakState != nil) }
+
     // MARK: Lifecycle
 
     /// Loads the saved record. A session whose deadline passed while Nidus was
@@ -306,6 +320,13 @@ final class SessionEngine {
         // A break that ran out while Nidus was away: see `tick()`.
         breakState = record.pendingBreak
         sequence = record.sequence
+        // A run belongs to the block or break it is saved with. One that
+        // doesn't match (the sequence field was written wrongly, or the plan
+        // was) is let go, and the session carries on as an ordinary one.
+        if let run = sequence {
+            if let session, session.plan.sequenceStep?.runID != run.id { sequence = nil }
+            if session == nil, let pending = breakState, pending.plan.sequenceStep?.runID != run.id { sequence = nil }
+        }
         guard var session else { return }
         switch session.phase {
         case .running(let deadline) where deadline <= now():
@@ -320,15 +341,35 @@ final class SessionEngine {
         }
     }
 
+    /// Starts a session of its own, ending a running one and any break or
+    /// sequence first. A plan that was a sequence's block, or a break's
+    /// continuation, starts as a plain new session: it is not part of that
+    /// run any more, and its documents and pages are new again.
     func start(_ plan: SessionPlan) {
         if session != nil { finish(.endedEarly) }
+        breakState = nil
+        sequence = nil
+        var plan = plan
+        plan.sequenceStep = nil
+        plan.isContinuation = false
+        begin(plan)
+    }
+
+    /// Starts a plan now. Does not touch the sequence, which the caller has
+    /// already set or cleared.
+    private func begin(_ plan: SessionPlan) {
+        makeSession(plan)
+        commit(.started)
+    }
+
+    /// The one place a session is made, with no event.
+    private func makeSession(_ plan: SessionPlan) {
         breakState = nil
         let start = now()
         session = SessionState(plan: plan, startedAt: start,
                                phase: .running(deadline: start.addingTimeInterval(plan.cappedDuration)),
                                budget: plan.cappedDuration)
         lastPlan = plan
-        commit(.started)
     }
 
     /// Not in a strict session: pausing stops the blocking.
@@ -431,24 +472,44 @@ final class SessionEngine {
 
     // MARK: Breaks
 
-    /// Starts a break now, with the plan to start again when it ends.
-    func startBreak(plan: SessionPlan, length: TimeInterval) {
+    /// Starts a break now, with the plan to start again when it ends. The
+    /// break keeps the plan's own rules blocked unless `rules` says otherwise.
+    func startBreak(plan: SessionPlan, length: TimeInterval, rules: BreakRules? = nil) {
         guard session == nil, length > 0 else { return }
-        breakState = BreakState(plan: plan, endsAt: now().addingTimeInterval(length), length: length)
+        breakState = BreakState(plan: plan, endsAt: now().addingTimeInterval(length), length: length,
+                                rules: rules ?? plan.breakRules)
         save()
     }
 
-    /// Starts the next session now instead of waiting.
+    /// Starts the next session now instead of waiting. In a sequence that is
+    /// the next work block.
     func skipBreak() {
         guard let breakState else { return }
-        start(breakState.plan)
+        startAfterBreak(breakState)
     }
 
-    /// Stops here: the break ends and no session follows.
+    /// Stops here: the break ends and no session follows. In a sequence the
+    /// run ends with it: there is no next block.
     func endBreak() {
         guard breakState != nil else { return }
         breakState = nil
+        sequence = nil
         commit(.breakEnded)
+    }
+
+    /// The break is over: its plan starts. A sequence moves to that block; any
+    /// other break restarts the plan it followed, as a continuation of it.
+    private func startAfterBreak(_ pending: BreakState) {
+        var plan = pending.plan
+        if let run = sequence, let step = plan.sequenceStep, step.runID == run.id {
+            sequence?.index = step.index
+            plan.isContinuation = false
+        } else {
+            sequence = nil
+            plan.sequenceStep = nil
+            plan.isContinuation = true
+        }
+        begin(plan)
     }
 
     /// Ends the session at its deadline, expires snoozes, and ends a break
@@ -457,7 +518,7 @@ final class SessionEngine {
         if let pending = breakState {
             guard pending.endsAt <= now() else { return }
             if now().timeIntervalSince(pending.endsAt) <= Self.breakGrace {
-                start(pending.plan)
+                startAfterBreak(pending)
             } else {
                 endBreak()
             }
@@ -503,12 +564,78 @@ final class SessionEngine {
         ended.endedAt = now()
         ended.focusedTime = reason == .expiredWhileAway ? ended.seenElapsed : (elapsed ?? 0)
         session = nil
-        // A completed, timed session earns the break; one ended early, or
-        // open-ended, does not.
-        if reason == .completed, breakLength > 0, ended.plan.duration != nil {
-            breakState = BreakState(plan: ended.plan, endsAt: now().addingTimeInterval(breakLength), length: breakLength)
+        // The next block of a sequence that starts with no break between.
+        var following: SessionPlan?
+        if sequence != nil || ended.plan.sequenceStep != nil {
+            following = advanceSequence(after: reason)
+        } else if reason == .completed, ended.plan.duration != nil {
+            // A completed, timed session earns the break; one ended early, or
+            // open-ended, does not. The plan's own length, else Settings'.
+            let length = ended.plan.breakLength ?? breakLength
+            if length > 0 {
+                breakState = BreakState(plan: ended.plan, endsAt: now().addingTimeInterval(length), length: length,
+                                        rules: ended.plan.breakRules)
+            }
         }
-        commit(.ended(reason, ended))
+        if let following {
+            // Begun before the end is announced, so what watches the engine
+            // sees one change of rules (the last block's to the next's), not a
+            // gap with nothing blocked in between.
+            startBlock(following)
+            save()
+            onEvent(.ended(reason, ended))
+            onEvent(.started)
+        } else {
+            commit(.ended(reason, ended))
+        }
+    }
+
+    // MARK: Sequences
+
+    /// Starts a resolved sequence: its first block now. Only the model's
+    /// guarded start path calls this, after the same checks as `startSession`;
+    /// it still refuses while a session or a break is on, so it can never end
+    /// one. False when nothing started (the run has no work block first).
+    @discardableResult
+    func startSequence(_ run: SequenceRun) -> Bool {
+        guard session == nil, breakState == nil, case .work(var plan)? = run.steps.first else { return false }
+        var run = run
+        run.index = 0
+        plan.sequenceStep = run.ref(at: 0)
+        plan.isContinuation = false
+        sequence = run
+        begin(plan)
+        return true
+    }
+
+    /// Moves the run on after a block ended. Only a completed block goes on:
+    /// ending one early, or finding its deadline passed while Nidus was away,
+    /// ends the run. Returns a block to start straight away, or sets the break
+    /// that comes first, or ends the run after its last block. The ordinary
+    /// break (the plan's, or Settings') is never added in a run.
+    private func advanceSequence(after reason: SessionEndReason) -> SessionPlan? {
+        guard reason == .completed, var run = sequence, let next = run.nextBlock() else {
+            sequence = nil
+            return nil
+        }
+        var plan = next.plan
+        plan.sequenceStep = run.ref(at: next.index)
+        plan.isContinuation = false
+        if let rest = next.rest {
+            run.index = rest.index
+            sequence = run
+            breakState = BreakState(plan: plan, endsAt: now().addingTimeInterval(rest.length), length: rest.length,
+                                    rules: rest.rules)
+            return nil
+        }
+        sequence = run
+        return plan
+    }
+
+    /// Makes the session of a block the run has moved to, with no event.
+    private func startBlock(_ plan: SessionPlan) {
+        if let step = plan.sequenceStep { sequence?.index = step.index }
+        makeSession(plan)
     }
 
     private func commit(_ event: SessionEvent) {
