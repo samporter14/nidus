@@ -104,6 +104,8 @@ final class FocusController: ObservableObject {
     private var warnedBreakEnd: Date?
     private var lockObservers: [NSObjectProtocol] = []
     private var isScreenLocked = false
+    /// The screen is locked: someone may not be there.
+    var screenIsLocked: Bool { isScreenLocked }
     /// What macOS broadcasts as the screen locks and unlocks.
     static let screenLockedNotification = Notification.Name("com.apple.screenIsLocked")
     static let screenUnlockedNotification = Notification.Name("com.apple.screenIsUnlocked")

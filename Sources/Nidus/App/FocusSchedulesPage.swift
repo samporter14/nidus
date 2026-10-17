@@ -200,8 +200,9 @@ struct FocusSchedulePage: View {
                                          subtitle: "A minute before it starts, offers to shorten, delay or skip a block that runs into a meeting. Only times are read, never titles.",
                                          isOn: binding(\.checksCalendar))
                         if schedule.checksCalendar {
-                            DropletGroupedPickerRow(title: "Keep clear before a meeting") {
-                                Picker("Keep clear before a meeting", selection: binding(\.calendarBuffer)) {
+                            DropletGroupedPickerRow(title: "Gap around meetings",
+                                                    subtitle: "A shortened block ends this long before the meeting; a delayed one starts this long after it.") {
+                                Picker("Gap around meetings", selection: binding(\.calendarBuffer)) {
                                     ForEach(FocusSchedule.bufferChoices, id: \.self) { minutes in
                                         Text(minutes == 0 ? "No gap" : "\(minutes) min").tag(minutes)
                                     }

@@ -95,7 +95,9 @@ and the categories to block, and press Start. Until the session ends:
     kept clear on either side. An option that would leave under 10 minutes
     isn't offered. Leave the card alone and the block starts as scheduled.
     Nothing checks the calendar between the card and the start, and the check
-    is repeated when you press a button, in case the meeting moved.
+    is repeated when you press a button, in case the meeting moved. A
+    shortened or delayed block waits while the screen is locked; when you're
+    back it starts late only if at least five minutes of it are left.
   - **Privacy.** Only the start and end of an event are read: its title is
     never read for this, kept, logged or shown, and nothing is saved about
     your events. Calendar access is asked only from the **Allow Calendar

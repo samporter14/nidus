@@ -405,6 +405,7 @@ final class CalendarHost: ScheduleHost {
     var schedules: [FocusSchedule] = []
     var scheduleHandled: [String: Date] = [:]
     var isSessionOrBreakOn = false
+    var isScreenLocked = false
     struct Start { var id: String; var goal: String; var start: Date; var end: Date; var minutes: Int; var missed: Bool }
     var started: [Start] = []
     var cards: [(run: FocusSchedule.Occurrence, conflict: ScheduleConflict?)] = []
@@ -627,6 +628,48 @@ struct CalendarSchedulerTests {
         let first = try #require(s.host.started.first)
         #expect(first.start == at("2026-03-09T11:00:00-07:00") && first.end == at("2026-03-09T12:00:00-07:00"))
         #expect(first.minutes == 60 && !first.missed)
+    }
+
+    @Test func aDelayedRunWaitsBehindTheLockScreenThenStartsLateIfThereIsTimeLeft() throws {
+        let s = Rig(events: [tenThirty])
+        s.go("2026-03-09T08:59:00-07:00")
+        s.sayAt("2026-03-09T08:59:30-07:00")
+        s.scheduler.delay(s.host.cards[0].run)
+        s.go("2026-03-09T10:59:00-07:00")
+        // Locked when it comes up: nothing starts, and it is still waiting.
+        s.host.isScreenLocked = true
+        s.go("2026-03-09T11:00:01-07:00")
+        #expect(s.host.started.isEmpty)
+        #expect(s.scheduler.adjustments["deep"] != nil, "held, not dropped")
+        s.go("2026-03-09T11:20:00-07:00", .timer)
+        #expect(s.host.started.isEmpty, "still locked")
+        // Unlocked at 11:30: a late start for what is left of it.
+        s.host.isScreenLocked = false
+        s.go("2026-03-09T11:30:00-07:00", .wake)
+        let first = try #require(s.host.started.first)
+        #expect(first.missed && first.end == at("2026-03-09T12:00:00-07:00"))
+        #expect(s.host.started.count == 1)
+        s.go("2026-03-09T11:31:00-07:00", .wake)
+        #expect(s.host.started.count == 1, "once")
+    }
+
+    @Test func aDelayedRunLockedPastItsWindowNeverStarts() {
+        let s = Rig(events: [tenThirty])
+        s.go("2026-03-09T08:59:00-07:00")
+        s.sayAt("2026-03-09T08:59:30-07:00")
+        s.scheduler.delay(s.host.cards[0].run)
+        s.host.isScreenLocked = true
+        s.go("2026-03-09T11:00:01-07:00")
+        s.host.isScreenLocked = false
+        s.go("2026-03-09T11:58:00-07:00", .wake)
+        #expect(s.host.started.isEmpty, "two minutes left: too late to start for someone just back")
+    }
+
+    @Test func anOrdinaryScheduleStillStartsAsItDidWhileLocked() throws {
+        let s = Rig()
+        s.host.isScreenLocked = true
+        s.go("2026-03-09T09:00:01-07:00")
+        #expect(s.host.started.count == 1, "0.3's behaviour is kept for schedules nobody adjusted")
     }
 
     @Test func delayAfterAMeetingAlreadyOnStartsWhenItEnds() throws {

@@ -122,6 +122,8 @@ protocol ScheduleHost: AnyObject {
     var scheduleHandled: [String: Date] { get set }
     /// A session is running (or paused) or a break is on.
     var isSessionOrBreakOn: Bool { get }
+    /// The screen is locked. A shortened or delayed run waits for it.
+    var isScreenLocked: Bool { get }
     /// Starts the run's session, ending at its end. False if nothing started.
     func startScheduled(_ occurrence: FocusSchedule.Occurrence, minutes: Int,
                         asksBrowserAccess: Bool, missed: Bool) -> Bool
@@ -207,6 +209,9 @@ final class FocusScheduler {
         self.host = host
         let workspace = NSWorkspace.shared.notificationCenter
         listen(workspace, to: NSWorkspace.didWakeNotification, as: .wake)
+        // A shortened or delayed run held back by the lock screen is looked
+        // at again once someone is there.
+        listen(DistributedNotificationCenter.default(), to: FocusController.screenUnlockedNotification, as: .wake)
         let center = NotificationCenter.default
         listen(center, to: .NSSystemClockDidChange, as: .clockChange)
         listen(center, to: .NSSystemTimeZoneDidChange, as: .clockChange)
@@ -296,7 +301,16 @@ final class FocusScheduler {
 
         var runs = FocusSchedule.inProgress(at: now, schedules: schedules, calendar: calendar)
         let endsAtMeeting = substituteAdjustments(into: &runs, at: now, schedules: schedules)
+        // A run the person shortened or delayed starts only with them there:
+        // behind the lock screen it waits, and on unlock the usual late-start
+        // rule decides (it starts if at least five minutes of it are left).
+        var waiting: Set<String> = []
         for run in runs where !FocusSchedule.isHandled(run, in: handled) {
+            if host.isScreenLocked, adjustments[run.schedule.id]?.run.start == run.start {
+                waiting.insert(run.schedule.id)
+                host.logSchedule("Adjusted start waiting: the screen is locked")
+                continue
+            }
             // Recorded for every run found, not only the one that starts: the
             // others are passed over, and must not start when the first ends.
             handled[run.schedule.id] = run.start
@@ -304,7 +318,7 @@ final class FocusScheduler {
             begin(run, at: now, host: host, slack: endsAtMeeting.contains(run.id) ? 0 : 10)
         }
         // An adjusted run that came up was used or passed over, once.
-        for run in runs where adjustments[run.schedule.id]?.run.start == run.start {
+        for run in runs where adjustments[run.schedule.id]?.run.start == run.start && !waiting.contains(run.schedule.id) {
             adjustments[run.schedule.id] = nil
         }
         let live = Set(schedules.map(\.id))
@@ -546,6 +560,7 @@ final class FocusScheduler {
 
 extension NidusModel: ScheduleHost {
     var isSessionOrBreakOn: Bool { isActive || isOnBreak }
+    var isScreenLocked: Bool { controller?.screenIsLocked ?? false }
 
     func startScheduled(_ occurrence: FocusSchedule.Occurrence, minutes: Int,
                         asksBrowserAccess: Bool, missed: Bool) -> Bool {
