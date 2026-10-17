@@ -76,6 +76,9 @@ final class NidusModel: NSObject, ObservableObject {
         let controller = FocusController(directory: host.environment.containerDirectory,
                                          dropletID: Self.id)
         self.controller = controller
+        // A demo or render draws sample sessions and breaks, some with rules
+        // of their own: none of them may quit an app or ask a browser.
+        controller.blocksNothing = Demo.isActive
         applySettings()
 
         controller.onBlocked = { [weak self] item in
@@ -304,6 +307,8 @@ final class NidusModel: NSObject, ObservableObject {
             controller.engine.startBreak(plan: next, length: 5 * 60)
             presentBreakEndingHUD(at: Date().addingTimeInterval(12), next: next)
             return
+        case "break-rules", "sequence-block", "sequence-break", "sequence-direct", "sequences":
+            return runSequenceScenario(scenario)
         case "welcome": controller.end(); return presentWelcomeHUD()
         case "setups": controller.end(); return seedSampleSetups()
         case "goals":
@@ -352,6 +357,16 @@ final class NidusModel: NSObject, ObservableObject {
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60
             final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            controller.end()
+            controller.engine.startBreak(plan: final.plan, length: 5 * 60)
+            presentWrapUpHUD(for: final, completed: true)
+        case "wrapup-break-rules":
+            // The card as a break with rules begins: what stays blocked and
+            // until when, and the reminder.
+            guard var final = controller.engine.session else { break }
+            final.focusedTime = 25 * 60
+            final.blocks = ["youtube.com": 3, "com.tinyspeck.slackmacgap": 1]
+            final.plan.breakRules = Self.sampleBreakRules
             controller.end()
             controller.engine.startBreak(plan: final.plan, length: 5 * 60)
             presentWrapUpHUD(for: final, completed: true)

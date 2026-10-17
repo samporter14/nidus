@@ -239,7 +239,7 @@ struct FocusSequencePage: View {
             Picker("Blocked during the break", selection: ruleChoice(step)) {
                 Text("As the next block\u{2019}s setup").tag(RuleChoice.inherit)
                 Text("Nothing").tag(RuleChoice.none)
-                Text("Choose\u{2026}").tag(RuleChoice.own)
+                Text("Its own rules").tag(RuleChoice.own)
             }
         }
         if case .own = step.rules {

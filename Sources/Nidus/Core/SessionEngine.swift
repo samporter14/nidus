@@ -305,8 +305,13 @@ final class SessionEngine {
     }
 
     /// Whether a sequence is under way: a block running (or paused), or the
-    /// break between two blocks.
-    var isInSequence: Bool { sequence != nil && (session != nil || breakState != nil) }
+    /// break between two blocks. A run left over from something else (it is
+    /// saved apart from the block it belongs to) is not one.
+    var isInSequence: Bool {
+        guard let id = sequence?.id else { return false }
+        if let session { return session.plan.sequenceStep?.runID == id }
+        return breakState?.plan.sequenceStep?.runID == id
+    }
 
     // MARK: Lifecycle
 

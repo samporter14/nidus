@@ -75,8 +75,12 @@ and the categories to block, and press Start. Until the session ends:
 - **Schedules.** "Weekdays, 9 to 12" starts a session on its own, with a card
   a minute before that lets you skip it or start now.
 - **Breaks, Focus modes and apps to open.** Breaks can run between sessions,
-  Pomodoro style. A session can open the apps you work in, and turn on Do Not
-  Disturb or any other Focus mode, then off again at the end.
+  Pomodoro style, and can [keep some things blocked](#breaks-that-keep-things-blocked).
+  A session can open the apps you work in, and turn on Do Not Disturb or any
+  other Focus mode, then off again at the end.
+- **Sequences.** [A run of different blocks](#sequences-of-work-blocks): 40
+  minutes of writing, a 10 minute break, then 25 minutes of figures, started
+  in one click.
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
   session, how many goals you finished and what you blocked most. On Monday a
   card sums up last week. Export your history as CSV or JSON whenever you
@@ -84,6 +88,73 @@ and the categories to block, and press Start. Until the session ends:
   ready to use, and you can make your own.
 
 <img src="docs/settings.png" width="420" alt="Nidus Settings on its Blocking tab, with toolbar tabs for General, Blocking, Setups, Schedules, Stats and About, the blocking choices, and the categories"> <img src="docs/stats.png" width="420" alt="The Stats tab: 2 hr 27 min this week, a 6-day streak, 76 sessions, six months of focus as a graph, and the most blocked app">
+
+### Breaks that keep things blocked
+
+A break blocks nothing, unless you say so. Turn breaks on in Settings →
+General (Break after a session) and a **During a break** section appears: pick
+the categories to keep blocked, add other apps and websites one by one, and
+write a reminder to yourself ("Stretch, water"). Leave it empty and a break is
+the same free time it always was.
+
+- **While the break runs**, only what you chose is blocked. The session's own
+  blocking is let go, so a page the session and the break both block is never
+  put back on screen in between, and a page only the session blocked comes
+  back. A tab that stays blocked is not put back until the break's blocking
+  ends: when the break ends or you end it, the session starts again, or
+  everything is put back.
+- **The popover and the card** say what stays blocked and until when
+  ("Social and Slack stay blocked until 10:40") and show the reminder. The
+  block page says it is blocked until your break ends, and has no Snooze: a
+  break is not a session to be let out of.
+- **A session sets its own break.** A plan can carry its own break length and
+  rules; one that doesn't takes Settings'. Settings' length and no rules are
+  exactly the break Nidus has always had.
+- **Ending a break** (Stop here, the right-click menu, a link or Shortcut)
+  stops, with no session after it, and puts everything back, as ending a
+  session does. Skipping starts the next session now. Quitting Nidus puts
+  blocked tabs back, and a break that is still running when it opens again
+  blocks them again. Break time is never counted as focus time.
+- When a break ends by itself the session starts again with the same plan: its
+  apps and Focus Shortcut run again, as they always did.
+
+### Sequences of work blocks
+
+A sequence is a list of work blocks and breaks, saved once. Settings → Setups
+has a **Sequences** section: add one and it starts as a block, a break and a
+block. Each work block has a goal, a length and, if you like, a setup (which
+decides what it blocks and whether it is strict) and a project. Each break has
+a length and what stays blocked during it: what the next block's setup says
+(or Settings' break rules), nothing, or rules of its own. Add, remove and
+reorder steps with the buttons on the page, and the page shows the plan as a
+line ("40 min writing → 10 min break → 25 min figures") and says what stops
+it from starting: it needs a work block, finite lengths, no break at the start
+or end or two in a row, and setups that still exist and can start.
+
+Start one from the popover (the list icon beside the plus), from the
+right-click menu, or from its page.
+
+- **Everything is decided when it starts.** Each block is resolved into the
+  same plan a session started from that setup would have, and the run keeps
+  that. Editing the sequence, a setup or Settings afterwards leaves a run
+  under way alone.
+- **Blocks run one after another.** A break between two blocks keeps what you
+  chose blocked; a block straight after a block starts at once; the last block
+  ends the run with no break after it. The usual break after a session never
+  comes in a run. Each block is recorded in your history once, on its own.
+- **The popover says where you are**: "Block 2 of 3 · next: 10 min break",
+  and on a break, "Next: 25 min Figures".
+- **Skip break** starts the next block now. **End break** ends the whole run,
+  and so does ending a block that isn't strict. There is no way to skip a
+  block. A strict block can't be paused, snoozed, shortened or skipped; it
+  ends early only behind its phrase in the popover, which ends the run too.
+- **Away.** Sleep and the lock screen pause a block as they pause any
+  session. A break that ran out more than a minute ago (the Mac slept, or
+  Nidus wasn't running) ends the run rather than starting a block for someone
+  who may not be there. A block whose time passed while Nidus wasn't running
+  is recorded as ended while away and ends the run: missed blocks are not
+  replayed. Quit Nidus mid-block or mid-break and the run is where you left it
+  when it opens again.
 
 ## Start it from anywhere
 

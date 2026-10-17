@@ -352,6 +352,8 @@ struct FocusWrapUpCard: View {
                 }
                 .font(.system(size: 12))
                 .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                // In line with the title above, past the mark.
+                .padding(.leading, 28 + DroppySpacing.md)
                 .accessibilityElement(children: .combine)
             }
             if let question {

@@ -271,6 +271,20 @@ struct BreakTabHandlingTests {
     }
 
     @MainActor
+    @Test func theBlockPageSaysBreakOnlyDuringABreakAndStillRestores() {
+        let page = BlockPage(directory: URL(fileURLWithPath: "/tmp/nidus-test-block"))
+        let during = page.url(blocking: "https://x.com/home", snoozeMinutes: 0, onBreak: true)
+        #expect(during.contains("&b=1") && during.contains("m=0"), "a break has no snooze to offer")
+        #expect(!page.url(blocking: "https://x.com/home").contains("&b="), "a session's address is as it was")
+        #expect(page.original(from: during) == "https://x.com/home")
+        let tab = TabLocation(windowID: 1, index: 1, url: during)
+        let redirects = BrowserBlocker(blockPage: page).redirects(for: [TabLocation(windowID: 1, index: 1, url: "https://x.com/home")],
+                                                                  rule: FocusController.websiteRule(for: restricted), onBreak: true)
+        #expect(redirects.count == 1 && redirects[0].page.contains("&b=1"))
+        #expect(BrowserBlocker(blockPage: page).restorations(in: [tab]).map(\.original) == ["https://x.com/home"])
+    }
+
+    @MainActor
     @Test func quitAppsAreNotReopenedIntoABreakThatBlocksThemAgain() {
         let reopened = FocusController.appsToReopen(["com.tinyspeck.slackmacgap", "com.apple.mail"],
                                                     under: Enforcement(mode: .block, apps: ["com.tinyspeck.slackmacgap"], websites: []))

@@ -497,7 +497,7 @@ struct FocusWidget: View {
         VStack(alignment: .leading, spacing: DroppySpacing.sm) {
             HStack(alignment: .bottom, spacing: DroppySpacing.md) {
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(verbatim: model.nextGoal.isEmpty ? "Next: another session" : "Next: \(model.nextGoal)")
+                    Text(verbatim: breakNextLine)
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -518,6 +518,13 @@ struct FocusWidget: View {
             ProgressTrack(progress: model.breakProgress, tint: .gray)
             breakRestrictions
         }
+    }
+
+    /// Above the break's clock: what starts after it. In a sequence the
+    /// header already names the next block, so this says how far along it is.
+    private var breakNextLine: String {
+        if let run = model.runningSequence { return "Block \(run.blockNumber) of \(run.workCount) done" }
+        return model.nextGoal.isEmpty ? "Next: another session" : "Next: \(model.nextGoal)"
     }
 
     /// What stays blocked until the break ends, and the note to self. Nothing

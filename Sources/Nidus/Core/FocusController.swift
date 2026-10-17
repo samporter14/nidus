@@ -450,13 +450,14 @@ final class FocusController: ObservableObject {
         let goal = engine.session?.plan.goal ?? ""
         // 0 hides the block page's Snooze: a strict session has none, and
         // neither has a break (the page would offer what nothing can do).
-        let minutes = engine.session == nil || engine.session?.plan.strict == true ? 0 : Int((snoozeLength / 60).rounded())
+        let onBreak = engine.session == nil
+        let minutes = onBreak || engine.session?.plan.strict == true ? 0 : Int((snoozeLength / 60).rounded())
         browserQueue.async { [weak self] in
             var redirected: [String] = []
             var access: [String: AppleEventError] = [:]
             for browser in BrowserProfile.known {
                 do throws(AppleEventError) {
-                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes)
+                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes, onBreak: onBreak)
                 } catch {
                     access[browser.bundleID] = error
                 }
