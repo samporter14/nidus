@@ -101,6 +101,7 @@ enum RenderSurfaces {
             await shootPopoverVariants(model: model, settings: settings, in: directory)
             await renderSetups(model: model, settings: settings, in: directory)
             await renderSequences(model: model, settings: settings, host: host, in: directory)
+            await renderExceptions(model: model, settings: settings, in: directory)
             await renderSchedules(model: model, settings: settings, host: host, in: directory)
             model.deactivate()
             NSApp.terminate(nil)

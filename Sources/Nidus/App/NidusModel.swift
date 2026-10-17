@@ -23,6 +23,8 @@ final class NidusModel: NSObject, ObservableObject {
     var menuBarItem: FocusMenuBar? { menuBar }
     /// The last focus state written, so a write happens only on a change.
     fileprivate var lastPublishedFocus: FocusFile?
+    /// Writes what Plaque may show, when that is turned on (PlaqueBridge.swift).
+    var plaqueBridge: PlaqueBridge?
 
     /// The goal typed into the popover, kept while it closes and opens.
     @Published var goalDraft = ""
@@ -79,6 +81,7 @@ final class NidusModel: NSObject, ObservableObject {
         // A demo or render draws sample sessions and breaks, some with rules
         // of their own: none of them may quit an app or ask a browser.
         controller.blocksNothing = Demo.isActive
+        plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
 
         controller.onBlocked = { [weak self] item in
@@ -407,6 +410,7 @@ final class NidusModel: NSObject, ObservableObject {
             menuBar?.sessionDidStart()
         case .ended(let reason, let final):
             endBreakAfterFixedEnd(final)
+            notePlaqueSessionEnded(reason, final)
             host?.hud.dismiss(id: Self.snoozeHUDID)
             if reason != .expiredWhileAway {
                 // Ask only about a goal that was set and a session that was
@@ -779,6 +783,7 @@ extension NidusModel {
     /// when; never the goal or what is blocked. Paused or on a break is not
     /// focusing. Demos and captures publish nothing.
     func publishFocus(quitting: Bool = false) {
+        publishPlaqueFocus(quitting: quitting)
         guard !Demo.isActive, let host else { return }
         let focusing = !quitting && isActive && !isPaused
         let until: Double? = focusing && !isOpenEnded

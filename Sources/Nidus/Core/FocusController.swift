@@ -411,12 +411,11 @@ final class FocusController: ObservableObject {
         return .keepBlocked(by: new)
     }
 
-    /// The website rule an enforcement stands for. `snoozed` are the listed
-    /// entries let through right now: a snooze covers a listed entry that
-    /// overlaps another (`youtube.com/shorts` inside `youtube.com`).
-    nonisolated static func websiteRule(for enforcement: Enforcement, snoozed: Set<String> = []) -> WebsiteRule {
-        WebsiteRule(mode: enforcement.mode == .block ? .block : .allow,
-                    domains: Array(enforcement.websites), snoozed: Array(snoozed))
+    /// The website rule an enforcement stands for. A running session's own
+    /// snoozes and its plan's website exceptions go in with it. A break's rule
+    /// has neither (no session is running): it blocks what its rules list.
+    nonisolated static func websiteRule(for enforcement: Enforcement, session: SessionState? = nil) -> WebsiteRule {
+        WebsiteRule(enforcement: enforcement, session: session)
     }
 
     /// The quit apps worth opening again: not those the rules now in force
@@ -435,9 +434,12 @@ final class FocusController: ObservableObject {
         restored > 0 && (hasSession || isOnBreak)
     }
 
+    /// What the sweep and a restore judge tabs by. The session's snoozes and
+    /// its plan's website exceptions go in; the plan is the snapshot taken
+    /// when the session started, so a category edited since changes nothing.
+    /// On a break there is no session, so the break's rule stands alone.
     private func websiteRule(for enforcement: Enforcement) -> WebsiteRule {
-        let snoozed = engine.session.map { Set($0.snoozes.keys).intersection($0.plan.websites) } ?? []
-        return Self.websiteRule(for: enforcement, snoozed: snoozed)
+        Self.websiteRule(for: enforcement, session: engine.session)
     }
 
     private func sweepBrowsers() {
