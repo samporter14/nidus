@@ -31,6 +31,7 @@ extension NidusModel {
     /// pushed inside the others. nil for a page that is gone.
     func makeSettingsPage(id: String) -> AnyView? {
         if let page = makeSchedulesPage(id: id) { return page }
+        if let page = makeProjectsPage(id: id) { return page }
         switch id {
         case SettingsTab.stats.pageID: return AnyView(FocusStatsPage(model: self))
         case Self.launchAppsPageID: return AnyView(FocusLaunchAppsPage(model: self))

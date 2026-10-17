@@ -104,6 +104,7 @@ enum RenderSurfaces {
             await renderExceptions(model: model, settings: settings, in: directory)
             await renderSchedules(model: model, settings: settings, host: host, in: directory)
             await renderInbox(model: model, settings: settings, host: host, in: directory)
+            await renderProjects(model: model, settings: settings, host: host, in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }

@@ -81,9 +81,9 @@ struct HistoryExportTests {
         let rows = parseCSV(HistoryExport.csv([e], timeZone: Self.la.calendar.timeZone))
         #expect(rows.count == 2)
         #expect(rows[0] == ["start", "end", "planned_minutes", "focused_minutes", "completed", "goal", "finished",
-                            "blocked_count", "most_blocked"])
+                            "blocked_count", "most_blocked", "project"])
         #expect(rows[1] == ["2026-09-28T09:15:00-07:00", "2026-09-28T09:40:30-07:00", "25", "25", "yes",
-                            "Write the launch post", "yes", "4", "youtube.com"])
+                            "Write the launch post", "yes", "4", "youtube.com", ""])
     }
 
     @Test(arguments: [("Asia/Kolkata", "+05:30"), ("UTC", "+00:00"), ("America/New_York", "-04:00")])

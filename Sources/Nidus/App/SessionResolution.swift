@@ -69,8 +69,10 @@ extension SessionRequest {
         )
         plan.strict = strict ?? defaults.strict
         plan.setupID = setupID
-        plan.projectID = projectID
-        plan.projectName = projectID.flatMap(defaults.projectName)
+        // A project that no longer exists is no project, not an id that points nowhere.
+        let projectName = projectID.flatMap(defaults.projectName)
+        plan.projectID = projectName == nil ? nil : projectID
+        plan.projectName = projectName
         // A request's own break, else Settings' (`breakLength` nil), as before.
         plan.breakLength = breakMinutes.map { TimeInterval(max(0, $0) * 60) }
         plan.breakRules = breakRules ?? defaults.defaultBreakRules

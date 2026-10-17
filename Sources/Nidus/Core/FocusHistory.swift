@@ -68,7 +68,9 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
 
     init(start: Date, end: Date, focused: TimeInterval, planned: TimeInterval?, outcome: SessionEndReason, goal: String = "",
          blocks: [String: Int] = [:], quits: [String: Int] = [:], foreground: [String: TimeInterval] = [:],
-         names: [String: String] = [:], finished: Bool? = nil) {
+         names: [String: String] = [:], finished: Bool? = nil, projectID: UUID? = nil, projectName: String? = nil) {
+        self.projectID = projectID
+        self.projectName = projectName
         self.finished = finished
         self.start = start
         self.end = end
@@ -208,8 +210,10 @@ enum HistoryExport {
         var fileExtension: String { self == .csv ? "csv" : "json" }
     }
 
+    /// `project` is last, as 0.4 added it: the columns before it are as they
+    /// were, so a sheet built on them still reads.
     static let csvColumns = ["start", "end", "planned_minutes", "focused_minutes", "completed",
-                             "goal", "finished", "blocked_count", "most_blocked"]
+                             "goal", "finished", "blocked_count", "most_blocked", "project"]
 
     /// One row per session, oldest first as stored, under a header row.
     /// Times carry their offset (`2026-09-28T09:15:00-07:00`) so a session
@@ -240,6 +244,9 @@ enum HistoryExport {
                 s.finished.map { $0 ? "yes" : "no" } ?? "",
                 String(s.blocks.values.reduce(0, +)),
                 mostBlocked(in: s),
+                // The name the session recorded: a project renamed or deleted
+                // since still reads as it did.
+                s.projectName ?? "",
             ]
             lines.append(cells.map(field).joined(separator: ","))
         }

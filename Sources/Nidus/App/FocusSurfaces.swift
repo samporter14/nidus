@@ -216,10 +216,15 @@ extension NidusModel {
     /// `askAbout` is the goal to ask "did you finish?" about, if any. The
     /// card then asks first and offers Again only once it is answered: see
     /// `answerFinished`, which turns the question into its confirmation.
-    func presentWrapUpHUD(for final: SessionState, completed: Bool, streak: Int? = nil, askAbout goal: String? = nil) {
+    /// `nextStep` is the optional note to write about what comes next: under
+    /// the question once it is answered, or at once when there is no question
+    /// to ask (sessions aren't being recorded). The card makes room for it.
+    func presentWrapUpHUD(for final: SessionState, completed: Bool, streak: Int? = nil, askAbout goal: String? = nil,
+                          nextStep: NextStepSession? = nil) {
         guard let host else { return }
         let cards = self.cards
         cards.finishAnswer = nil
+        cards.nextStep = nextStep
         let focused = final.focusedTime ?? 0
         let minutes = Int((focused / 60).rounded())
         let time = minutes < 1 ? "Under a minute" : FocusFormat.duration(minutes: minutes)
@@ -262,12 +267,14 @@ extension NidusModel {
         let spokenNotes = notes.map { ". " + $0.text }.joined()
         let request = DropletHUDRequest(
             id: Self.completedHUDID,
-            // Long enough to answer the question, when there is one, to read
-            // what a break keeps blocked, or to reach the button for what was saved.
-            duration: goal == nil ? (saved > 0 ? 10 : notes.isEmpty ? 6 : 9) : 12,
+            // Long enough to answer the question, when there is one, to type a
+            // next step, to read what a break keeps blocked, or to reach the
+            // button for what was saved.
+            duration: goal != nil ? 12 : (nextStep != nil ? FinishReply.noteLinger : (saved > 0 ? 10 : notes.isEmpty ? 6 : 9)),
             priority: .normal,
             accessibilityLabel: "\(title). \(time) focused, \(blocks)\(days.map { ", \($0)" } ?? "")\(rest.map { ". \($0.hasSuffix("break") ? "A " : "")\($0) now" } ?? "")."
                 + spokenNotes + (goal.map { " Did you finish \($0)?" } ?? "")
+                + (nextStep != nil && goal == nil ? " What\u{2019}s the next step? Optional." : "")
                 + (Self.savedForLaterText(saved).map { " \($0)." } ?? ""),
             isExpanded: true,
             expandedContentHeight: (goal == nil ? 64 : 96) + CGFloat(notes.count + (saved > 0 ? 1 : 0)) * FocusWrapUpCard.noteHeight
@@ -294,7 +301,11 @@ extension NidusModel {
                         self?.openInbox()
                         self?.host?.hud.dismiss(id: Self.completedHUDID)
                     },
+                    nextStep: nextStep,
                     answer: { self?.answerFinished($0) },
+                    chooseDocument: { self?.chooseNextStepDocument() },
+                    addWebAddress: { self?.addNextStepWebAddress() },
+                    finishNextStep: { self?.finishNextStep() },
                     again: {
                         if self?.isOnBreak == true { self?.skipBreak() } else { self?.startAgain() }
                         self?.host?.hud.dismiss(id: Self.completedHUDID)
@@ -337,7 +348,13 @@ struct FocusWrapUpCard: View {
     /// Over zero adds a row with a button to the inbox.
     var saved = 0
     var openInbox: () -> Void = {}
+    /// The next step being written, under the question once it is answered
+    /// (or from the start when there is no question).
+    var nextStep: NextStepSession? = nil
     var answer: (Bool) -> Void = { _ in }
+    var chooseDocument: () -> Void = {}
+    var addWebAddress: () -> Void = {}
+    var finishNextStep: () -> Void = {}
     let again: () -> Void
 
     struct Note: Equatable {
@@ -383,6 +400,10 @@ struct FocusWrapUpCard: View {
                     }
                 }
                 .transition(.opacity)
+            }
+            if let nextStep, question == nil || reply != nil {
+                NextStepRow(step: nextStep, chooseDocument: chooseDocument, addWebAddress: addWebAddress, done: finishNextStep)
+                    .transition(.opacity)
             }
             if saved > 0 { FocusSavedForLaterRow(count: saved, open: openInbox) }
         }
@@ -466,6 +487,11 @@ enum FinishReply {
     /// How long the card stays after an answer, to be read: as long as a
     /// card with nothing to ask.
     static let linger: TimeInterval = 6
+
+    /// How long it stays once a next step can be written: time to type it,
+    /// and more for as long as the field holds the keyboard or the pointer
+    /// is on the card. Each edit gives it this much again.
+    static let noteLinger: TimeInterval = 20
 }
 
 /// Hands the card the reply to its question. The reply is kept in `cards`,
@@ -662,6 +688,8 @@ final class FocusCardState {
     /// The answer to "did you finish?" for the wrap-up card now up: set by
     /// the card's buttons or the menu bar's items, cleared by the next card.
     var finishAnswer: Bool?
+    /// The next step the wrap-up card is collecting, if it offers one.
+    var nextStep: NextStepSession?
 }
 
 extension NidusModel.Key {
