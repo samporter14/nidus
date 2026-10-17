@@ -29,9 +29,11 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
 
     var isEmpty: Bool { apps.isEmpty && websites.isEmpty }
 
-    /// "3 apps, 5 websites", for a row's subtitle.
+    /// "3 apps, 5 websites", for a row's subtitle. Exceptions are counted
+    /// only when there are some.
     var summary: String {
-        let parts = [Self.count(apps.count, "app"), Self.count(websites.count, "website")].compactMap { $0 }
+        let parts = [Self.count(apps.count, "app"), Self.count(websites.count, "website"),
+                     Self.count(websiteExceptions.count, "exception")].compactMap { $0 }
         return parts.isEmpty ? "Empty" : parts.joined(separator: ", ")
     }
 

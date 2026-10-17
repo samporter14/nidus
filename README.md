@@ -124,6 +124,38 @@ and the categories to block, and press Start. Until the session ends:
   that come from them, your recent goals, and your resume notes. Your
   projects themselves stay; delete one on its page.
 
+### Letting one page through
+
+A blocked site can have exceptions: one research video while the rest of
+YouTube stays blocked. In Settings, open a category with websites and add an
+address under Exceptions. Paste it, choose **Only this page** or **This page
+and below**, and Nidus writes out what it will let through before you add it.
+
+- **Only this page** is that host, that path and nothing under it. A query
+  that names the page counts: `youtube.com/watch?v=abc` lets that video
+  through, with or without `&t=30s`, and not `v=xyz`. Tracking and position
+  parameters (`utm_*`, `si`, `t`, `fbclid` and the like) are left out when
+  you paste an address, and the preview says which.
+- **This page and below** is a path and everything under it on that host. The
+  query isn't used, and the preview warns when a pasted address had one.
+- An exception covers exactly the host you wrote (and its `www.`): one for
+  `youtube.com` does not cover `m.youtube.com`, and a page whose address
+  carries a login is never let through. Paths and query values keep their
+  case. Exceptions are for block lists only; an allow list already says what
+  is let through.
+- A running session keeps the exceptions it started with, strict or not.
+  Changes to a category apply to the next session. Snooze works as before and
+  an exception never widens it.
+
+What this can't do. Nidus reads each tab's address about once a second,
+through Apple Events, so a page can show for up to a second before it is
+replaced, and a tab that moves from an allowed page to a blocked one is
+caught at the next look (an allowed address is never remembered). Sites that
+change what they show without changing the address, like a single-page app
+that keeps its page after the `#` or in a script, can't be told apart, so an
+exception for one of their pages covers all of them. It works in the browsers
+listed above and nowhere else.
+
 ## Start it from anywhere
 
 **Shortcuts.** Nidus adds Start Focus (with a setup, if you like), Add Focus

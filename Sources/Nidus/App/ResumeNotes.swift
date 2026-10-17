@@ -146,12 +146,42 @@ final class NextStepSession {
     @ObservationIgnored private let now: () -> Date
     /// The model's: refresh the card's timer, tell the popover.
     @ObservationIgnored var onChange: () -> Void = {}
+    /// The step once typing has paused, or the card is done with: the note's
+    /// text, nil when there is none. Plaque is told here, so a reader of the
+    /// file sees a sentence and not every letter of it.
+    @ObservationIgnored var onSettled: (String?) -> Void = { _ in }
+    @ObservationIgnored private let settleDelay: Duration
+    @ObservationIgnored private var settleTask: Task<Void, Never>?
+    @ObservationIgnored private var lastSettled: String?
 
-    init(seed: Seed, historyIsOff: Bool, store: ResumeNoteStore, now: @escaping () -> Date = Date.init) {
+    init(seed: Seed, historyIsOff: Bool, store: ResumeNoteStore, now: @escaping () -> Date = Date.init,
+         settleDelay: Duration = .seconds(1.5)) {
         self.seed = seed
         self.historyIsOff = historyIsOff
         self.store = store
         self.now = now
+        self.settleDelay = settleDelay
+    }
+
+    /// Reports the step as it stands, if it changed since last reported, and
+    /// stops waiting for typing to pause.
+    func settleNow() {
+        settleTask?.cancel()
+        settleTask = nil
+        let kept = ResumeNote.clean(text)
+        let step = kept.isEmpty ? nil : kept
+        guard step != lastSettled else { return }
+        lastSettled = step
+        onSettled(step)
+    }
+
+    private func settleLater() {
+        settleTask?.cancel()
+        settleTask = Task { @MainActor [weak self, settleDelay] in
+            try? await Task.sleep(for: settleDelay)
+            guard !Task.isCancelled else { return }
+            self?.settleNow()
+        }
     }
 
     var isSaved: Bool { noteID.flatMap { store.note($0) } != nil }
@@ -170,7 +200,10 @@ final class NextStepSession {
     }
 
     private func persist() {
-        defer { onChange() }
+        defer {
+            onChange()
+            settleLater()
+        }
         let kept = ResumeNote.clean(text)
         if kept.isEmpty, resource == nil {
             if let id = noteID { store.remove(id) }
@@ -281,6 +314,8 @@ extension NidusModel {
             seed: .init(goal: final.plan.goal, projectID: final.plan.projectID, projectName: final.plan.projectName, entryID: entry?.id),
             historyIsOff: !recordsHistory, store: store)
         step.onChange = { [weak self] in self?.nextStepDidChange() }
+        // Plaque's finished page shows the step (when sharing is on).
+        step.onSettled = { [weak self] text in self?.notePlaqueNextStep(text) }
         return step
     }
 
@@ -292,6 +327,7 @@ extension NidusModel {
 
     /// Done, or Return in the field: the card has nothing more to ask.
     func finishNextStep() {
+        cards.nextStep?.settleNow()
         if let step = cards.nextStep, step.isSaved {
             let said = step.historyIsOff ? "Saved as a note. Session history is off." : "Saved as a note."
             host?.hud.refresh(id: Self.completedHUDID, duration: 1.2, announcing: said)
