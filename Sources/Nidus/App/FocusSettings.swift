@@ -87,6 +87,30 @@ struct FocusGeneralPage: View {
             sessions
             menuBarAndLogin
             whenASessionStarts
+            plaque
+        }
+    }
+
+    /// Off until turned on; the text it may include is a second, separate yes.
+    private var plaque: some View {
+        DropletSettingsSection {
+            settingsSectionHeader("Plaque",
+                                  detail: "Lets Plaque show your focus on an e-paper reader.")
+        } content: {
+            DropletSettingsCard {
+                DropletToggleRow(title: "Show focus on Plaque",
+                                 subtitle: "Writes a small status file on this Mac: focusing, paused or on a break, and until when. Plaque sends it to a reader only when you press Send there.",
+                                 isOn: model.binding(\.sharesFocusWithPlaque))
+                if model.sharesFocusWithPlaque {
+                    DropletToggleRow(title: "Include goal, project and next step",
+                                     subtitle: "Off: Plaque shows the state and times only.",
+                                     isOn: model.binding(\.sharesFocusTextWithPlaque))
+                }
+            }
+            Text("Turning this off removes the file. A page already sent to a reader stays on it until you send another.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
