@@ -427,7 +427,7 @@ final class CalendarHost: ScheduleHost {
 
 /// A scheduler on a fake host, a fake calendar and a clock moved by hand.
 @MainActor
-struct Rig {
+private struct Rig {
     let host = CalendarHost()
     let clock = TestClock()
     let source: CountingCalendarSource
@@ -849,6 +849,29 @@ struct CalendarSchedulerTests {
         s.go("2026-03-09T10:00:00-07:00", .wake)
         let first = try #require(s.host.started.first)
         #expect(first.missed && first.minutes == 30 && first.end == at("2026-03-09T10:30:00-07:00"))
+    }
+
+    @Test func aShortenedRunMissedWhileAsleepIsNotReplacedByTheScheduledOne() {
+        // Shortened to end at 10:30, the Mac sleeps through all of it and wakes
+        // at 10:45, inside the original window and inside the meeting.
+        let s = Rig(events: [tenThirty])
+        s.go("2026-03-09T08:59:00-07:00")
+        s.scheduler.shorten(s.host.cards[0].run)
+        s.go("2026-03-09T10:45:00-07:00", .wake)
+        #expect(s.host.started.isEmpty, "the full block is not made up through the meeting")
+        #expect(s.scheduler.adjustments.isEmpty)
+        s.go("2026-03-09T10:46:00-07:00", .timer)
+        s.go("2026-03-09T11:30:00-07:00", .launch)
+        #expect(s.host.started.isEmpty)
+    }
+
+    @Test func aDelayedRunMissedWhileAsleepIsNotReplacedByTheScheduledOne() {
+        let s = Rig(events: [tenThirty])
+        s.go("2026-03-09T08:59:00-07:00")
+        s.scheduler.delay(s.host.cards[0].run)
+        s.go("2026-03-09T12:30:00-07:00", .wake)
+        #expect(s.host.started.isEmpty)
+        #expect(s.scheduler.adjustments.isEmpty)
     }
 
     @Test func aRelaunchDropsADelayedRunAndStartsNothingInItsPlace() {

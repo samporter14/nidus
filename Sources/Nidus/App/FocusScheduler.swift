@@ -285,13 +285,15 @@ final class FocusScheduler {
         let now = now()
         let calendar = calendar()
         let schedules = host.schedules
+        // Before the record is read: an adjusted run that was missed marks its
+        // scheduled run as dealt with.
+        dropStaleAdjustments(at: now, schedules: schedules, calendar: calendar, host: host)
         var handled = host.scheduleHandled
         let changed = Set(schedules.filter { schedule in
             known.first { $0.id == schedule.id }.map(schedule.changesTiming(from:)) ?? true
         }.map(\.id))
         known = schedules
 
-        dropStaleAdjustments(at: now, schedules: schedules, calendar: calendar, host: host)
         var runs = FocusSchedule.inProgress(at: now, schedules: schedules, calendar: calendar)
         let endsAtMeeting = substituteAdjustments(into: &runs, at: now, schedules: schedules)
         for run in runs where !FocusSchedule.isHandled(run, in: handled) {
@@ -352,6 +354,10 @@ final class FocusScheduler {
             } else if window?.start != adjustment.original.start || window?.end != adjustment.original.end {
                 why = "the clock or time zone changed"
             } else if now >= adjustment.run.end {
+                // The person chose this run and it was missed (the Mac slept
+                // through it). The scheduled run does not take its place: it
+                // would run straight through the meeting that was avoided.
+                markHandled(adjustment.original, host: host)
                 why = "its time passed"
             } else {
                 why = nil
