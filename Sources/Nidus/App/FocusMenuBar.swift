@@ -295,6 +295,10 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
                 menu.addItem(action("Yes, finished", #selector(answeredYes)))
                 menu.addItem(action("Not yet", #selector(answeredNo)))
                 menu.addItem(.separator())
+            } else if model.canAddNextStep {
+                // The card's next-step field, reached from the keyboard.
+                menu.addItem(action("Add a next step\u{2026}", #selector(addNextStep)))
+                menu.addItem(.separator())
             }
             let start = action("Start focus", #selector(startSession))
             let setups = model.setupMenuItems()
@@ -336,6 +340,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     @objc private func skipBreak() { model?.skipBreak() }
     @objc private func answeredYes() { model?.answerFinished(true) }
     @objc private func answeredNo() { model?.answerFinished(false) }
+    @objc private func addNextStep() { model?.focusNextStep() }
     @objc private func endBreak() { model?.endBreak() }
     @objc private func openSettings() { model?.openSettings() }
     @objc private func openStats() { model?.openStats() }

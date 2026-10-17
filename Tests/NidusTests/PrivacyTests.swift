@@ -24,7 +24,9 @@ struct NoNetworkTests {
 
     @Test func theScanSeesTheWholeDroplet() {
         let names = Set(Self.dropletSources.map(\.lastPathComponent))
-        #expect(names.isSuperset(of: ["NidusApp.swift", "NidusModel.swift", "FocusSettings.swift", "FocusController.swift", "BrowserBlocker.swift"]))
+        #expect(names.isSuperset(of: ["NidusApp.swift", "NidusModel.swift", "FocusSettings.swift", "FocusController.swift", "BrowserBlocker.swift",
+                                      "ResumeNotes.swift", "ResumeNote.swift", "ResumeResources.swift", "FocusProjects.swift",
+                                      "ProjectSummary.swift", "FocusProjectViews.swift"]))
     }
 
     @Test(arguments: [

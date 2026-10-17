@@ -56,6 +56,18 @@ final class NidusModel: NSObject, ObservableObject {
     /// The last recorded session with a goal, until "did you finish?" is
     /// answered or the next session starts. The menu bar asks too.
     private(set) var pendingFinish: (id: SessionEntry.ID, goal: String)?
+    /// The resume notes (ResumeNotes.swift): made when the model activates,
+    /// so a model that was never activated has none and keeps none.
+    var resumeNotes: ResumeNoteStore?
+    /// Why the last Resume did nothing, beside the note it was pressed on.
+    @Published var resumeNotice: ResumeNotice?
+    /// Opens the link a resume note carries, when it is resumed. Replaced in tests.
+    var urlOpener: (URL) -> Bool = { NSWorkspace.shared.open($0) }
+    /// Demo only: the question the wrap-up card is asking, or none.
+    func setDemoQuestion(goal: String?) {
+        guard Demo.isActive else { return }
+        pendingFinish = goal.map { (id: UUID(), goal: $0) }
+    }
     /// Listens for the moments Monday's recap may be offered (WeeklyRecapCard.swift).
     var recapWatcher: WeeklyRecapWatcher?
     /// What the cards remember: a snooze waiting out its pause, and the
@@ -73,6 +85,7 @@ final class NidusModel: NSObject, ObservableObject {
         let controller = FocusController(directory: host.environment.containerDirectory,
                                          dropletID: Self.id)
         self.controller = controller
+        resumeNotes = ResumeNoteStore(url: host.environment.containerDirectory.appendingPathComponent(ResumeNoteStore.fileName))
         applySettings()
 
         controller.onBlocked = { [weak self] item in
@@ -161,7 +174,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// Starts a session from the popover: its goal, length and categories.
     func startSession() {
-        startSession(SessionRequest(goal: goalDraft))
+        startSession(SessionRequest(goal: goalDraft, projectID: selectedProjectID))
     }
 
     /// Starts a session from anywhere: the popover, a nidus:// link, a
@@ -194,8 +207,10 @@ final class NidusModel: NSObject, ObservableObject {
         )
         plan.strict = request.strict ?? strictMode
         plan.setupID = request.setupID
-        plan.projectID = request.projectID
-        plan.projectName = request.projectID.flatMap(projectNameForPlan)
+        // A project that no longer exists is no project, not an id that points nowhere.
+        let project = FocusProject.planFields(for: request.projectID, in: projects)
+        plan.projectID = project?.id
+        plan.projectName = project?.name
         // A request's own break, else Settings' (`breakLength` nil), as before.
         plan.breakLength = request.breakMinutes.map { TimeInterval(max(0, $0) * 60) }
         plan.breakRules = request.breakRules ?? defaultBreakRules
@@ -213,7 +228,7 @@ final class NidusModel: NSObject, ObservableObject {
     /// Starts the last session again, from the wrap-up card.
     func startAgain() {
         guard let controller, let last = controller.engine.lastPlan else { return startSession() }
-        controller.start(last)
+        controller.start(withCurrentProject(last))
         host?.feedback.play(.success)
         askBrowsersNeedingConsent()
     }
@@ -230,7 +245,7 @@ final class NidusModel: NSObject, ObservableObject {
         } else if isOnBreak {
             skipBreak()
         } else if let last = controller.engine.lastPlan {
-            controller.start(last)
+            controller.start(withCurrentProject(last))
             host?.feedback.play(.success)
             askBrowsersNeedingConsent()
         } else {
@@ -259,8 +274,12 @@ final class NidusModel: NSObject, ObservableObject {
         controller?.markFinished(pending.id, finished)
         pendingFinish = nil
         cards.finishAnswer = finished
-        host?.hud.refresh(id: Self.completedHUDID, duration: FinishReply.linger,
-                          announcing: FinishReply.confirmation(finished))
+        // With a next step to write the card makes room for its field and
+        // stays long enough to type in it.
+        let hasNextStep = cards.nextStep != nil
+        host?.hud.refresh(id: Self.completedHUDID, duration: hasNextStep ? noteLinger : FinishReply.linger,
+                          announcing: FinishReply.confirmation(finished) + (hasNextStep ? " What\u{2019}s the next step? Optional." : ""))
+        if hasNextStep { host?.hud.remeasure(id: Self.completedHUDID) }
         host?.feedback.play(finished ? .success : .tick)
     }
 
@@ -308,6 +327,8 @@ final class NidusModel: NSObject, ObservableObject {
             return
         case "welcome": controller.end(); return presentWelcomeHUD()
         case "setups": controller.end(); return seedSampleSetups()
+        case "projects": controller.end(); return seedSampleProjects()
+        case "projects-quiet": controller.end(); return seedSampleProjects(notes: false)
         case "goals":
             controller.end()
             if recentGoals.isEmpty {
@@ -341,6 +362,8 @@ final class NidusModel: NSObject, ObservableObject {
             presentWrapUpHUD(for: final, completed: true, askAbout: final.plan.goal)
             if scenario.hasSuffix("-yes") { answerFinished(true) }
             if scenario == "finish-notyet" { answerFinished(false) }
+        case "finish-next", "finish-next-empty", "finish-next-notyet", "finish-next-off":
+            presentSampleNextStep(scenario)
         case "wrapup", "streak":
             guard var final = controller.engine.session else { break }
             final.focusedTime = 25 * 60
@@ -376,6 +399,8 @@ final class NidusModel: NSObject, ObservableObject {
         case .started:
             warnedBrowsers.removeAll()
             pendingFinish = nil
+            cards.nextStep = nil
+            resumeNotice = nil
             // A one-off belongs to the Start it was set for, however it came.
             untilTarget = nil
             customLengthDraft = nil
@@ -395,7 +420,7 @@ final class NidusModel: NSObject, ObservableObject {
                 let entry = controller?.history.sessions.last(where: { $0.start == final.startedAt })
                 pendingFinish = entry.flatMap { $0.goal.isEmpty ? nil : (id: $0.id, goal: $0.goal) }
                 presentWrapUpHUD(for: final, completed: reason == .completed, streak: streakMilestone(for: final),
-                                 askAbout: pendingFinish?.goal)
+                                 askAbout: pendingFinish?.goal, nextStep: beginNextStep(for: final, entry: entry))
             }
             goalDraft = ""
             menuBar?.sessionDidEnd(completed: reason == .completed)
@@ -647,9 +672,17 @@ extension NidusModel {
         FocusStats(sessions: controller?.history.sessions ?? [])
     }
 
+    /// The history, the goals remembered from it, and the resume notes (which
+    /// are written after sessions and quote them). Projects themselves stay;
+    /// what was counted toward them was worked out from the history and goes
+    /// with it.
     func clearHistory() {
         controller?.clearHistory()
         recentGoals = []
+        resumeNotes?.clear()
+        cards.nextStep = nil
+        resumeNotice = nil
+        objectWillChange.send()
     }
 
     /// The streak the session that just ended carried on, if it was the

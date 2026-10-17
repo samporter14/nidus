@@ -77,6 +77,8 @@ struct SettingsRoute: Equatable, Sendable {
         if pageID.hasPrefix(NidusModel.categoryPagePrefix) { return SettingsRoute(tab: .blocking, pushes: true) }
         if pageID.hasPrefix(NidusModel.setupPagePrefix) { return SettingsRoute(tab: .setups, pushes: true) }
         if pageID.hasPrefix(NidusModel.schedulePagePrefix) { return SettingsRoute(tab: .schedules, pushes: true) }
+        // A project's page opens over Stats, where the Projects list is.
+        if pageID.hasPrefix(NidusModel.projectPagePrefix) { return SettingsRoute(tab: .stats, pushes: true) }
         return SettingsRoute(tab: .general, pushes: false)
     }
 }

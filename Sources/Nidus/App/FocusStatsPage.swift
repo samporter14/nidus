@@ -24,14 +24,18 @@ struct FocusStatsPage: View {
             } else {
                 summary(stats)
             }
+            FocusProjectsSection(model: model)
             history(stats)
         }
         .confirmationDialog("Clear your focus history?", isPresented: $confirmingClear) {
             Button("Clear history", role: .destructive, action: model.clearHistory)
         } message: {
-            Text("Every recorded session, the stats worked out from them, and your recent goals are removed from this Mac.")
+            Text(Self.clearHistoryMessage)
         }
     }
+
+    /// What Clear history says it clears.
+    static let clearHistoryMessage = "Every recorded session, the stats worked out from them (each project\u{2019}s time and unfinished goals too), your recent goals and your resume notes are removed from this Mac. Your projects stay."
 
     /// With nothing recorded there is nothing to count: one line, not a page
     /// of empty rows. History's own controls stay below it.
@@ -131,10 +135,13 @@ struct FocusStatsPage: View {
                     .fixedSize()
                     .disabled(stats.isEmpty)
                 }
-                DropletControlRow(title: "Clear history") {
+                DropletControlRow(title: "Clear history",
+                                  infoTip: "Also clears your resume notes. Projects stay.") {
                     Button("Clear\u{2026}", role: .destructive) { confirmingClear = true }
                         .buttonStyle(.bordered)
-                        .disabled(stats.isEmpty)
+                        // Notes are cleared with the history, and are kept
+                        // even when there is no history to clear.
+                        .disabled(stats.isEmpty && model.resumeNoteList.isEmpty)
                 }
             }
         }

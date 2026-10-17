@@ -77,13 +77,52 @@ and the categories to block, and press Start. Until the session ends:
 - **Breaks, Focus modes and apps to open.** Breaks can run between sessions,
   Pomodoro style. A session can open the apps you work in, and turn on Do Not
   Disturb or any other Focus mode, then off again at the end.
+- **Projects.** Name what your sessions are for ("R01 renewal", "Lab
+  notebook") under Stats in Settings. Once you have one, the popover offers a
+  small project menu, and the project you pick counts the next session toward
+  it (it stays picked, like the categories, until you change it). Each
+  project has a page with the time you focused on it, its sessions, the goals
+  you answered "Not yet" to and haven't finished since, its resume notes, and
+  Start a session. Rename, archive or delete a project whenever you like:
+  your history is never rewritten, so past sessions keep the name they had,
+  and a deleted project reads "Name (deleted)" in the list.
+- **Pick up where you left off.** After you answer "Did you finish?" on the
+  card, you can type what the next step is (up to 160 characters) and attach
+  a document, a folder or a web page to open with it. Both are optional, and
+  "Not yet" keeps the note just as "Yes" does. The newest note waiting shows
+  as one row at the top of the popover: Resume starts a session with the step
+  as its goal, and opens its link, on that click and no other; Dismiss puts it
+  away. Resume never replaces a session or break that is on, and says why it
+  can't.
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
   session, how many goals you finished and what you blocked most. On Monday a
   card sums up last week. Export your history as CSV or JSON whenever you
-  like. Categories for social media, messaging, video, news and mail are
-  ready to use, and you can make your own.
+  like (the CSV ends with a `project` column). Categories for social media,
+  messaging, video, news and mail are ready to use, and you can make your
+  own.
 
 <img src="docs/settings.png" width="420" alt="Nidus Settings on its Blocking tab, with toolbar tabs for General, Blocking, Setups, Schedules, Stats and About, the blocking choices, and the categories"> <img src="docs/stats.png" width="420" alt="The Stats tab: 2 hr 27 min this week, a 6-day streak, 76 sessions, six months of focus as a graph, and the most blocked app">
+
+## What projects and notes keep
+
+- **Projects** are a short list in Nidus's settings: a name, whether it is
+  archived, and a stable id. A project's time, sessions and unfinished goals
+  are worked out from your history each time its page opens; nothing about
+  them is stored separately.
+- **Resume notes** are in `resume-notes.json` beside your history, on this
+  Mac only. A note holds the step, the goal and project it followed, the
+  history entry it followed when there is one, its link (a bookmark to a file
+  or folder, or the web address you typed) and when it was made or dismissed.
+  Nothing is fetched from a link: no title, icon or preview, ever.
+- **Sessions not recorded.** With "Record sessions" off, no session is
+  counted toward a project. Notes are still offered, because they are your own
+  words rather than history; the card says "Saved as a note. Session history
+  is off." and the note has no history entry.
+- **Editing a note never edits history.** Dismissing, changing or removing a
+  note leaves every session, and its "Did you finish?" answer, as it was.
+- **Clear History** removes the sessions, the stats and each project's numbers
+  that come from them, your recent goals, and your resume notes. Your
+  projects themselves stay; delete one on its page.
 
 ## Start it from anywhere
 

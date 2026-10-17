@@ -97,6 +97,9 @@ struct FocusWidget: View {
     /// down, and the popover follows its content.
     private var idle: some View {
         VStack(alignment: .leading, spacing: DroppySpacing.md) {
+            // The newest note waiting, if there is one: nothing otherwise.
+            ResumePopoverRow(model: model)
+
             HStack(spacing: DroppySpacing.sm) {
                 TextField("What are you working on?", text: $model.goalDraft)
                     .textFieldStyle(.roundedBorder)
@@ -118,6 +121,9 @@ struct FocusWidget: View {
                     if model.customLengthDraft == nil { goalFocused = true } else { customLengthFocused = true }
                 }
             }
+
+            // Which project this counts toward; draws nothing until there is one.
+            FocusProjectPickerRow(model: model)
 
             // Saved setups, one click each; draws nothing until there are any.
             FocusSetupsBar(model: model)
