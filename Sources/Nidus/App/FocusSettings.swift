@@ -94,6 +94,7 @@ struct FocusGeneralPage: View {
             whenASessionStarts
             inboxSection
             plaque
+            BrickSettingsSection(model: model)
         }
     }
 

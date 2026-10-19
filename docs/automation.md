@@ -9,7 +9,12 @@ later. Everything goes through the same rules as the popover:
 - A start never replaces a session or break that's already on.
 - Status never changes anything.
 
-Nothing here needs the internet. Nidus never connects to it.
+The Mac commands below do not need the internet. Nidus never connects to it.
+The optional [Brick phone companion](brick-companion.md) accepts requests
+from a chosen local file or `nidus://brick` link and offers **Choose session**,
+which opens the normal session editor without starting or selecting a setup.
+Its iPhone workflow uses a file provider such as iCloud Drive for delivery;
+that provider handles syncing outside Nidus.
 
 ## Shortcuts actions
 

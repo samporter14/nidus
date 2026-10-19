@@ -18,11 +18,15 @@ enum RenderSurfaces {
     private static let arguments = ProcessInfo.processInfo.arguments
 
     static var directory: URL? {
-        guard let index = arguments.firstIndex(of: "--render-surfaces"), index + 1 < arguments.count else { return nil }
+        guard let index = arguments.firstIndex(where: { $0 == "--render-surfaces" || $0 == "--render-brick-surfaces" }),
+              index + 1 < arguments.count else { return nil }
         return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
     }
 
-    nonisolated static var isActive: Bool { ProcessInfo.processInfo.arguments.contains("--render-surfaces") }
+    nonisolated static var isActive: Bool {
+        ProcessInfo.processInfo.arguments.contains("--render-surfaces") ||
+        ProcessInfo.processInfo.arguments.contains("--render-brick-surfaces")
+    }
 
     static func run() {
         guard let directory else { return NSApp.terminate(nil) }
@@ -33,6 +37,43 @@ enum RenderSurfaces {
         model.harnessScenario = "idle"
         settings.model = model
         model.activate(host: host)
+
+        if arguments.contains("--render-brick-surfaces") {
+            Task { @MainActor in
+                model.runHarnessScenario("brick-offer")
+                await shootBrickPreview(NidusPopover(model: model), width: 440,
+                                       name: "brick-popover-flat", in: directory)
+                await shootBrickPreview(BrickOfferCard(onChoose: {}, onDismiss: {}),
+                                       width: 420, name: "brick-card-flat", in: directory)
+                model.runHarnessScenario("idle")
+                model.dismissBrickOffer()
+                model.goalDraft = ""
+                await shootBrickPreview(NidusPopover(model: model), width: 440,
+                                       name: "idle-popover-flat", in: directory)
+                model.openCustomLength()
+                model.customLengthDraft?.text = "1h30"
+                await shootBrickPreview(NidusPopover(model: model), width: 440,
+                                       name: "custom-length-popover-flat", in: directory)
+                model.cancelCustomLength()
+                if let template = model.setups.first {
+                    model.setups = ["Manuscript revisions", "Data analysis", "Long reading session", "Review tomorrow's experiments"].map { name in
+                        var setup = template
+                        setup.id = UUID()
+                        setup.name = name
+                        return setup
+                    }
+                    model.sequences = [FocusSequence(name: "Workday", steps: [])]
+                    await shootBrickPreview(NidusPopover(model: model), width: 440,
+                                           name: "long-setups-popover-flat", in: directory)
+                }
+                model.runHarnessScenario("running")
+                await shootBrickPreview(NidusPopover(model: model), width: 440,
+                                       name: "running-popover-flat", in: directory)
+                model.deactivate()
+                NSApp.terminate(nil)
+            }
+            return
+        }
 
         Task { @MainActor in
             // The popover, in each state.
@@ -106,6 +147,19 @@ enum RenderSurfaces {
             await renderSchedules(model: model, settings: settings, host: host, in: directory)
             await renderInbox(model: model, settings: settings, host: host, in: directory)
             await renderProjects(model: model, settings: settings, host: host, in: directory)
+            model.runHarnessScenario("brick-offer")
+            await shoot(NidusPopover(model: model), width: 440, name: "popover-brick-offer", in: directory)
+            if let request = host.hud.lastRequest {
+                await shoot(HUDCardView(content: request.content), width: HUDPresenter.width,
+                            name: "card-brick-offer", in: directory, padded: true)
+            }
+            await shoot(NidusSettingsPane { BrickSettingsSection(model: model) }
+                .background(Color(nsColor: .windowBackgroundColor)),
+                width: 640, height: 460, name: "settings-brick-on", in: directory)
+            model.brickEnabled = false
+            await shoot(NidusSettingsPane { BrickSettingsSection(model: model) }
+                .background(Color(nsColor: .windowBackgroundColor)),
+                width: 640, height: 300, name: "settings-brick-off", in: directory)
             model.deactivate()
             NSApp.terminate(nil)
         }
@@ -259,6 +313,38 @@ enum RenderSurfaces {
                 let fit = hosting.fittingSize
                 size = NSSize(width: width + pad, height: fit.height)
             }
+            let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -30000, y: -30000), size: size),
+                                  styleMask: [.borderless], backing: .buffered, defer: false)
+            window.appearance = hosting.appearance
+            window.contentView = hosting
+            window.orderFrontRegardless()
+            hosting.layoutSubtreeIfNeeded()
+            try? await Task.sleep(for: .milliseconds(350))
+            guard let rep = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else { continue }
+            hosting.cacheDisplay(in: hosting.bounds, to: rep)
+            try? rep.representation(using: .png, properties: [:])?
+                .write(to: directory.appendingPathComponent("\(name)-\(theme).png"))
+            window.orderOut(nil)
+        }
+    }
+
+    /// Flat previews for Brick's new controls. The normal offscreen renderer
+    /// cannot reproduce menu-bar and HUD materials, so these force each
+    /// appearance and a readable opaque background without changing the app.
+    static func shootBrickPreview<V: View>(_ view: V, width: CGFloat, name: String,
+                                           in directory: URL) async {
+        for (theme, appearance, scheme) in [("light", NSAppearance.Name.aqua, ColorScheme.light),
+                                            ("dark", .darkAqua, .dark)] {
+            let background = scheme == .light ? Color.white : Color(nsColor: NSColor(calibratedWhite: 0.13, alpha: 1))
+            let root = view
+                .frame(width: width, alignment: .leading)
+                .padding(20)
+                .background(background)
+                .environment(\.colorScheme, scheme)
+            let hosting = NSHostingView(rootView: root)
+            hosting.appearance = NSAppearance(named: appearance)
+            hosting.frame = NSRect(x: 0, y: 0, width: width + 40, height: 10)
+            let size = NSSize(width: width + 40, height: ceil(hosting.fittingSize.height))
             let window = NSWindow(contentRect: NSRect(origin: NSPoint(x: -30000, y: -30000), size: size),
                                   styleMask: [.borderless], backing: .buffered, defer: false)
             window.appearance = hosting.appearance

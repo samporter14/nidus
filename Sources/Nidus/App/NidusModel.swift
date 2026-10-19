@@ -87,6 +87,11 @@ final class NidusModel: NSObject, ObservableObject {
     /// Opens an inbox item's address. Used only by that item's Open button;
     /// a test replaces it to see that nothing else opens anything.
     var inboxURLOpener: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
+    /// Opt-in local request receiver; it never starts a session itself.
+    let brickCompanion = BrickCompanion()
+    @Published var brickOffer: BrickPendingOffer?
+    @Published var brickFileName = ""
+    @Published var brickFileStatus = "No file selected."
 
     // MARK: Lifecycle
 
@@ -144,6 +149,7 @@ final class NidusModel: NSObject, ObservableObject {
             .store(in: &subscriptions)
 
         controller.start()
+        brickCompanion.activate(self)
         publishFocus()
         startWeeklyRecap()
 
@@ -166,6 +172,8 @@ final class NidusModel: NSObject, ObservableObject {
     }
 
     func deactivate() {
+        brickCompanion.deactivate()
+        dismissBrickOffer()
         publishFocus(quitting: true)
         plaqueBridge?.cancelPending()
         // Everything activate() started is torn down here, before Nidus quits.
@@ -208,6 +216,7 @@ final class NidusModel: NSObject, ObservableObject {
     func startSession(_ request: SessionRequest) -> Bool {
         guard let controller, canStartNew else { return false }
         guard let resolved = resolveSession(request) else { return false }
+        dismissBrickOffer()
         let plan = resolved.plan
         controller.start(plan)
         noteFixedEnd(request.hasFixedEnd || resolved.endsAtMeeting)
@@ -347,6 +356,15 @@ final class NidusModel: NSObject, ObservableObject {
             return runSequenceScenario(scenario)
         case "welcome": controller.end(); return presentWelcomeHUD()
         case "setups": controller.end(); return seedSampleSetups()
+        case "brick-offer":
+            controller.end()
+            seedSampleSetups()
+            brickEnabled = true
+            let sample = BrickSignal(version: 1, id: UUID().uuidString,
+                                     timestamp: ISO8601DateFormatter().string(from: Date()),
+                                     event: BrickSignal.kind)
+            brickCompanion.receive(sample)
+            return
         case "inbox": controller.end(); return seedSampleInbox()
         case "projects": controller.end(); return seedSampleProjects()
         case "projects-quiet": controller.end(); return seedSampleProjects(notes: false)
@@ -440,6 +458,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     private func sessionDidChange(_ event: SessionEvent) {
         defer { publishFocus() }
+        if isActive || isOnBreak { dismissBrickOffer() }
         dropSnoozeWaitIfMoot()
         switch event {
         case .started:

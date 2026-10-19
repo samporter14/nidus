@@ -295,6 +295,25 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
   equal the file as JSON values; Plaque's check decodes it, renders it and
   sends it to a fake reader.
 
+## Brick phone companion
+
+- Off by default. The user optionally chooses a JSON signal file; no saved
+  setup or setup mapping is required. Enabled file monitoring is an explicit exception to idle
+  inactivity: Nidus reads only that selected file about every two seconds.
+  Disabling it stops monitoring. No networking API or service is added;
+  iCloud Drive or another file provider, when chosen, handles delivery.
+- A request means an intention to focus, never verified Brick state. It
+  offers Choose session and Not now only while idle. It cannot auto-start, end a
+  session, unbrick a phone, or weaken strict mode.
+- The same freshness and replay checks apply to the file and local
+  `nidus://brick` links. Existing file contents are consumed as a baseline
+  on enable, file selection, and launch. Busy requests are consumed rather
+  than queued. Pending offers expire and are cleared when work begins.
+- Choose session revalidates the request, dismisses it, and opens the normal
+  session editor with existing drafts intact. The user chooses the goal, setup
+  and duration and explicitly starts through the existing shared start path.
+  Real phone/Brick detection and delivery require separate device validation.
+
 ## Who owns what (agents)
 
 | Feature | Files it creates or owns | Shared files it edits |

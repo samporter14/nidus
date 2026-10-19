@@ -48,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.model = model
         // Shortcuts actions (FocusIntents.swift) reach the app through this.
         if !Demo.isActive { NidusModel.running = model }
+        connectBrickFileIfRequested(model: model, host: host)
 
         LoginItem.registerOnFirstLaunch()
         watchForTerminate()
@@ -63,6 +64,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func application(_ application: NSApplication, open urls: [URL]) {
         guard let model else { return pendingURLs.append(contentsOf: urls) }
         urls.forEach(model.handle)
+    }
+
+    /// One-time local setup for a file created by Shortcuts. Make and test the
+    /// security-scoped bookmark in Nidus itself before changing its preference.
+    private func connectBrickFileIfRequested(model: NidusModel, host: NidusHost) {
+        let arguments = ProcessInfo.processInfo.arguments
+        let flags = arguments.indices.filter { arguments[$0] == "--connect-brick-file" }
+        guard !flags.isEmpty else { return }
+
+        func report(_ message: String, success: Bool = false) {
+            let line = "Nidus brick file connection \(success ? "succeeded" : "failed"): \(message)\n"
+            FileHandle.standardOutput.write(Data(line.utf8))
+            if !success { host.log.error("Brick file connection failed: \(message, privacy: .public)") }
+        }
+
+        guard !Demo.isActive else { report("unavailable in demo mode"); return }
+        guard flags.count == 1, flags[0] + 1 < arguments.count,
+              arguments[flags[0] + 1].hasPrefix("/") else {
+            report("expected one absolute file path after --connect-brick-file")
+            return
+        }
+        let url = URL(fileURLWithPath: arguments[flags[0] + 1]).standardizedFileURL
+        guard let initial = BrickFileReader.readFile(at: url).data,
+              let signal = BrickSignal.parse(initial), signal.hasValidStructure else {
+            report("file must be a readable regular JSON request of at most 4 KB")
+            return
+        }
+        guard let bookmark = try? url.bookmarkData(options: .withSecurityScope,
+                                                   includingResourceValuesForKeys: nil, relativeTo: nil),
+              let verified = BrickFileReader.read(bookmark: bookmark).data,
+              let verifiedSignal = BrickSignal.parse(verified), verifiedSignal.hasValidStructure else {
+            report("Nidus could not create and read its own file bookmark")
+            return
+        }
+        model.brickFileBookmark = bookmark
+        model.brickEnabled = true
+        _ = UserDefaults.standard.synchronize()
+        report("bookmark verified and companion enabled", success: true)
     }
 
     /// Opening Nidus again, from Finder or Spotlight, opens its popover.

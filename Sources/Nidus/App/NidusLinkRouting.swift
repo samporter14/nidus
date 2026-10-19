@@ -15,6 +15,10 @@ extension NidusModel {
     /// or Shortcut. Anything unreadable is ignored and logged without its
     /// values, the goal being the user's own words.
     func handle(_ url: URL) {
+        if url.scheme?.lowercased() == "nidus", url.host?.lowercased() == "brick" {
+            if let signal = BrickSignal.parse(url) { brickCompanion.receive(signal) }
+            return
+        }
         switch NidusLink.parse(url) {
         case .success(let link):
             route(link)

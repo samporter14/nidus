@@ -43,13 +43,19 @@ struct FocusWidget: View {
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: NidusSpacing.sm) {
-            Image(nsImage: FocusGlyph.image(model.isActive ? .brain : .particle, pointSize: 15))
+        HStack(spacing: 11) {
+            Image(nsImage: FocusGlyph.image(model.isActive ? .brain : .particle, pointSize: 17))
                 .renderingMode(.template)
-                .foregroundStyle(model.isActive && !model.isPaused ? AnyShapeStyle(FocusPalette.clay) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(model.isPaused || model.isOnBreak ? Solanum.inkMuted : Solanum.clayText)
+                .frame(width: 35, height: 35)
+                .background(Solanum.clay.opacity(0.12), in: .rect(cornerRadius: 11))
+                .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Solanum.clay.opacity(0.22)))
                 .accessibilityHidden(true)
             Text(stateWord)
-                .font(.headline)
+                .font(model.isActive || model.isOnBreak
+                      ? .system(size: 17, weight: .semibold)
+                      : Solanum.serif(22).weight(.semibold))
+                .foregroundStyle(Solanum.ink)
             if model.isStrict || (model.strictMode && !model.isActive && !model.isOnBreak) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 9, weight: .semibold))
@@ -70,14 +76,17 @@ struct FocusWidget: View {
             if !model.isActive, !model.isOnBreak {
                 Button(action: model.openSettings) {
                     Image(systemName: "gearshape")
-                        .font(.system(size: 14))
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(Solanum.inkMuted)
+                        .frame(width: 30, height: 30)
+                        .background(Solanum.segmentWell, in: .circle)
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
                 .help("Nidus settings")
                 .accessibilityLabel("Nidus settings")
             }
         }
-        .frame(height: 26)
+        .frame(height: 38)
     }
 
     /// The header's one word for where things stand.
@@ -96,23 +105,52 @@ struct FocusWidget: View {
     /// has no fixed height: whatever is added below the goal moves the rest
     /// down, and the popover follows its content.
     private var idle: some View {
-        VStack(alignment: .leading, spacing: NidusSpacing.md) {
+        VStack(alignment: .leading, spacing: 14) {
             // The newest note waiting, if there is one: nothing otherwise.
             ResumePopoverRow(model: model)
+            BrickPopoverRow(model: model)
 
-            HStack(spacing: NidusSpacing.sm) {
-                TextField("What are you working on?", text: $model.goalDraft)
-                    .textFieldStyle(.roundedBorder)
-                    .controlSize(.extraLarge)
-                    .focused($goalFocused)
-                    .onSubmit(start)
-                    .onKeyPress(.upArrow) { stepRecentGoal(1) }
-                    .onKeyPress(.downArrow) { stepRecentGoal(-1) }
-                    .accessibilityLabel("Goal")
-                if !model.recentGoals.isEmpty {
-                    recentGoalsMenu
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Overline("Your focus")
+                    HStack(spacing: NidusSpacing.sm) {
+                        TextField("What are you working on?", text: $model.goalDraft)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 17, weight: .medium))
+                            .foregroundStyle(Solanum.ink)
+                            .focused($goalFocused)
+                            .onSubmit(start)
+                            .onKeyPress(.upArrow) { stepRecentGoal(1) }
+                            .onKeyPress(.downArrow) { stepRecentGoal(-1) }
+                            .accessibilityLabel("Goal")
+                        if !model.recentGoals.isEmpty {
+                            recentGoalsMenu
+                        }
+                    }
+                    .frame(minHeight: 33)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 15)
+                .padding(.bottom, 14)
+
+                if model.offersProjectPicker || FocusSetupsBar.isVisible(model: model) {
+                    Rectangle().fill(Solanum.hairline).frame(height: 1)
+                    VStack(alignment: .leading, spacing: 10) {
+                        if model.offersProjectPicker { FocusProjectPickerRow(model: model) }
+                        if FocusSetupsBar.isVisible(model: model) { FocusSetupsBar(model: model) }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 12)
                 }
             }
+            .background {
+                RoundedRectangle(cornerRadius: 15, style: .continuous)
+                    .fill(LinearGradient(colors: [Solanum.clay.opacity(0.10), Solanum.raised],
+                                         startPoint: .topLeading, endPoint: .bottomTrailing))
+            }
+            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
+                .strokeBorder(goalFocused ? Solanum.clayText.opacity(0.7) : Solanum.hairline,
+                              lineWidth: goalFocused ? 1.5 : 1))
             .onAppear {
                 model.requestKeyboardFocus()
                 // The calendar is read only when someone is about to start.
@@ -122,27 +160,20 @@ struct FocusWidget: View {
                 }
             }
 
-            // Which project this counts toward; draws nothing until there is one.
-            FocusProjectPickerRow(model: model)
-
-            // Saved setups, one click each; draws nothing until there are any.
-            FocusSetupsBar(model: model)
-
-            VStack(alignment: .leading, spacing: NidusSpacing.xs) {
+            VStack(alignment: .leading, spacing: 11) {
+                Overline("Session plan")
                 HStack(spacing: NidusSpacing.sm) {
-                    if model.customLengthDraft == nil {
-                        durationMenu
-                    } else {
-                        customLengthField
-                    }
+                    if model.customLengthDraft == nil { durationMenu } else { customLengthField }
                     categoryMenu
-                    Spacer(minLength: NidusSpacing.sm)
-                    startButton
+                    Spacer(minLength: 0)
                 }
-                if let draft = model.customLengthDraft {
-                    customLengthCaption(draft)
-                }
+                if let draft = model.customLengthDraft { customLengthCaption(draft) }
+                Rectangle().fill(Solanum.hairline).frame(height: 1)
+                startButton
             }
+            .padding(15)
+            .background(Solanum.segmentWell, in: .rect(cornerRadius: 15))
+            .overlay(RoundedRectangle(cornerRadius: 15).strokeBorder(Solanum.hairline))
             // Return in the field, a choice from the Length menu or Escape
             // moves focus on: the field takes it when it opens, the goal
             // gets it back when it closes.
@@ -150,15 +181,19 @@ struct FocusWidget: View {
                 if isOpen { focusCustomLengthField() } else { goalFocused = true }
             }
 
-            if let line = todayCache.line(for: model) {
-                Text(verbatim: line)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+            if todayCache.line(for: model) != nil || model.inboxOpenCount > 0 {
+                HStack(spacing: NidusSpacing.sm) {
+                    if let line = todayCache.line(for: model) {
+                        Text(verbatim: line)
+                            .font(.system(size: 12))
+                            .foregroundStyle(Solanum.inkMuted)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 0)
+                    FocusInboxRow(model: model)
+                }
+                .padding(.horizontal, 2)
             }
-
-            // "Inbox · 3", only when something is waiting.
-            FocusInboxRow(model: model)
         }
     }
 
@@ -183,10 +218,12 @@ struct FocusWidget: View {
             }
         } label: {
             Image(systemName: "clock.arrow.circlepath")
+                .font(.system(size: 14))
+                .foregroundStyle(Solanum.inkMuted)
+                .frame(width: 30, height: 30)
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
-        .controlSize(.extraLarge)
+        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .help("Recent goals")
@@ -210,16 +247,19 @@ struct FocusWidget: View {
     }
 
     private var startButton: some View {
-        Button("Start", action: start)
-            .buttonStyle(.borderedProminent)
-            .tint(FocusPalette.clay)
-            .controlSize(.large)
+        Button(action: start) {
+            HStack {
+                Spacer(minLength: 0)
+                Text("Start focus")
+                Image(systemName: "arrow.right")
+                    .font(.system(size: 12, weight: .semibold))
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 27)
+        }
+            .buttonStyle(SolanumPrimaryButtonStyle(fontSize: 14))
             // While a length is being typed Return belongs to the field.
             .keyboardShortcut(model.customLengthDraft == nil ? .defaultAction : nil)
-            // Start and the Length button keep their size; a long category
-            // name gives way (it ends in …) before either is squeezed.
-            .fixedSize()
-            .layoutPriority(1)
             .disabled(model.selectedCategories.allSatisfy(\.isEmpty) && model.mode == .block)
             .help("Start a focus session")
     }

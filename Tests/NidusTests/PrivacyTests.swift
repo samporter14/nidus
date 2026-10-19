@@ -26,7 +26,7 @@ struct NoNetworkTests {
         let names = Set(Self.appSources.map(\.lastPathComponent))
         #expect(names.isSuperset(of: ["NidusApp.swift", "NidusModel.swift", "FocusSettings.swift", "FocusController.swift", "BrowserBlocker.swift",
                                       "ResumeNotes.swift", "ResumeNote.swift", "ResumeResources.swift", "FocusProjects.swift",
-                                      "ProjectSummary.swift", "FocusProjectViews.swift"]))
+                                      "ProjectSummary.swift", "FocusProjectViews.swift", "BrickCompanion.swift"]))
     }
 
     @Test(arguments: [
