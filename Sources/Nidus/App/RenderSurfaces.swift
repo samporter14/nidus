@@ -157,6 +157,7 @@ enum RenderSurfaces {
             await renderSchedules(model: model, settings: settings, host: host, in: directory)
             await renderInbox(model: model, settings: settings, host: host, in: directory)
             await renderProjects(model: model, settings: settings, host: host, in: directory)
+            await renderPolish(model: model, in: directory)
             model.runHarnessScenario("brick-offer")
             await shoot(NidusPopover(model: model), width: 440, name: "popover-brick-offer", in: directory)
             if let request = host.hud.lastRequest {

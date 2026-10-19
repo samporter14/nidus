@@ -385,7 +385,10 @@ struct FocusWrapUpCard: View {
                 NextStepRow(step: nextStep, chooseDocument: chooseDocument, addWebAddress: addWebAddress, done: finishNextStep)
                     .transition(.opacity)
             }
-            if let openActivity {
+            if let openActivity, saved > 0 {
+                // Both: one quiet line, so the card is not two rows taller.
+                FocusWrapUpFooter(saved: saved, openInbox: openInbox, openActivity: openActivity)
+            } else if let openActivity {
                 Button(action: openActivity) {
                     Label("View session activity", systemImage: "chart.bar.xaxis")
                         .font(.system(size: 12, weight: .medium))
@@ -393,8 +396,9 @@ struct FocusWrapUpCard: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(FocusPalette.clay)
                 .padding(.leading, 28 + NidusSpacing.md)
+            } else if saved > 0 {
+                FocusSavedForLaterRow(count: saved, open: openInbox)
             }
-            if saved > 0 { FocusSavedForLaterRow(count: saved, open: openInbox) }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: reply)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)

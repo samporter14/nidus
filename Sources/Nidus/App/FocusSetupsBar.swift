@@ -36,6 +36,24 @@ struct FocusSetupsBar: View {
         return (Array(setups.prefix(inlineWhenMore)), Array(setups.dropFirst(inlineWhenMore)))
     }
 
+    /// ⌘1 to ⌘4 start the first four setups in the order they show, those
+    /// in More included. A setup that can't start has none: the key does
+    /// nothing rather than fail, and the button is dimmed already. Only 1 to
+    /// 4, so the goal field keeps ⌘A, ⌘C, ⌘V, ⌘X and ⌘Z.
+    static let shortcutCount = 4
+
+    /// The number (1 to 4) of the key that starts `setup`, or nil.
+    static func shortcutNumber(for setup: FocusSetup, in setups: [FocusSetup],
+                               problem: (FocusSetup) -> FocusSetup.Problem?) -> Int? {
+        guard let index = setups.prefix(shortcutCount).firstIndex(where: { $0.id == setup.id }),
+              problem(setup) == nil else { return nil }
+        return index + 1
+    }
+
+    private func shortcutNumber(for setup: FocusSetup) -> Int? {
+        Self.shortcutNumber(for: setup, in: model.setups) { $0.problem(in: model.categories) }
+    }
+
     private var inline: [FocusSetup] { Self.split(model.setups).inline }
     private var overflow: [FocusSetup] { Self.split(model.setups).overflow }
 
@@ -50,7 +68,27 @@ struct FocusSetupsBar: View {
             }
             .controlSize(.small)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background { shortcutKeys }
         }
+    }
+
+    /// The keys themselves: one invisible button for each setup that has a
+    /// number, so a setup under More answers to its key too. They go through
+    /// the same `start` as the chips, which refuses while a session or break
+    /// is on.
+    private var shortcutKeys: some View {
+        ZStack {
+            ForEach(Array(model.setups.prefix(Self.shortcutCount).enumerated()), id: \.element.id) { _, setup in
+                if let number = shortcutNumber(for: setup) {
+                    Button("") { model.start(setup) }
+                        .keyboardShortcut(KeyEquivalent(Character("\(number)")), modifiers: .command)
+                }
+            }
+        }
+        .frame(width: 0, height: 0)
+        .opacity(0)
+        .accessibilityHidden(true)
+        .allowsHitTesting(false)
     }
 
     // MARK: Setups
@@ -67,7 +105,7 @@ struct FocusSetupsBar: View {
         .disabled(problem != nil)
         .help(help(for: setup, problem: problem))
         .accessibilityLabel("Start \(setup.displayName)")
-        .accessibilityHint(problem?.reason ?? setup.planSummary(categories: model.categories))
+        .accessibilityHint(accessibilityHint(for: setup, problem: problem))
         .contextMenu {
             Button("Edit…") { model.openSetupPage(setup) }
             Button("Copy Launch Link") { model.copyLaunchLink(for: setup) }
@@ -77,6 +115,13 @@ struct FocusSetupsBar: View {
     private func help(for setup: FocusSetup, problem: FocusSetup.Problem?) -> String {
         if let problem { return "\(problem.reason). Edit it to choose again." }
         return "\(setup.displayName): \(setup.planSummary(categories: model.categories))"
+            + (shortcutNumber(for: setup).map { " (\u{2318}\($0))" } ?? "")
+    }
+
+    private func accessibilityHint(for setup: FocusSetup, problem: FocusSetup.Problem?) -> String {
+        if let problem { return problem.reason }
+        return setup.planSummary(categories: model.categories)
+            + (shortcutNumber(for: setup).map { ". Shortcut: Command \($0)" } ?? "")
     }
 
     private var moreMenu: some View {
