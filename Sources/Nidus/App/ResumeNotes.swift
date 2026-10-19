@@ -234,7 +234,7 @@ struct NextStepRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 TextField("What\u{2019}s the next step?", text: Binding(get: { step.text }, set: { step.setText($0) }))
                     .textFieldStyle(.roundedBorder)
                     .focused($fieldFocused)
@@ -254,7 +254,7 @@ struct NextStepRow: View {
             if step.historyIsOff {
                 Text(verbatim: step.historyOffCaption)
                     .font(.system(size: 11))
-                    .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                    .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                     .lineLimit(1)
             }
         }
@@ -272,7 +272,7 @@ struct NextStepRow: View {
         } label: {
             if let resource = step.resource {
                 // An image and a title, not a Label: a menu draws only the title of that.
-                HStack(spacing: DroppySpacing.xs) {
+                HStack(spacing: NidusSpacing.xs) {
                     Image(systemName: ResumeResources.symbol(for: resource.kind))
                     Text(verbatim: resource.displayName)
                         .lineLimit(1)
@@ -451,9 +451,7 @@ extension NidusModel {
 
     private func presentLinkNotice(_ title: String, detail: String) {
         guard let host else { return }
-        let request = DropletHUDRequest(id: Self.linkNoticeHUDID, duration: 6, accessibilityLabel: "\(title). \(detail)") {
-            FocusHUDStrip(symbol: "exclamationmark.triangle", text: title)
-        } expanded: { [weak self] in
+        let request = HUDRequest(id: Self.linkNoticeHUDID, duration: 6, accessibilityLabel: "\(title). \(detail)") { [weak self] in
             FocusNoticeCard(symbol: "exclamationmark.triangle", variants: [
                 .init(title: Text(verbatim: title), detail: Text(verbatim: detail), button: "OK"),
             ]) { self?.host?.hud.dismiss(id: Self.linkNoticeHUDID) }

@@ -50,7 +50,7 @@ struct WebsiteExceptionsEditor: View {
         if isEmbedded {
             rows
         } else {
-            DropletSettingsSection {
+            NidusSettingsSection {
                 VStack(alignment: .leading, spacing: 2) {
                     settingsSectionHeader("Exceptions")
                     Text("Let one page through while the rest of a blocked website stays blocked.")
@@ -58,7 +58,7 @@ struct WebsiteExceptionsEditor: View {
                         .foregroundStyle(.secondary)
                 }
             } content: {
-                DropletSettingsCard { rows }
+                NidusSettingsCard { rows }
             }
         }
     }
@@ -66,7 +66,7 @@ struct WebsiteExceptionsEditor: View {
     @ViewBuilder
     private var rows: some View {
         ForEach(exceptions) { exception in
-            DropletControlRow(title: exception.displayAddress, infoTip: detail(of: exception)) {
+            NidusControlRow(title: exception.displayAddress, infoTip: detail(of: exception)) {
                 Button {
                     exceptions.removeAll { $0 == exception }
                 } label: {
@@ -77,7 +77,7 @@ struct WebsiteExceptionsEditor: View {
                 .accessibilityLabel("Remove the exception for \(exception.displayAddress)")
             }
         }
-        DropletControlRow(title: exceptions.isEmpty ? "No exceptions yet" : "Add another") {
+        NidusControlRow(title: exceptions.isEmpty ? "No exceptions yet" : "Add another") {
             TextField("Paste a page address", text: $address)
                 .textFieldStyle(.roundedBorder)
                 .frame(width: 240)
@@ -107,7 +107,7 @@ struct WebsiteExceptionsEditor: View {
                     .foregroundStyle(.secondary)
             }
         case .success(let draft):
-            DropletGroupedPickerRow(title: "Let through") {
+            NidusGroupedPickerRow(title: "Let through") {
                 Picker("Let through", selection: $kind) {
                     ForEach(WebsiteException.Kind.choices, id: \.self) { Text($0.title).tag($0) }
                 }

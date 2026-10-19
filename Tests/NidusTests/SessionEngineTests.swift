@@ -36,7 +36,7 @@ struct Harness {
         self.events = events
     }
 
-    /// A second engine on the same store: Droppy relaunching.
+    /// A second engine on the same store: Nidus relaunching.
     func relaunch() -> (SessionEngine, EventLog) {
         let clock = clock
         let engine = SessionEngine(store: store, now: { clock.now })

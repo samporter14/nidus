@@ -105,7 +105,7 @@ struct FocusInboxRow: View {
 
     var body: some View {
         if Self.isVisible(isActive: model.isActive, openCount: model.inboxOpenCount) {
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 if model.isActive {
                     Button(action: model.showCapturePanel) {
                         Label("Save a thought", systemImage: "square.and.pencil")
@@ -114,7 +114,7 @@ struct FocusInboxRow: View {
                     .accessibilityLabel("Save a thought")
                     .accessibilityHint("Opens a small box to save a thought for later. The session is not affected.")
                 }
-                Spacer(minLength: DroppySpacing.sm)
+                Spacer(minLength: NidusSpacing.sm)
                 if model.inboxOpenCount > 0 {
                     Button(action: model.openInbox) {
                         Label("Inbox \u{00B7} \(model.inboxOpenCount)", systemImage: "tray")
@@ -141,17 +141,17 @@ struct FocusSavedForLaterRow: View {
     let open: () -> Void
 
     var body: some View {
-        HStack(spacing: DroppySpacing.md) {
+        HStack(spacing: NidusSpacing.md) {
             Image(systemName: "tray")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .frame(width: 28)
                 .accessibilityHidden(true)
             Text(verbatim: NidusModel.savedForLaterText(count) ?? "")
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 .lineLimit(1)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             Button("Open inbox", action: open)
                 .buttonStyle(.bordered)
                 .fixedSize()
@@ -165,12 +165,12 @@ struct FocusSavedForLaterRow: View {
 extension FocusGeneralPage {
     /// A way into the Inbox page from General, with where it stands.
     var inboxSection: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Distraction inbox",
                                   detail: "Set a thought or a link aside during a session, and deal with it afterwards.")
         } content: {
-            DropletSettingsCard {
-                DropletSettingsPageLink("Inbox", subtitle: inboxSummary, page: NidusModel.inboxPageID) {
+            NidusSettingsCard {
+                NidusSettingsPageLink("Inbox", subtitle: inboxSummary, page: NidusModel.inboxPageID) {
                     CategoryTile(symbol: "tray")
                 }
             }
@@ -196,22 +196,22 @@ struct FocusInboxPage: View {
     var body: some View {
         let open = model.inbox?.openItems ?? []
         let done = model.inbox?.completedItems ?? []
-        DropletSettingsPage {
-            DropletSettingsSection {
+        NidusSettingsPage {
+            NidusSettingsSection {
                 settingsSectionHeader("Saved for later",
                                       detail: "Nidus never fetches a page or opens a link for you. Open does that, when you press it.")
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     if open.isEmpty {
                         Text(done.isEmpty ? "Nothing here. Put a thought down during a session and it waits for you here."
                                           : "Nothing waiting.")
                             .foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, DroppySpacing.sm)
+                            .padding(.vertical, NidusSpacing.sm)
                     } else {
                         ForEach(open) { row($0) }
                     }
-                    DropletControlRow(title: "Save a thought") {
+                    NidusControlRow(title: "Save a thought") {
                         Button("Write\u{2026}", action: model.showCapturePanel)
                             .buttonStyle(.bordered)
                             .accessibilityLabel("Save a thought")
@@ -220,10 +220,10 @@ struct FocusInboxPage: View {
             }
 
             if !done.isEmpty {
-                DropletSettingsSection {
+                NidusSettingsSection {
                     settingsSectionHeader("Done")
                 } content: {
-                    DropletSettingsCard {
+                    NidusSettingsCard {
                         DisclosureGroup(isExpanded: $showsDone) {
                             ForEach(done) { row($0) }
                         } label: {
@@ -233,11 +233,11 @@ struct FocusInboxPage: View {
                 }
             }
 
-            DropletSettingsSection {
+            NidusSettingsSection {
                 settingsSectionHeader("Capture shortcut")
             } content: {
-                DropletSettingsCard {
-                    DropletControlRow(title: "Shortcut",
+                NidusSettingsCard {
+                    NidusControlRow(title: "Shortcut",
                                       infoTip: "Opens a small box to save a thought or a link, from any app, without leaving what you're doing. Off until you set one.") {
                         ShortcutRecorder(shortcut: model.binding(\.captureShortcut))
                     }
@@ -250,14 +250,14 @@ struct FocusInboxPage: View {
                 }
             }
 
-            DropletSettingsSection {
+            NidusSettingsSection {
                 settingsSectionHeader("Keeping things")
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     Text("Items you finish are deleted 30 days after you finish them. Items you haven't finished stay until you delete them. Everything is kept in a file on this Mac. A page saved from the block page is kept as its address, even if it was open in a private window.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                    DropletControlRow(title: "Clear Inbox",
+                    NidusControlRow(title: "Clear Inbox",
                                       infoTip: "Deletes every item, finished or not.") {
                         Button("Clear\u{2026}", role: .destructive) { confirmingClear = true }
                             .buttonStyle(.bordered)
@@ -293,7 +293,7 @@ struct InboxItemRow: View {
     let delete: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: DroppySpacing.md) {
+        HStack(alignment: .top, spacing: NidusSpacing.md) {
             Button(action: toggle) {
                 Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 17))
@@ -322,7 +322,7 @@ struct InboxItemRow: View {
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
-            Spacer(minLength: DroppySpacing.md)
+            Spacer(minLength: NidusSpacing.md)
             if item.url != nil {
                 Button("Open", action: open)
                     .buttonStyle(.bordered)

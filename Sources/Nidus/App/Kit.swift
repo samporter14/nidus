@@ -2,11 +2,9 @@
 //  Kit.swift
 //  Nidus
 //
-//  The small toolkit the views are written against: spacing, the text
-//  colours, the settings rows and a card request. Nidus began as a droplet
-//  for Droppy, and its views kept the names they had there; everything here
-//  is Nidus's own, built from the Mac's standard controls: Settings is a
-//  grouped form like System Settings, and clay is the accent.
+//  Nidus's UI toolkit: spacing, text colours, settings rows and card
+//  requests, built from the Mac's standard controls. Settings is a grouped
+//  form like System Settings, and clay is the accent.
 //
 
 import AppKit
@@ -15,7 +13,7 @@ import SwiftUI
 
 // MARK: - Tokens
 
-enum DroppySpacing {
+enum NidusSpacing {
     static let xs: CGFloat = 4
     static let xsm: CGFloat = 6
     static let sm: CGFloat = 8
@@ -25,25 +23,20 @@ enum DroppySpacing {
 
 /// Text and fills in the popover and on the cards: the system's own.
 enum AdaptiveColors {
-    static var notchSurfacePrimaryText: Color { .primary }
-    static var notchSurfaceSecondaryText: Color { .secondary }
-    static var notchSurfaceTertiaryText: Color { Color(nsColor: .tertiaryLabelColor) }
-    static var notchSurfaceCardFill: Color { Color(nsColor: .quaternaryLabelColor) }
+    static var surfacePrimaryText: Color { .primary }
+    static var surfaceSecondaryText: Color { .secondary }
+    static var surfaceTertiaryText: Color { Color(nsColor: .tertiaryLabelColor) }
+    static var surfaceCardFill: Color { Color(nsColor: .quaternaryLabelColor) }
 }
 
-enum DroppyTransition {
+enum NidusTransition {
     static var element: AnyTransition { .opacity.combined(with: .scale(scale: 0.9)) }
-}
-
-enum DroppyLiveActivityMetrics {
-    static let iconSize: CGFloat = 13
-    static let labelFontSize: CGFloat = 13
 }
 
 // MARK: - Settings rows
 
 /// The whole of a settings page: a grouped form, as System Settings is.
-struct DropletSettingsPane<Content: View>: View {
+struct NidusSettingsPane<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -54,10 +47,10 @@ struct DropletSettingsPane<Content: View>: View {
 }
 
 /// A page pushed from a link in Settings. The same as the pane.
-typealias DropletSettingsPage = DropletSettingsPane
+typealias NidusSettingsPage = NidusSettingsPane
 
 /// A heading over its rows. Cards inside it join its section.
-struct DropletSettingsSection<Header: View, Content: View>: View {
+struct NidusSettingsSection<Header: View, Content: View>: View {
     @ViewBuilder let header: () -> Header
     @ViewBuilder let content: () -> Content
 
@@ -86,7 +79,7 @@ func settingsSectionHeader(_ title: String, detail: String) -> some View {
 }
 
 /// One group of rows.
-struct DropletSettingsCard<Content: View>: View {
+struct NidusSettingsCard<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
     var body: some View {
@@ -95,7 +88,7 @@ struct DropletSettingsCard<Content: View>: View {
 }
 
 /// A title, an optional line under it, and a control on the right.
-struct DropletControlRow<Accessory: View>: View {
+struct NidusControlRow<Accessory: View>: View {
     let title: String
     var infoTip: String?
     let accessory: Accessory
@@ -117,7 +110,7 @@ struct DropletControlRow<Accessory: View>: View {
     }
 }
 
-struct DropletToggleRow: View {
+struct NidusToggleRow: View {
     let title: String
     var subtitle = ""
     @Binding var isOn: Bool
@@ -138,7 +131,7 @@ struct DropletToggleRow: View {
 }
 
 /// A title and line, with a pop-up menu (or any picker) on the right.
-struct DropletGroupedPickerRow<PickerContent: View>: View {
+struct NidusGroupedPickerRow<PickerContent: View>: View {
     let title: String
     var subtitle = ""
     let picker: PickerContent
@@ -163,7 +156,7 @@ struct DropletGroupedPickerRow<PickerContent: View>: View {
 }
 
 /// A title with its content under it, full width.
-struct DropletStackedRow<Content: View>: View {
+struct NidusStackedRow<Content: View>: View {
     let title: String
     var infoTip: String?
     let content: Content
@@ -190,7 +183,7 @@ struct DropletStackedRow<Content: View>: View {
 }
 
 /// A short value, as a form shows one.
-struct DropletValuePill: View {
+struct NidusValuePill: View {
     let text: String
 
     var body: some View {
@@ -202,7 +195,7 @@ struct DropletValuePill: View {
 
 /// A row that opens another page of Settings: a tile, a title and a line,
 /// and a chevron, as System Settings' own.
-struct DropletSettingsPageLink<Tile: View>: View {
+struct NidusSettingsPageLink<Tile: View>: View {
     static var tileSize: CGFloat { 22 }
 
     let title: String
@@ -302,33 +295,23 @@ final class SettingsRouter {
 
 // MARK: - Cards at the top of the screen
 
-/// One card: a short strip (unused off the notch) and the card itself,
-/// shown for `duration` seconds. A card with the same id replaces it.
-struct DropletHUDRequest {
-    enum Priority { case normal, high }
-
+/// One card, measured from its content and shown for `duration` seconds.
+/// The presenter replaces the card currently showing with this request.
+struct HUDRequest {
     let id: String
     let duration: TimeInterval
-    let priority: Priority
     let accessibilityLabel: String
-    let height: CGFloat
     let content: AnyView
 
-    init<Compact: View, Expanded: View>(
+    init<Content: View>(
         id: String,
         duration: TimeInterval,
-        priority: Priority = .normal,
         accessibilityLabel: String,
-        isExpanded: Bool = true,
-        expandedContentHeight: CGFloat = 64,
-        @ViewBuilder compact: () -> Compact,
-        @ViewBuilder expanded: () -> Expanded
+        @ViewBuilder content: () -> Content
     ) {
         self.id = id
         self.duration = duration
-        self.priority = priority
         self.accessibilityLabel = accessibilityLabel
-        self.height = expandedContentHeight
-        self.content = AnyView(expanded())
+        self.content = AnyView(content())
     }
 }

@@ -62,13 +62,8 @@ struct TabLocation: Sendable, Hashable {
 /// original URL through its query string: `blocked.html?g=<goal>&m=<minutes>&u=<original>`.
 struct BlockPage: Sendable {
     let fileURL: URL
-    /// The folder name Nidus began with. The Snooze link is `nidus://snooze`,
-    /// and Save for later is `nidus://save`, which carries `InboxSaveToken`.
-    let dropletID: String
-
-    init(directory: URL, dropletID: String = "focus") {
+    init(directory: URL) {
         fileURL = directory.appendingPathComponent("blocked.html")
-        self.dropletID = dropletID
     }
 
     /// Writes the page. Call at activation; it lives in Nidus's folder in
@@ -80,7 +75,6 @@ struct BlockPage: Sendable {
         // Without one (a folder that can't be written to) the button stays out.
         let token = InboxSaveToken.loadOrCreate(in: directory) ?? ""
         let html = Self.html
-            .replacingOccurrences(of: "{{DROPLET}}", with: dropletID)
             .replacingOccurrences(of: "{{TOKEN}}", with: token)
         try Data(html.utf8).write(to: fileURL, options: .atomic)
     }

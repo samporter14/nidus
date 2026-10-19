@@ -20,7 +20,7 @@ final class HUDPresenter {
     private var shownID: String?
     private var dismissTask: Task<Void, Never>?
     /// The last card asked for, for `--render-surfaces`.
-    private(set) var lastRequest: DropletHUDRequest?
+    private(set) var lastRequest: HUDRequest?
     /// A card is up, so a card that can wait should.
     var isShowing: Bool { shownID != nil }
 
@@ -28,7 +28,7 @@ final class HUDPresenter {
     static let inset: CGFloat = 14
 
     @discardableResult
-    func present(_ request: DropletHUDRequest) -> Bool {
+    func present(_ request: HUDRequest) -> Bool {
         lastRequest = request
         if RenderSurfaces.isActive { return true }
         let panel = panel ?? makePanel()
@@ -76,7 +76,7 @@ final class HUDPresenter {
     /// The card at its width, as tall as its content is now. Measured on a
     /// second view: with no sizing options the one on screen has no fitting
     /// size, and the card would open 0 by 0.
-    private static func size(of request: DropletHUDRequest) -> NSSize {
+    private static func size(of request: HUDRequest) -> NSSize {
         let probe = NSHostingView(rootView: HUDCardView(content: request.content))
         probe.frame = NSRect(x: 0, y: 0, width: width, height: 10)
         return NSSize(width: width, height: ceil(probe.fittingSize.height))

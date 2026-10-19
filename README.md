@@ -413,5 +413,4 @@ that blocks nothing.
 
 ## Credits
 
-Made by [Sam](https://github.com/samporter14). Nidus began as a droplet for
-[Droppy](https://getdroppy.app). MIT licensed; see [LICENSE](LICENSE).
+Made by [Sam](https://github.com/samporter14). MIT licensed; see [LICENSE](LICENSE).

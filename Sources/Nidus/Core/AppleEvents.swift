@@ -7,7 +7,7 @@
 //  that long; the target is a process ID, so an event can never launch an app
 //  that is not running; and the calls are safe off the main thread.
 //
-//  No DroppyKit import: this file also compiles into the spike and the tests.
+//  Shared by the app and its tests.
 //
 
 import AppKit

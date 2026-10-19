@@ -8,7 +8,7 @@
 //  themselves, not category ids, so a category edited later changes nothing
 //  about a plan that already holds them. docs/design-0.4.md, "Breaks".
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

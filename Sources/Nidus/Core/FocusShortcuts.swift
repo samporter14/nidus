@@ -10,7 +10,7 @@
 //
 //  Everything goes through /usr/bin/shortcuts in a child process with a time
 //  limit, off the main thread, so a slow or broken shortcut never holds
-//  Droppy up. No DroppyKit import.
+//  Nidus up.
 //
 
 import AppKit

@@ -85,7 +85,7 @@ struct FocusGeneralPage: View {
     @State private var opensAtLogin = LoginItem.isOn
 
     var body: some View {
-        DropletSettingsPane {
+        NidusSettingsPane {
             if model.showsGettingStarted { gettingStarted }
             sessions
             // Only once breaks are on: with none there is nothing to set.
@@ -99,16 +99,16 @@ struct FocusGeneralPage: View {
 
     /// Off until turned on; the text it may include is a second, separate yes.
     private var plaque: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Plaque",
                                   detail: "Lets Plaque show your focus on an e-paper reader.")
         } content: {
-            DropletSettingsCard {
-                DropletToggleRow(title: "Show focus on Plaque",
+            NidusSettingsCard {
+                NidusToggleRow(title: "Show focus on Plaque",
                                  subtitle: "Writes a small status file on this Mac: focusing, paused or on a break, and until when. Plaque sends it to a reader only when you press Send there.",
                                  isOn: model.binding(\.sharesFocusWithPlaque))
                 if model.sharesFocusWithPlaque {
-                    DropletToggleRow(title: "Include goal, project and next step",
+                    NidusToggleRow(title: "Include goal, project and next step",
                                      subtitle: "Off: Plaque shows the state and times only.",
                                      isOn: model.binding(\.sharesFocusTextWithPlaque))
                 }
@@ -121,10 +121,10 @@ struct FocusGeneralPage: View {
     }
 
     private var gettingStarted: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Get started", detail: "Where Nidus lives, and how to begin.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 FocusStepRow(
                     title: "Start from the menu bar",
                     detail: Text("Click \(FocusWelcomeCard.inlineGlyph) in the menu bar, type what you're working on, then press Start. Right-click it for a quick menu. If you use a menu bar manager, check it isn't hiding the icon.")
@@ -137,7 +137,7 @@ struct FocusGeneralPage: View {
                 ) {
                     CategoryTile(symbol: "nosign")
                 }
-                DropletControlRow(title: "This guide goes after your first session") {
+                NidusControlRow(title: "This guide goes after your first session") {
                     Button("Hide now", action: model.hideGettingStarted)
                         .buttonStyle(.bordered)
                 }
@@ -146,11 +146,11 @@ struct FocusGeneralPage: View {
     }
 
     private var sessions: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Sessions")
         } content: {
-            DropletSettingsCard {
-                DropletGroupedPickerRow(title: "Session length",
+            NidusSettingsCard {
+                NidusGroupedPickerRow(title: "Session length",
                                         subtitle: "What a new session starts with. You can add time while it runs.") {
                     Picker("Session length", selection: model.binding(\.durationMinutes)) {
                         // A length typed into the popover's "Custom…" is
@@ -160,7 +160,7 @@ struct FocusGeneralPage: View {
                         }
                     }
                 }
-                DropletGroupedPickerRow(title: "Break after a session",
+                NidusGroupedPickerRow(title: "Break after a session",
                                         subtitle: "When a session runs its full length, a break starts. When the break ends, the next session starts with the same goal.") {
                     Picker("Break after a session", selection: model.binding(\.breakMinutes)) {
                         ForEach(NidusModel.breakChoices, id: \.self) { minutes in
@@ -168,7 +168,7 @@ struct FocusGeneralPage: View {
                         }
                     }
                 }
-                DropletToggleRow(title: "Strict mode",
+                NidusToggleRow(title: "Strict mode",
                                  subtitle: "No snooze or pause during a session, and ending one early means typing \u{201C}stop early\u{201D} in the popover. Applies to sessions you start from now on.",
                                  isOn: model.binding(\.strictMode))
             }
@@ -178,25 +178,25 @@ struct FocusGeneralPage: View {
     /// What stays blocked while a break runs, and a note to self. Nothing by
     /// default: a break blocks nothing unless chosen here.
     private var breakRules: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("During a break",
                                   detail: "What stays blocked while a break runs, and a note to yourself. Nothing is blocked unless you choose it.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 BreakRulesEditor(rules: model.defaultBreakRulesBinding, categories: model.categories)
             }
         }
     }
 
     private var menuBarAndLogin: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Menu bar and login")
         } content: {
-            DropletSettingsCard {
-                DropletToggleRow(title: "Time left in the menu bar",
+            NidusSettingsCard {
+                NidusToggleRow(title: "Time left in the menu bar",
                                  subtitle: "Shows the countdown beside the brain while a session runs.",
                                  isOn: model.binding(\.menuBarShowsTime))
-                DropletToggleRow(title: "Open at login",
+                NidusToggleRow(title: "Open at login",
                                  subtitle: "A session left running carries on after a restart.",
                                  isOn: Binding(get: { opensAtLogin },
                                                set: { LoginItem.set($0); opensAtLogin = LoginItem.isOn }))
@@ -205,17 +205,17 @@ struct FocusGeneralPage: View {
     }
 
     private var whenASessionStarts: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("When a session starts",
                                   detail: "Open what you work in, and quiet the rest of your Mac.")
         } content: {
-            DropletSettingsCard {
-                DropletSettingsPageLink("Apps to open", subtitle: launchSummary, page: NidusModel.launchAppsPageID) {
+            NidusSettingsCard {
+                NidusSettingsPageLink("Apps to open", subtitle: launchSummary, page: NidusModel.launchAppsPageID) {
                     CategoryTile(symbol: "macwindow.on.rectangle")
                 }
             }
             if FocusShortcuts.isAvailable {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     FocusShortcutRows(model: model)
                 }
             }
@@ -240,7 +240,7 @@ struct FocusBlockingPage: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        DropletSettingsPane {
+        NidusSettingsPane {
             behaviour
             categories
             browsers
@@ -248,8 +248,8 @@ struct FocusBlockingPage: View {
     }
 
     private var behaviour: some View {
-        DropletSettingsCard {
-            DropletGroupedPickerRow(title: "What to block",
+        NidusSettingsCard {
+            NidusGroupedPickerRow(title: "What to block",
                                     subtitle: "Block the categories you pick, or block everything except them.") {
                 Picker("What to block", selection: model.binding(\.mode)) {
                     Text("Block list").tag(SessionPlan.Mode.block)
@@ -257,7 +257,7 @@ struct FocusBlockingPage: View {
                 }
                 .pickerStyle(.segmented)
             }
-            DropletGroupedPickerRow(title: "When a blocked app opens",
+            NidusGroupedPickerRow(title: "When a blocked app opens",
                                     subtitle: "Quitting asks the app to close normally, so it can save your work.") {
                 Picker("When a blocked app opens", selection: model.binding(\.hidesInsteadOfQuitting)) {
                     Text("Quit it").tag(false)
@@ -265,7 +265,7 @@ struct FocusBlockingPage: View {
                 }
                 .pickerStyle(.segmented)
             }
-            DropletGroupedPickerRow(title: "Snooze length",
+            NidusGroupedPickerRow(title: "Snooze length",
                                     subtitle: "How long Snooze lets one app or website through.") {
                 Picker("Snooze length", selection: model.binding(\.snoozeMinutes)) {
                     ForEach(NidusModel.snoozeChoices, id: \.self) { minutes in
@@ -274,7 +274,7 @@ struct FocusBlockingPage: View {
                 }
             }
             .disabled(model.strictMode)
-            DropletGroupedPickerRow(title: "Before a snooze",
+            NidusGroupedPickerRow(title: "Before a snooze",
                                     subtitle: "A short wait gets you past the impulse.") {
                 Picker("Before a snooze", selection: model.binding(\.snoozeWaitSeconds)) {
                     ForEach(SnoozeWait.choices, id: \.self) { seconds in
@@ -283,19 +283,19 @@ struct FocusBlockingPage: View {
                 }
             }
             .disabled(model.strictMode)
-            DropletToggleRow(title: "Reopen quit apps",
+            NidusToggleRow(title: "Reopen quit apps",
                              subtitle: "When a session ends, opens the apps it quit, in the background.",
                              isOn: model.binding(\.reopensQuitApps))
         }
     }
 
     private var categories: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Categories", detail: "Pick one or more when you start a session.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 ForEach(model.categories) { category in
-                    DropletSettingsPageLink(
+                    NidusSettingsPageLink(
                         category.name,
                         subtitle: category.summary,
                         page: NidusModel.categoryPagePrefix + category.id
@@ -303,7 +303,7 @@ struct FocusBlockingPage: View {
                         CategoryTile(symbol: category.symbol)
                     }
                 }
-                DropletControlRow(title: "New category") {
+                NidusControlRow(title: "New category") {
                     Button("Add", action: model.addCategory)
                         .buttonStyle(.bordered)
                 }
@@ -312,11 +312,11 @@ struct FocusBlockingPage: View {
     }
 
     private var browsers: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Browsers",
                                   detail: "Blocked websites are redirected in these browsers. Nidus needs permission to control each one.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 ForEach(BrowserProfile.known.filter(\.isInstalled), id: \.bundleID) { browser in
                     BrowserAccessRow(model: model, browser: browser)
                 }
@@ -334,7 +334,7 @@ struct CategoryTile: View {
     init(image: Image) { self.image = image }
 
     var body: some View {
-        SettingsTile(image: image, size: DropletSettingsPageLink<EmptyView>.tileSize)
+        SettingsTile(image: image, size: NidusSettingsPageLink<EmptyView>.tileSize)
     }
 }
 
@@ -346,10 +346,10 @@ struct FocusStepRow<Tile: View>: View {
     @ViewBuilder let tile: () -> Tile
 
     var body: some View {
-        HStack(alignment: .center, spacing: DroppySpacing.md) {
+        HStack(alignment: .center, spacing: NidusSpacing.md) {
             tile()
-                .frame(width: DropletSettingsPageLink<EmptyView>.tileSize,
-                       height: DropletSettingsPageLink<EmptyView>.tileSize)
+                .frame(width: NidusSettingsPageLink<EmptyView>.tileSize,
+                       height: NidusSettingsPageLink<EmptyView>.tileSize)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
@@ -388,8 +388,8 @@ struct BrowserAccessRow: View {
     }
 
     var body: some View {
-        DropletControlRow(title: browser.name) {
-            HStack(spacing: DroppySpacing.sm) {
+        NidusControlRow(title: browser.name) {
+            HStack(spacing: NidusSpacing.sm) {
                 Text(label)
                     .foregroundStyle(.secondary)
                 switch status {
@@ -458,10 +458,10 @@ struct FocusCategoryPage: View {
     }
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             if let category {
-                DropletSettingsCard {
-                    DropletControlRow(title: "Name") {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Name") {
                         TextField("Name", text: nameBinding)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
@@ -469,25 +469,25 @@ struct FocusCategoryPage: View {
                     }
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     settingsSectionHeader("Apps")
                 } content: {
-                    DropletSettingsCard {
+                    NidusSettingsCard {
                         ForEach(category.apps) { app in
-                            DropletControlRow(title: app.name) {
+                            NidusControlRow(title: app.name) {
                                 removeButton("Remove \(app.name)") {
                                     model.updateCategory(categoryID) { $0.apps.removeAll { $0.bundleID == app.bundleID } }
                                 }
                             }
                         }
-                        DropletControlRow(title: category.apps.isEmpty ? "No apps yet" : "Add more") {
+                        NidusControlRow(title: category.apps.isEmpty ? "No apps yet" : "Add more") {
                             Button("Choose apps…", action: chooseApps)
                                 .buttonStyle(.bordered)
                         }
                     }
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     VStack(alignment: .leading, spacing: 2) {
                         settingsSectionHeader("Websites")
                         Text("Each one also covers its subdomains, so youtube.com includes m.youtube.com. Add a path, like youtube.com/shorts, to block only that part of it.")
@@ -495,16 +495,16 @@ struct FocusCategoryPage: View {
                             .foregroundStyle(.secondary)
                     }
                 } content: {
-                    DropletSettingsCard {
+                    NidusSettingsCard {
                         ForEach(category.websites, id: \.self) { site in
-                            DropletControlRow(title: site) {
+                            NidusControlRow(title: site) {
                                 removeButton("Remove \(site)") {
                                     model.updateCategory(categoryID) { $0.websites.removeAll { $0 == site } }
                                 }
                             }
                         }
-                        DropletControlRow(title: "Add a website") {
-                            HStack(spacing: DroppySpacing.sm) {
+                        NidusControlRow(title: "Add a website") {
+                            HStack(spacing: NidusSpacing.sm) {
                                 TextField("example.com", text: $newWebsite)
                                     .textFieldStyle(.roundedBorder)
                                     .frame(width: 180)
@@ -524,8 +524,8 @@ struct FocusCategoryPage: View {
                                             sessionIsRunning: model.isActive)
                 }
 
-                DropletSettingsCard {
-                    DropletControlRow(title: "Delete this category") {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Delete this category") {
                         Button("Delete", role: .destructive) { model.deleteCategory(categoryID) }
                             .buttonStyle(.bordered)
                     }
@@ -581,8 +581,8 @@ struct FocusLaunchAppsPage: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        DropletSettingsPage {
-            DropletSettingsSection {
+        NidusSettingsPage {
+            NidusSettingsSection {
                 VStack(alignment: .leading, spacing: 2) {
                     settingsSectionHeader("Apps to open")
                     Text("Opened when a session starts, the first one in front. A session never blocks the apps it opened.")
@@ -590,9 +590,9 @@ struct FocusLaunchAppsPage: View {
                         .foregroundStyle(.secondary)
                 }
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     ForEach(model.launchApps) { app in
-                        DropletControlRow(title: app.name) {
+                        NidusControlRow(title: app.name) {
                             Button {
                                 model.launchApps.removeAll { $0.bundleID == app.bundleID }
                             } label: {
@@ -603,7 +603,7 @@ struct FocusLaunchAppsPage: View {
                             .accessibilityLabel("Remove \(app.name)")
                         }
                     }
-                    DropletControlRow(title: model.launchApps.isEmpty ? "No apps yet" : "Add more") {
+                    NidusControlRow(title: model.launchApps.isEmpty ? "No apps yet" : "Add more") {
                         Button("Choose apps…") {
                             let chosen = AppChooser.choose(title: "Choose apps to open when a session starts")
                             var apps = model.launchApps
@@ -661,20 +661,20 @@ struct FocusShortcutRows: View {
     }
 
     @ViewBuilder private var rows: some View {
-        DropletGroupedPickerRow(title: "Turn on a Focus",
+        NidusGroupedPickerRow(title: "Turn on a Focus",
                                 subtitle: "A shortcut run when a session starts, with the Set Focus action. Add… below makes them for Apple's Focus modes.") {
             Picker("Turn on a Focus", selection: binding(\.startShortcut)) {
                 Text("None").tag("")
                 ForEach(options(including: model.startShortcut), id: \.self) { Text($0).tag($0) }
             }
         }
-        DropletGroupedPickerRow(title: "Turn it off", subtitle: "A shortcut run when the session ends.") {
+        NidusGroupedPickerRow(title: "Turn it off", subtitle: "A shortcut run when the session ends.") {
             Picker("Turn it off", selection: binding(\.endShortcut)) {
                 Text("None").tag("")
                 ForEach(options(including: model.endShortcut), id: \.self) { Text($0).tag($0) }
             }
         }
-        DropletControlRow(title: note ?? "Use an Apple Focus",
+        NidusControlRow(title: note ?? "Use an Apple Focus",
                           infoTip: "Pick a Focus you have set up in System Settings. Nidus makes two one-step shortcuts, one to turn it on and one to turn it off, and chooses them above; Shortcuts asks before adding each. For a Focus you made yourself, make the shortcut with Set Focus in Shortcuts and choose it above.") {
             Menu(isAdding ? "Adding…" : "Add…") {
                 ForEach(FocusShortcuts.appleFocuses) { focus in

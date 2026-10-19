@@ -101,14 +101,14 @@ private struct InPopover: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.md) {
+        VStack(alignment: .leading, spacing: NidusSpacing.md) {
             Text("What are you working on?")
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 8)
                 .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
                 .background(RoundedRectangle(cornerRadius: 6).strokeBorder(.quaternary))
             FocusSetupsBar(model: model)
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 Label("25 min", systemImage: "timer").frame(height: 28)
                 Label("Social, Video", systemImage: "nosign").frame(height: 28)
                 Spacer()

@@ -6,7 +6,7 @@
 //  a JSON file in Nidus's folder and never leaves the Mac; the
 //  settings page says so and can clear it.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

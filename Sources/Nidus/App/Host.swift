@@ -24,11 +24,6 @@ final class NidusHost {
         workspace = Workspace(settings: settings)
     }
 
-    /// Everything the model may ask to use; an app has it all.
-    func isGranted(_ capability: Capability) -> Bool { true }
-
-    enum Capability { case menuBar }
-
     // MARK: Settings
 
     /// Settings in the app's own defaults, each value JSON-coded so any
@@ -88,9 +83,6 @@ final class NidusHost {
             try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
             return url
         }()
-
-        /// Droppy's test harness; the app has none. Its demo mode is `Demo`.
-        let isHarness = false
     }
 
     /// A tap on the trackpad, where there is one. No sound.

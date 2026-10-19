@@ -23,11 +23,9 @@ final class AppBlocker {
         case hide
     }
 
-    /// Never blocked, whatever the mode. The host is added at runtime: in
-    /// Nidus's process, `Bundle.main` is Nidus. Droppy stays exempt too.
+    /// System apps that are never blocked, whatever the mode. Nidus itself
+    /// is protected separately by `Bundle.main.bundleIdentifier`.
     nonisolated static let exempt: Set<String> = [
-        "iordv.Droppy",
-        "iordv.DroppyPlayground",
         "com.apple.finder",
         "com.apple.dock",
         "com.apple.systempreferences",

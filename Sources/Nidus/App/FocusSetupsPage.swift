@@ -15,16 +15,16 @@ struct FocusSetupsPage: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        DropletSettingsPage {
-            DropletSettingsSection {
+        NidusSettingsPage {
+            NidusSettingsSection {
                 // The tab is already called Setups.
                 Text("Start a saved session in one click, from the popover or the right-click menu.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     ForEach(model.setups) { setup in
-                        DropletSettingsPageLink(
+                        NidusSettingsPageLink(
                             setup.displayName,
                             subtitle: setup.problem(in: model.categories)?.reason
                                 ?? setup.planSummary(categories: model.categories),
@@ -33,7 +33,7 @@ struct FocusSetupsPage: View {
                             CategoryTile(symbol: setup.symbol)
                         }
                     }
-                    DropletControlRow(title: "New setup",
+                    NidusControlRow(title: "New setup",
                                       infoTip: "Starts from the length and categories in the popover.") {
                         Button("Add") { model.addSetupFromCurrentChoices() }
                             .buttonStyle(.bordered)
@@ -59,46 +59,46 @@ struct FocusSetupPage: View {
     private var index: Int? { model.setups.firstIndex { $0.id == setupID } }
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             if let setup {
-                DropletSettingsCard {
-                    DropletControlRow(title: "Name") {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Name") {
                         TextField("Name", text: field(\.name))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
                             .labelsHidden()
                             .focused($nameFocused)
                     }
-                    DropletControlRow(title: "Symbol") {
+                    NidusControlRow(title: "Symbol") {
                         SetupSymbolGrid(selection: field(\.symbol))
                     }
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     settingsSectionHeader("Session")
                 } content: {
-                    DropletSettingsCard {
-                        DropletGroupedPickerRow(title: "Length") {
+                    NidusSettingsCard {
+                        NidusGroupedPickerRow(title: "Length") {
                             Picker("Length", selection: field(\.minutes)) {
                                 ForEach(lengthChoices(including: setup.minutes), id: \.self) { minutes in
                                     Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
                                 }
                             }
                         }
-                        DropletControlRow(title: "Goal",
+                        NidusControlRow(title: "Goal",
                                           infoTip: "Optional. A goal you type in the popover is used instead.") {
                             TextField("None", text: goal)
                                 .textFieldStyle(.roundedBorder)
                                 .frame(width: 200)
                                 .labelsHidden()
                         }
-                        DropletToggleRow(title: "Strict",
+                        NidusToggleRow(title: "Strict",
                                          subtitle: "No snooze or pause, and ending early means typing \u{201C}stop early\u{201D} in the popover.",
                                          isOn: field(\.strict))
                     }
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     VStack(alignment: .leading, spacing: 2) {
                         settingsSectionHeader("Blocking")
                         Text("Pick one or more categories.")
@@ -106,8 +106,8 @@ struct FocusSetupPage: View {
                             .foregroundStyle(.secondary)
                     }
                 } content: {
-                    DropletSettingsCard {
-                        DropletGroupedPickerRow(title: "What to block",
+                    NidusSettingsCard {
+                        NidusGroupedPickerRow(title: "What to block",
                                                 subtitle: "Block the categories you pick, or block everything except them.") {
                             Picker("What to block", selection: field(\.mode)) {
                                 Text("Block list").tag(SessionPlan.Mode.block)
@@ -143,20 +143,20 @@ struct FocusSetupPage: View {
 
                 SetupWorkspaceSections(model: model, setupID: setupID, opened: opened)
 
-                DropletSettingsCard {
-                    DropletControlRow(title: "Order", infoTip: "Where it sits in the popover and the menu.") {
-                        HStack(spacing: DroppySpacing.sm) {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Order", infoTip: "Where it sits in the popover and the menu.") {
+                        HStack(spacing: NidusSpacing.sm) {
                             moveButton("Move up", symbol: "chevron.up", step: -1, enabled: (index ?? 0) > 0)
                             moveButton("Move down", symbol: "chevron.down", step: 1,
                                        enabled: (index ?? 0) < model.setups.count - 1)
                         }
                     }
-                    DropletControlRow(title: "Launch link",
+                    NidusControlRow(title: "Launch link",
                                       infoTip: "Starts this setup from Raycast, Alfred or any app that opens links. It names the setup by id, so renaming it doesn't break the link, and leaves the goal out.") {
                         Button("Copy") { model.copyLaunchLink(for: setup) }
                             .buttonStyle(.bordered)
                     }
-                    DropletControlRow(title: "Delete this setup") {
+                    NidusControlRow(title: "Delete this setup") {
                         Button("Delete", role: .destructive) { model.deleteSetup(setupID) }
                             .buttonStyle(.bordered)
                     }

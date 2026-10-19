@@ -41,10 +41,10 @@ struct FocusSetupsBar: View {
 
     var body: some View {
         if Self.isVisible(model: model) {
-            HStack(spacing: DroppySpacing.xsm) {
+            HStack(spacing: NidusSpacing.xsm) {
                 ForEach(inline) { setupButton($0) }
                 if !overflow.isEmpty { moreMenu }
-                Spacer(minLength: DroppySpacing.sm)
+                Spacer(minLength: NidusSpacing.sm)
                 if !model.sequences.isEmpty { sequencesMenu }
                 saveButton
             }

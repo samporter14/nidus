@@ -18,7 +18,7 @@
 //  block-page-token, holds the random token the block page carries; see
 //  InboxSaveToken.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

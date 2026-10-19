@@ -7,7 +7,7 @@
 //  then a reminder. It edits a `BreakRules` through a binding and knows
 //  nothing about where the rules live, so Settings uses it for the default
 //  rules, a sequence's break for its own, and a setup can use it for its
-//  break. Its rows are meant to sit inside a `DropletSettingsCard`.
+//  break. Its rows are meant to sit inside a `NidusSettingsCard`.
 //
 
 import AppKit
@@ -34,23 +34,23 @@ struct BreakRulesEditor: View {
                 .toggleStyle(.switch)
             }
             ForEach(extras.apps, id: \.self) { bundleID in
-                DropletControlRow(title: BreakRulesNames.app(bundleID, categories: categories)) {
+                NidusControlRow(title: BreakRulesNames.app(bundleID, categories: categories)) {
                     removeButton("Remove \(BreakRulesNames.app(bundleID, categories: categories))") {
                         rules = rules.removing(app: bundleID)
                     }
                 }
             }
             ForEach(extras.websites, id: \.self) { site in
-                DropletControlRow(title: site) {
+                NidusControlRow(title: site) {
                     removeButton("Remove \(site)") { rules = rules.removing(website: site) }
                 }
             }
-            DropletControlRow(title: "Other apps") {
+            NidusControlRow(title: "Other apps") {
                 Button("Choose apps…", action: chooseApps)
                     .buttonStyle(.bordered)
             }
-            DropletControlRow(title: "Other website") {
-                HStack(spacing: DroppySpacing.sm) {
+            NidusControlRow(title: "Other website") {
+                HStack(spacing: NidusSpacing.sm) {
                     TextField("example.com", text: $newWebsite)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 160)
@@ -61,7 +61,7 @@ struct BreakRulesEditor: View {
                         .disabled(FocusCategory.domain(from: newWebsite) == nil)
                 }
             }
-            DropletControlRow(title: "Reminder",
+            NidusControlRow(title: "Reminder",
                               infoTip: "A note to yourself, shown while the break runs.") {
                 TextField("Stretch, water", text: reminder)
                     .textFieldStyle(.roundedBorder)

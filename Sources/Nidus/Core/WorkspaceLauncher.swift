@@ -17,7 +17,7 @@
 //  A file that can't be found is not an error that stops the rest: it is
 //  collected in a `WorkspaceReport`, and the caller says so once.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import AppKit

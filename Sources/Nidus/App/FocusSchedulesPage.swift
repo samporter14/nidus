@@ -28,7 +28,7 @@ struct FocusSchedulesPage: View {
     private let calendar = Calendar.autoupdatingCurrent
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             Section {
                 if model.schedules.isEmpty {
                     Text("No schedules yet.")
@@ -37,7 +37,7 @@ struct FocusSchedulesPage: View {
                 ForEach(model.schedules) { schedule in
                     FocusScheduleRow(model: model, schedule: schedule, calendar: calendar)
                 }
-                DropletControlRow(title: "New schedule") {
+                NidusControlRow(title: "New schedule") {
                     Button("Add", action: model.addSchedule)
                         .buttonStyle(.bordered)
                 }
@@ -122,31 +122,31 @@ struct FocusSchedulePage: View {
     }
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             if let schedule {
-                DropletSettingsCard {
-                    DropletToggleRow(title: "On",
+                NidusSettingsCard {
+                    NidusToggleRow(title: "On",
                                      subtitle: "Starts a session on its own at the time below.",
                                      isOn: binding(\.isOn))
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     settingsSectionHeader("When")
                 } content: {
-                    DropletSettingsCard {
-                        DropletStackedRow(title: "Days") {
+                    NidusSettingsCard {
+                        NidusStackedRow(title: "Days") {
                             FocusDayToggles(selection: binding(\.weekdays), calendar: calendar)
                         }
-                        DropletControlRow(title: "Starts") {
+                        NidusControlRow(title: "Starts") {
                             timePicker("Starts", for: \.start) { $0.setStart($1) }
                         }
-                        DropletControlRow(title: "Ends") {
+                        NidusControlRow(title: "Ends") {
                             timePicker("Ends", for: \.end) { $0.setEnd($1) }
                         }
                     }
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     VStack(alignment: .leading, spacing: 2) {
                         settingsSectionHeader("What to block")
                         Text(schedule.mode == .block
@@ -156,8 +156,8 @@ struct FocusSchedulePage: View {
                             .foregroundStyle(.secondary)
                     }
                 } content: {
-                    DropletSettingsCard {
-                        DropletGroupedPickerRow(title: "Mode") {
+                    NidusSettingsCard {
+                        NidusGroupedPickerRow(title: "Mode") {
                             Picker("Mode", selection: binding(\.mode)) {
                                 Text("Block list").tag(SessionPlan.Mode.block)
                                 Text("Allow list").tag(SessionPlan.Mode.allow)
@@ -166,7 +166,7 @@ struct FocusSchedulePage: View {
                         }
                         ForEach(model.categories) { category in
                             Toggle(isOn: categoryBinding(category.id)) {
-                                HStack(spacing: DroppySpacing.sm) {
+                                HStack(spacing: NidusSpacing.sm) {
                                     // One width, so the names line up.
                                     Image(systemName: category.symbol)
                                         .frame(width: 22)
@@ -180,27 +180,27 @@ struct FocusSchedulePage: View {
                     }
                 }
 
-                DropletSettingsCard {
-                    DropletControlRow(title: "Goal") {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Goal") {
                         TextField("Goal", text: binding(\.goal), prompt: Text("Optional"))
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
                             .labelsHidden()
                     }
-                    DropletToggleRow(title: "Strict mode",
+                    NidusToggleRow(title: "Strict mode",
                                      subtitle: "No snooze or pause during the session, and ending one early means typing \u{201C}stop early\u{201D} in the popover.",
                                      isOn: binding(\.strict))
                 }
 
-                DropletSettingsSection {
+                NidusSettingsSection {
                     settingsSectionHeader("Calendar")
                 } content: {
-                    DropletSettingsCard {
-                        DropletToggleRow(title: "Check my calendar first",
+                    NidusSettingsCard {
+                        NidusToggleRow(title: "Check my calendar first",
                                          subtitle: "A minute before it starts, offers to shorten, delay or skip a block that runs into a meeting. Only times are read, never titles.",
                                          isOn: binding(\.checksCalendar))
                         if schedule.checksCalendar {
-                            DropletGroupedPickerRow(title: "Gap around meetings",
+                            NidusGroupedPickerRow(title: "Gap around meetings",
                                                     subtitle: "A shortened block ends this long before the meeting; a delayed one starts this long after it.") {
                                 Picker("Gap around meetings", selection: binding(\.calendarBuffer)) {
                                     ForEach(FocusSchedule.bufferChoices, id: \.self) { minutes in
@@ -213,8 +213,8 @@ struct FocusSchedulePage: View {
                     }
                 }
 
-                DropletSettingsCard {
-                    DropletControlRow(title: "Delete this schedule") {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Delete this schedule") {
                         Button("Delete", role: .destructive) { model.deleteSchedule(scheduleID) }
                             .buttonStyle(.bordered)
                     }
@@ -280,8 +280,8 @@ struct FocusCalendarAccessRow: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        DropletControlRow(title: "Calendar access", infoTip: note) {
-            HStack(spacing: DroppySpacing.sm) {
+        NidusControlRow(title: "Calendar access", infoTip: note) {
+            HStack(spacing: NidusSpacing.sm) {
                 Text(label)
                     .foregroundStyle(.secondary)
                 switch model.calendarAccess {

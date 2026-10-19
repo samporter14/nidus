@@ -41,7 +41,7 @@ struct FocusProjectPicker: View {
                 Button("Edit projects\u{2026}", action: edit)
             }
         } label: {
-            HStack(spacing: DroppySpacing.xs) {
+            HStack(spacing: NidusSpacing.xs) {
                 Image(systemName: "folder")
                 Text(verbatim: current?.text ?? "No project").lineLimit(1)
             }
@@ -68,7 +68,7 @@ struct FocusProjectPickerRow: View {
 
     var body: some View {
         if model.offersProjectPicker {
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 FocusProjectPicker(projects: model.projects, selection: model.binding(\.selectedProjectID),
                                    edit: model.openProjects)
                 Spacer(minLength: 0)
@@ -104,13 +104,13 @@ struct ResumeNoteRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: quietLine)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    HStack(spacing: DroppySpacing.xs) {
+                    HStack(spacing: NidusSpacing.xs) {
                         Text(verbatim: note.headline)
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
@@ -124,7 +124,7 @@ struct ResumeNoteRow: View {
                         }
                     }
                 }
-                Spacer(minLength: DroppySpacing.sm)
+                Spacer(minLength: NidusSpacing.sm)
                 Button("Resume") { model.resume(note) }
                     .buttonStyle(.bordered)
                     .controlSize(compact ? .small : .regular)
@@ -150,11 +150,11 @@ struct ResumeNoteRow: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .padding(.horizontal, compact ? DroppySpacing.md : 0)
-        .padding(.vertical, compact ? DroppySpacing.sm : 2)
+        .padding(.horizontal, compact ? NidusSpacing.md : 0)
+        .padding(.vertical, compact ? NidusSpacing.sm : 2)
         .background {
             if compact {
-                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AdaptiveColors.notchSurfaceCardFill)
+                RoundedRectangle(cornerRadius: 10, style: .continuous).fill(AdaptiveColors.surfaceCardFill)
             }
         }
         .accessibilityElement(children: .contain)
@@ -187,13 +187,13 @@ struct FocusProjectsSection: View {
 
     var body: some View {
         let roster = model.projectRoster
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Projects",
                                   detail: "Count sessions toward what they\u{2019}re for. Pick one in the popover before you start.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 ForEach(roster.live) { row in
-                    DropletSettingsPageLink(
+                    NidusSettingsPageLink(
                         row.project.isArchived ? "\(row.project.displayName) (archived)" : row.project.displayName,
                         subtitle: subtitle(row.summary, notes: ResumeNote.waiting(for: row.project.id, in: model.resumeNoteList).count),
                         page: NidusModel.projectPagePrefix + row.project.id.uuidString
@@ -216,8 +216,8 @@ struct FocusProjectsSection: View {
                     }
                     .accessibilityElement(children: .combine)
                 }
-                DropletControlRow(title: "New project", infoTip: problem) {
-                    HStack(spacing: DroppySpacing.sm) {
+                NidusControlRow(title: "New project", infoTip: problem) {
+                    HStack(spacing: NidusSpacing.sm) {
                         TextField("Name", text: $newName)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 170)
@@ -268,7 +268,7 @@ struct FocusProjectPage: View {
     private var project: FocusProject? { model.project(projectID) }
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             if let project {
                 let summary = model.projectSummary(for: projectID)
                 details(project)
@@ -293,14 +293,14 @@ struct FocusProjectPage: View {
     // MARK: Name and archive
 
     private func details(_ project: FocusProject) -> some View {
-        DropletSettingsCard {
-            DropletControlRow(title: "Name") {
+        NidusSettingsCard {
+            NidusControlRow(title: "Name") {
                 TextField("Name", text: Binding(get: { project.name }, set: { model.renameProject(projectID, to: $0) }))
                     .textFieldStyle(.roundedBorder)
                     .frame(width: 200)
                     .labelsHidden()
             }
-            DropletToggleRow(title: "Archived",
+            NidusToggleRow(title: "Archived",
                              subtitle: "Left out of the popover\u{2019}s picker and new sessions. Its history and notes are kept.",
                              isOn: Binding(get: { project.isArchived }, set: { model.setProjectArchived(projectID, $0) }))
         }
@@ -309,20 +309,20 @@ struct FocusProjectPage: View {
     // MARK: Numbers
 
     private func totals(_ summary: ProjectSummary) -> some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Time", detail: model.recordsHistory
                 ? "Worked out from your history. Pauses and breaks aren\u{2019}t counted."
                 : "History is off, so new sessions aren\u{2019}t counted toward projects.")
         } content: {
-            DropletSettingsCard {
-                DropletControlRow(title: "Time focused") { DropletValuePill(text: FocusFormat.long(summary.focused)) }
-                DropletControlRow(title: "Sessions") {
-                    DropletValuePill(text: summary.sessionCount == 0
+            NidusSettingsCard {
+                NidusControlRow(title: "Time focused") { NidusValuePill(text: FocusFormat.long(summary.focused)) }
+                NidusControlRow(title: "Sessions") {
+                    NidusValuePill(text: summary.sessionCount == 0
                                      ? "None yet" : "\(summary.sessionCount), \(summary.completedCount) completed")
                 }
-                DropletControlRow(title: "Unfinished goals",
+                NidusControlRow(title: "Unfinished goals",
                                   infoTip: "Goals you answered \u{201C}Not yet\u{201D} to and haven\u{2019}t finished since.") {
-                    DropletValuePill(text: "\(summary.unfinished.count)")
+                    NidusValuePill(text: "\(summary.unfinished.count)")
                 }
             }
         }
@@ -332,18 +332,18 @@ struct FocusProjectPage: View {
 
     private func start(_ project: FocusProject) -> some View {
         let refusal = model.startRefusal(for: project)
-        return DropletSettingsSection {
+        return NidusSettingsSection {
             settingsSectionHeader("Start a session", detail: "Uses the length and categories chosen in the popover.")
         } content: {
-            DropletSettingsCard {
-                DropletControlRow(title: "Goal", infoTip: "Optional.") {
+            NidusSettingsCard {
+                NidusControlRow(title: "Goal", infoTip: "Optional.") {
                     TextField("None", text: $goal)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 200)
                         .labelsHidden()
                         .onSubmit { begin(project) }
                 }
-                DropletControlRow(title: "Start", infoTip: refusal ?? startMessage) {
+                NidusControlRow(title: "Start", infoTip: refusal ?? startMessage) {
                     Button("Start") { begin(project) }
                         .buttonStyle(.borderedProminent)
                         .tint(FocusPalette.clay)
@@ -365,10 +365,10 @@ struct FocusProjectPage: View {
     private func notes() -> some View {
         let waiting = ResumeNote.waiting(for: projectID, in: model.resumeNoteList)
         if !waiting.isEmpty {
-            DropletSettingsSection {
+            NidusSettingsSection {
                 settingsSectionHeader("Notes", detail: "Next steps you wrote down. Resume starts a session for one.")
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     ForEach(waiting) { note in
                         ResumeNoteRow(model: model, note: note)
                     }
@@ -380,13 +380,13 @@ struct FocusProjectPage: View {
     @ViewBuilder
     private func unfinished(_ summary: ProjectSummary) -> some View {
         if !summary.unfinished.isEmpty {
-            DropletSettingsSection {
+            NidusSettingsSection {
                 settingsSectionHeader("Unfinished goals")
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     ForEach(summary.unfinished) { entry in
-                        DropletControlRow(title: entry.goal) {
-                            DropletValuePill(text: entry.start.formatted(.dateTime.day().month(.abbreviated)))
+                        NidusControlRow(title: entry.goal) {
+                            NidusValuePill(text: entry.start.formatted(.dateTime.day().month(.abbreviated)))
                         }
                     }
                 }
@@ -397,13 +397,13 @@ struct FocusProjectPage: View {
     @ViewBuilder
     private func recent(_ summary: ProjectSummary) -> some View {
         if !summary.recent.isEmpty {
-            DropletSettingsSection {
+            NidusSettingsSection {
                 settingsSectionHeader("Recent sessions")
             } content: {
-                DropletSettingsCard {
+                NidusSettingsCard {
                     ForEach(summary.recent) { entry in
-                        DropletControlRow(title: entry.goal.isEmpty ? "No goal" : entry.goal) {
-                            DropletValuePill(text: "\(FocusFormat.long(entry.focused)) \u{B7} \(entry.start.formatted(.dateTime.day().month(.abbreviated)))")
+                        NidusControlRow(title: entry.goal.isEmpty ? "No goal" : entry.goal) {
+                            NidusValuePill(text: "\(FocusFormat.long(entry.focused)) \u{B7} \(entry.start.formatted(.dateTime.day().month(.abbreviated)))")
                         }
                     }
                 }
@@ -414,8 +414,8 @@ struct FocusProjectPage: View {
     // MARK: Removing
 
     private func removal(_ project: FocusProject) -> some View {
-        DropletSettingsCard {
-            DropletControlRow(title: "Delete project",
+        NidusSettingsCard {
+            NidusControlRow(title: "Delete project",
                               infoTip: "Takes it out of your list only. Past sessions keep its name.") {
                 Button("Delete\u{2026}", role: .destructive) { confirmingDelete = true }
                     .buttonStyle(.bordered)

@@ -32,7 +32,7 @@ private struct ExceptionsEditorSample: View {
     var kind: WebsiteException.Kind = .exact
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             WebsiteExceptionsEditor(exceptions: $exceptions, websites: websites, sessionIsRunning: running,
                                     address: address, kind: kind)
         }

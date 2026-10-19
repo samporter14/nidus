@@ -10,7 +10,7 @@
 //
 //  The shapes are FocusGlyph's, point for point, so a ribbon and its fold
 //  have the same number of points and the path animation between them is
-//  the morph itself. No DroppyKit import.
+//  the morph itself.
 //
 
 import AppKit

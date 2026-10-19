@@ -8,7 +8,7 @@
 //  wrongly, would wipe every other. Lists read through here keep what still
 //  decodes and drop only what doesn't.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

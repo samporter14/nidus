@@ -6,7 +6,7 @@
 //  The engine moves a run on with these; the popover and cards word them
 //  (App/FocusSequences.swift). docs/design-0.4.md, "Sequences".
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

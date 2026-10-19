@@ -103,7 +103,7 @@ struct NidusPopover: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        FocusWidget(model: model, context: ShelfWidgetContext())
+        FocusWidget(model: model)
             .padding(.horizontal, 20)
             .padding(.top, 16)
             .padding(.bottom, 20)

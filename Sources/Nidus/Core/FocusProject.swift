@@ -6,7 +6,7 @@
 //  point to by a stable id, so "Grant" is still the same project after it is
 //  renamed "R01 renewal". Lightweight on purpose: no tasks, no due dates.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

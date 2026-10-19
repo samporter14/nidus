@@ -10,7 +10,7 @@
 //  Everything decodes field by field: a value one version writes wrongly
 //  loses only itself, never the session or the setup around it.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

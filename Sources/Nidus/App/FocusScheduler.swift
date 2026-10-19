@@ -616,17 +616,12 @@ extension NidusModel {
                 delayTime: found.delayStart.map { ScheduleConflict.clock($0, calendar: calendar) })
         }
         let spoken = conflict == nil ? "Skip or start now." : "Shorten, delay or skip."
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.scheduleHUDID,
             // Until the start, and a little over, so the buttons last the minute.
             duration: min(70, max(5, until + 1)),
-            priority: .normal,
-            accessibilityLabel: "\(title). \(detail). \(spoken)",
-            isExpanded: true,
-            expandedContentHeight: conflict == nil ? 64 : 96
-        ) {
-            FocusHUDStrip(symbol: "calendar.badge.clock", text: "Focus")
-        } expanded: { [weak self] in
+            accessibilityLabel: "\(title). \(detail). \(spoken)"
+        ) { [weak self] in
             FocusScheduleHeadsUpCard(title: title, detail: detail, choices: choices,
                                      skip: { self?.scheduler.skip(run) },
                                      startNow: { self?.scheduler.startNow(run) },
@@ -644,16 +639,11 @@ extension NidusModel {
         guard let host else { return }
         let until = run.end.formatted(date: .omitted, time: .shortened)
         let detail = "Until \(until) · \(scheduleDetail(run.schedule))"
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.scheduleHUDID,
             duration: 8,
-            priority: .normal,
-            accessibilityLabel: "Focus started, from your schedule. Until \(until).",
-            isExpanded: true,
-            expandedContentHeight: 64
+            accessibilityLabel: "Focus started, from your schedule. Until \(until)."
         ) {
-            FocusHUDStrip(symbol: "calendar.badge.clock", text: "Focus")
-        } expanded: {
             FocusNoticeCard(symbol: "calendar.badge.clock", variants: [
                 .init(title: Text(verbatim: "Focus started"), detail: Text(verbatim: detail), button: "OK"),
                 .init(title: Text(verbatim: "Focus started"), detail: Text(verbatim: "Until \(until)"), button: "OK", showsSymbol: false),
@@ -706,16 +696,16 @@ struct FocusScheduleHeadsUpCard: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: title)
                 .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                .foregroundStyle(AdaptiveColors.surfacePrimaryText)
             Text(verbatim: detail)
                 .font(.system(size: 12))
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .lineLimit(lines)
         }
     }
 
     private func row(showsSymbol: Bool, last: Bool) -> some View {
-        HStack(alignment: .center, spacing: DroppySpacing.md) {
+        HStack(alignment: .center, spacing: NidusSpacing.md) {
             if showsSymbol {
                 SettingsTile(symbol: "calendar.badge.clock", size: 28)
             }
@@ -723,7 +713,7 @@ struct FocusScheduleHeadsUpCard: View {
                 .lineLimit(1)
                 .truncationMode(.tail)
                 .fixedSize(horizontal: !last, vertical: false)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             Button("Skip", action: skip)
                 .buttonStyle(.bordered)
                 .fixedSize()
@@ -739,8 +729,8 @@ struct FocusScheduleHeadsUpCard: View {
     /// The meeting's line above, the buttons under it: the line is too long to
     /// share a row with three of them.
     private func conflictBody(_ choices: Choices) -> some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
-            HStack(alignment: .center, spacing: DroppySpacing.md) {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
+            HStack(alignment: .center, spacing: NidusSpacing.md) {
                 SettingsTile(symbol: "calendar.badge.clock", size: 28)
                 texts(lines: 2)
                     .fixedSize(horizontal: false, vertical: true)
@@ -754,7 +744,7 @@ struct FocusScheduleHeadsUpCard: View {
     }
 
     private func buttons(_ choices: Choices, withTimes: Bool) -> some View {
-        HStack(spacing: DroppySpacing.sm) {
+        HStack(spacing: NidusSpacing.sm) {
             Spacer(minLength: 0)
             Button("Skip", action: skip)
                 .buttonStyle(.bordered)

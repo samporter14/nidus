@@ -80,11 +80,11 @@ struct SetupWorkspaceSections: View {
     // MARK: When it starts
 
     private func startSection(_ setup: FocusSetup, conflicts: [WorkspaceConflict]) -> some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("When it starts",
                                   detail: "Open what you work on and run your Shortcuts. Each line can use Settings\u{2019} choice instead.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 attention(setup, conflicts: conflicts)
                 line(.apps, "Apps", summary: setup.appsSummary) { appsRows(setup) }
                 line(.documents, "Documents and folders", summary: documentsSummary(setup, conflicts: conflicts)) {
@@ -108,7 +108,7 @@ struct SetupWorkspaceSections: View {
         Button {
             if isOpen { opened.remove(part) } else { opened.insert(part) }
         } label: {
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 Image(systemName: "chevron.right")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(.tertiary)
@@ -116,7 +116,7 @@ struct SetupWorkspaceSections: View {
                     .frame(width: 12)
                 Text(title)
                     .foregroundStyle(.primary)
-                Spacer(minLength: DroppySpacing.md)
+                Spacer(minLength: NidusSpacing.md)
                 Text(summary)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -189,7 +189,7 @@ struct SetupWorkspaceSections: View {
 
     private func appsRows(_ setup: FocusSetup) -> some View {
         Group {
-            DropletGroupedPickerRow(title: "Open", subtitle: setup.launchApps == nil ? settingsAppsLine
+            NidusGroupedPickerRow(title: "Open", subtitle: setup.launchApps == nil ? settingsAppsLine
                                     : "These open instead of the apps in Settings, the first in front. A session never blocks the apps it opened.") {
                 Picker("Apps to open", selection: ownApps) {
                     Text("Uses Settings").tag(false)
@@ -198,7 +198,7 @@ struct SetupWorkspaceSections: View {
             }
             if let apps = setup.launchApps {
                 ForEach(apps) { app in
-                    DropletControlRow(title: app.name) {
+                    NidusControlRow(title: app.name) {
                         Button {
                             update { $0.launchApps?.removeAll { $0.bundleID == app.bundleID } }
                         } label: {
@@ -209,7 +209,7 @@ struct SetupWorkspaceSections: View {
                         .accessibilityLabel("Remove \(app.name)")
                     }
                 }
-                DropletControlRow(title: apps.isEmpty ? "Opens no apps" : "Add more",
+                NidusControlRow(title: apps.isEmpty ? "Opens no apps" : "Add more",
                                   infoTip: apps.isEmpty ? "Settings\u{2019} apps are not opened for this setup." : nil) {
                     Button("Choose apps\u{2026}", action: chooseApps)
                         .buttonStyle(.bordered)
@@ -257,7 +257,7 @@ struct SetupWorkspaceSections: View {
                 let problem = locations[resource.id]?.problem
                 let conflict = conflicts.first { $0.resourceID == resource.id }
                 LabeledContent {
-                    HStack(spacing: DroppySpacing.sm) {
+                    HStack(spacing: NidusSpacing.sm) {
                         if problem != nil {
                             Button("Choose again\u{2026}") { chooseAgain(resource) }
                                 .buttonStyle(.bordered)
@@ -270,7 +270,7 @@ struct SetupWorkspaceSections: View {
                          ?? Self.place(of: locations[resource.id]?.url ?? resource.path.map { URL(fileURLWithPath: $0) }))
                 }
             }
-            DropletControlRow(title: setup.documents.isEmpty ? "No documents or folders yet" : "Add more",
+            NidusControlRow(title: setup.documents.isEmpty ? "No documents or folders yet" : "Add more",
                               infoTip: setup.resources.count >= FocusSetup.resourceLimit
                                 ? "A setup opens up to \(FocusSetup.resourceLimit) things." : "Opened with their usual app, or in Finder for a folder.") {
                 Button("Choose\u{2026}", action: chooseDocuments)
@@ -331,7 +331,7 @@ struct SetupWorkspaceSections: View {
                     Text(conflict?.reason ?? (resource.url ?? ""))
                 }
             }
-            DropletControlRow(title: setup.pages.isEmpty ? "No web pages yet" : "Add another",
+            NidusControlRow(title: setup.pages.isEmpty ? "No web pages yet" : "Add another",
                               infoTip: "http or https. Opens in your default browser.") {
                 TextField("Paste a page address", text: $pageDraft)
                     .textFieldStyle(.roundedBorder)
@@ -370,12 +370,12 @@ struct SetupWorkspaceSections: View {
 
     private func shortcutRows(_ setup: FocusSetup) -> some View {
         Group {
-            DropletGroupedPickerRow(title: "Turn on a Focus",
+            NidusGroupedPickerRow(title: "Turn on a Focus",
                                     subtitle: setup.startShortcut == nil ? "Settings runs \(shortcutName(model.startShortcut))."
                                     : "Run when the session starts.") {
                 Picker("Shortcut when it starts", selection: shortcut(\.startShortcut)) { shortcutChoices(including: setup.startShortcut) }
             }
-            DropletGroupedPickerRow(title: "Turn it off",
+            NidusGroupedPickerRow(title: "Turn it off",
                                     subtitle: setup.endShortcut == nil ? "Settings runs \(shortcutName(model.endShortcut))."
                                     : "Run when the session ends.") {
                 Picker("Shortcut when it ends", selection: shortcut(\.endShortcut)) { shortcutChoices(including: setup.endShortcut) }
@@ -414,11 +414,11 @@ struct SetupWorkspaceSections: View {
     private func exceptionsSection(_ setup: FocusSetup) -> some View {
         let live = model.categories.filter { setup.liveCategoryIDs(in: model.categories).contains($0.id) }
         let inherited = live.flatMap(\.websiteExceptions).count
-        return DropletSettingsSection {
+        return NidusSettingsSection {
             settingsSectionHeader("Exceptions",
                                   detail: "Let one page through while the rest of a blocked website stays blocked.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 line(.exceptions, "Pages let through",
                      summary: setup.mode == .allow ? "Block lists only" : setup.exceptionsSummary) {
                     if setup.mode == .allow {
@@ -446,11 +446,11 @@ struct SetupWorkspaceSections: View {
     // MARK: Project and break
 
     private func projectAndBreakSection(_ setup: FocusSetup) -> some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Project and break",
                                   detail: "What its sessions count toward, and the break after them. Each line can use the popover\u{2019}s or Settings\u{2019} choice instead.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 // The popover offers a project only once there is one to pick;
                 // so does this, unless the setup already has a choice to undo.
                 if model.offersProjectPicker || setup.project != nil {
@@ -493,7 +493,7 @@ struct SetupWorkspaceSections: View {
 
     private func projectRows(_ setup: FocusSetup) -> some View {
         Group {
-            DropletGroupedPickerRow(title: "Counts toward",
+            NidusGroupedPickerRow(title: "Counts toward",
                                     subtitle: setup.project == nil ? "Whichever project the popover has chosen when it starts."
                                     : "A project in the popover doesn\u{2019}t change it.") {
                 Picker("Project", selection: projectChoice) {
@@ -505,7 +505,7 @@ struct SetupWorkspaceSections: View {
                 }
             }
             if let id = setup.project?.id {
-                DropletControlRow(title: "Project") {
+                NidusControlRow(title: "Project") {
                     FocusProjectPicker(
                         projects: model.projects,
                         selection: Binding(get: { id }, set: { chosen in
@@ -518,7 +518,7 @@ struct SetupWorkspaceSections: View {
     }
 
     private func breakRows(_ setup: FocusSetup) -> some View {
-        DropletGroupedPickerRow(title: "Break after it",
+        NidusGroupedPickerRow(title: "Break after it",
                                 subtitle: setup.breakMinutes == nil
                                 ? "Settings\u{2019} break: \(model.breakMinutes == 0 ? "none" : FocusFormat.duration(minutes: model.breakMinutes))."
                                 : "When it runs its full length, a break starts. Strict or not.") {
@@ -546,7 +546,7 @@ struct SetupWorkspaceSections: View {
 
     private func breakRulesRows(_ setup: FocusSetup) -> some View {
         Group {
-            DropletGroupedPickerRow(title: "During the break",
+            NidusGroupedPickerRow(title: "During the break",
                                     subtitle: setup.breakRules == nil ? ruleLine(model.defaultBreakRules, "Settings")
                                     : "What stays blocked while the break runs. None chosen blocks nothing, even if Settings has rules.") {
                 Picker("Break rules", selection: ownRules) {

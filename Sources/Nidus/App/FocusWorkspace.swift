@@ -410,16 +410,11 @@ extension NidusModel {
                 self.host?.hud.remeasure(id: Self.workspaceHUDID)
             }
         }
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.workspaceHUDID,
             duration: 14,
-            priority: .normal,
-            accessibilityLabel: ([title] + lines).joined(separator: " "),
-            isExpanded: true,
-            expandedContentHeight: 64
+            accessibilityLabel: ([title] + lines).joined(separator: " ")
         ) {
-            FocusHUDStrip(symbol: "folder.badge.questionmark", text: setup?.displayName ?? "Workspace")
-        } expanded: {
             WorkspaceNoticeCard(symbol: report.isClean ? "nosign" : "folder.badge.questionmark",
                                 title: title, lines: lines, state: state,
                                 openSetup: openSetup, allow: allow, allowTitle: conflicts.first?.cardFixTitle ?? "")
@@ -484,27 +479,27 @@ struct WorkspaceNoticeCard: View {
     var allowTitle = "Allow only this page"
 
     var body: some View {
-        HStack(alignment: .top, spacing: DroppySpacing.md) {
+        HStack(alignment: .top, spacing: NidusSpacing.md) {
             SettingsTile(symbol: symbol, size: 28)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 ForEach(lines, id: \.self) { line in
                     Text(verbatim: line)
                         .font(.system(size: 12))
-                        .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                        .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                         .lineLimit(5)
                 }
                 if state.allowed {
                     Label(state.doneText, systemImage: "checkmark")
                         .font(.system(size: 12))
-                        .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                        .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                         .padding(.top, 2)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            VStack(alignment: .trailing, spacing: DroppySpacing.xsm) {
+            VStack(alignment: .trailing, spacing: NidusSpacing.xsm) {
                 if let allow, !state.allowed {
                     Button(allowTitle, action: allow)
                 }

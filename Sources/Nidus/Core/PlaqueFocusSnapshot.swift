@@ -8,7 +8,7 @@
 //  which stays as it was. Pure: the state goes in, the file's value comes
 //  out, so the tests pin the clock and compare against the golden file.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import CryptoKit

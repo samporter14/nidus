@@ -20,13 +20,13 @@ struct FocusSequencesSection: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Sequences",
                                   detail: "Different blocks and breaks in a row, started in one click: 40 minutes of writing, a 10 minute break, then 25 minutes of figures.")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 ForEach(model.sequences) { sequence in
-                    DropletSettingsPageLink(
+                    NidusSettingsPageLink(
                         sequence.displayName,
                         subtitle: model.problem(of: sequence)?.message ?? sequence.summary(setups: model.setups),
                         page: NidusModel.sequencePagePrefix + sequence.id.uuidString
@@ -34,7 +34,7 @@ struct FocusSequencesSection: View {
                         CategoryTile(symbol: FocusSequencesMenu.symbol)
                     }
                 }
-                DropletControlRow(title: "New sequence",
+                NidusControlRow(title: "New sequence",
                                   infoTip: "Starts as a block, a break and a block, which you can change.") {
                     Button("Add") { model.addSequence() }
                         .buttonStyle(.bordered)
@@ -55,10 +55,10 @@ struct FocusSequencePage: View {
     private var index: Int? { model.sequences.firstIndex { $0.id == sequenceID } }
 
     var body: some View {
-        DropletSettingsPage {
+        NidusSettingsPage {
             if let sequence {
-                DropletSettingsCard {
-                    DropletControlRow(title: "Name") {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Name") {
                         TextField("Name", text: nameBinding)
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
@@ -73,9 +73,9 @@ struct FocusSequencePage: View {
                     stepSection(step, at: offset, of: sequence)
                 }
 
-                DropletSettingsCard {
-                    DropletControlRow(title: "Add a step") {
-                        HStack(spacing: DroppySpacing.sm) {
+                NidusSettingsCard {
+                    NidusControlRow(title: "Add a step") {
+                        HStack(spacing: NidusSpacing.sm) {
                             Button("Work block") { append(.work()) }
                             Button("Break") { append(.rest()) }
                         }
@@ -84,16 +84,16 @@ struct FocusSequencePage: View {
                     }
                 }
 
-                DropletSettingsCard {
-                    DropletControlRow(title: "Start this sequence",
+                NidusSettingsCard {
+                    NidusControlRow(title: "Start this sequence",
                                       infoTip: startNote(for: sequence)) {
                         Button("Start") { model.startSequence(sequence) }
                             .buttonStyle(.borderedProminent)
                             .tint(FocusPalette.clay)
                             .disabled(!canStart(sequence))
                     }
-                    DropletControlRow(title: "Order", infoTip: "Where it sits in the popover and the menu.") {
-                        HStack(spacing: DroppySpacing.sm) {
+                    NidusControlRow(title: "Order", infoTip: "Where it sits in the popover and the menu.") {
+                        HStack(spacing: NidusSpacing.sm) {
                             iconButton("Move sequence up", symbol: "chevron.up", enabled: (index ?? 0) > 0) {
                                 model.moveSequence(sequenceID, by: -1)
                             }
@@ -103,7 +103,7 @@ struct FocusSequencePage: View {
                             }
                         }
                     }
-                    DropletControlRow(title: "Delete this sequence") {
+                    NidusControlRow(title: "Delete this sequence") {
                         Button("Delete", role: .destructive) { model.deleteSequence(sequenceID) }
                             .buttonStyle(.bordered)
                     }
@@ -122,10 +122,10 @@ struct FocusSequencePage: View {
 
     /// What the sequence comes to, and what stops it from starting.
     private func plan(_ sequence: FocusSequence) -> some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Plan")
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: sequence.steps.isEmpty ? "No steps yet" : sequence.summary(setups: model.setups))
                         .fixedSize(horizontal: false, vertical: true)
@@ -160,10 +160,10 @@ struct FocusSequencePage: View {
     private func stepSection(_ step: FocusSequence.Step, at offset: Int, of sequence: FocusSequence) -> some View {
         let number = offset + 1
         let kind = step.isWork ? "Work block" : "Break"
-        return DropletSettingsSection {
-            HStack(spacing: DroppySpacing.sm) {
+        return NidusSettingsSection {
+            HStack(spacing: NidusSpacing.sm) {
                 Text(verbatim: "\(number) \u{00B7} \(kind)")
-                Spacer(minLength: DroppySpacing.sm)
+                Spacer(minLength: NidusSpacing.sm)
                 iconButton("Move step \(number) up", symbol: "chevron.up", enabled: offset > 0) {
                     update { $0.steps = FocusSequence.moving(step.id, by: -1, in: $0.steps) }
                 }
@@ -175,7 +175,7 @@ struct FocusSequencePage: View {
                 }
             }
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 if step.isWork { workRows(step) } else { breakRows(step, in: sequence) }
             }
         }
@@ -183,7 +183,7 @@ struct FocusSequencePage: View {
 
     @ViewBuilder
     private func workRows(_ step: FocusSequence.Step) -> some View {
-        DropletControlRow(title: "Goal",
+        NidusControlRow(title: "Goal",
                           infoTip: "Optional. Empty takes the setup\u{2019}s goal, if it has one.") {
             TextField("None", text: stepField(step, \.goal))
                 .textFieldStyle(.roundedBorder)
@@ -191,14 +191,14 @@ struct FocusSequencePage: View {
                 .labelsHidden()
                 .accessibilityLabel("Goal of step \(number(of: step))")
         }
-        DropletGroupedPickerRow(title: "Length") {
+        NidusGroupedPickerRow(title: "Length") {
             Picker("Length", selection: stepField(step, \.minutes)) {
                 ForEach(choices(FocusSequence.workChoices, including: step.minutes), id: \.self) { minutes in
                     Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
                 }
             }
         }
-        DropletGroupedPickerRow(title: "Setup",
+        NidusGroupedPickerRow(title: "Setup",
                                 subtitle: step.setupID == nil
                                     ? "None: blocks what the popover has chosen."
                                     : "Blocks what the setup does, strict or not.") {
@@ -214,7 +214,7 @@ struct FocusSequencePage: View {
         }
         let projects = model.projects.filter { !$0.isArchived || $0.id == step.projectID }
         if !projects.isEmpty {
-            DropletGroupedPickerRow(title: "Project") {
+            NidusGroupedPickerRow(title: "Project") {
                 Picker("Project", selection: stepField(step, \.projectID)) {
                     Text("None").tag(UUID?.none)
                     ForEach(projects) { project in
@@ -227,14 +227,14 @@ struct FocusSequencePage: View {
 
     @ViewBuilder
     private func breakRows(_ step: FocusSequence.Step, in sequence: FocusSequence) -> some View {
-        DropletGroupedPickerRow(title: "Length") {
+        NidusGroupedPickerRow(title: "Length") {
             Picker("Length", selection: stepField(step, \.minutes)) {
                 ForEach(choices(FocusSequence.breakChoices, including: step.minutes), id: \.self) { minutes in
                     Text(FocusFormat.duration(minutes: minutes)).tag(minutes)
                 }
             }
         }
-        DropletGroupedPickerRow(title: "Blocked during the break",
+        NidusGroupedPickerRow(title: "Blocked during the break",
                                 subtitle: Self.subtitle(for: step.rules)) {
             Picker("Blocked during the break", selection: ruleChoice(step)) {
                 Text("As the next block\u{2019}s setup").tag(RuleChoice.inherit)

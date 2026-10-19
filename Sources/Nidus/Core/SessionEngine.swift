@@ -8,7 +8,7 @@
 //  calls tick() (the browser sweep already runs once a second), and the tests
 //  drive it with a fake clock.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

@@ -11,7 +11,7 @@
 //  when that one combination is pressed, which needs no Input Monitoring or
 //  Accessibility permission, and Nidus hears of no other key.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

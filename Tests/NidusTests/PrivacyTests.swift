@@ -13,7 +13,7 @@ import Testing
 
 struct NoNetworkTests {
     /// Every Swift file of the app, core and surfaces.
-    static let dropletSources: [URL] = {
+    static let appSources: [URL] = {
         let root = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
             .appendingPathComponent("Sources/Nidus")
@@ -22,8 +22,8 @@ struct NoNetworkTests {
         return files.sorted { $0.path < $1.path }
     }()
 
-    @Test func theScanSeesTheWholeDroplet() {
-        let names = Set(Self.dropletSources.map(\.lastPathComponent))
+    @Test func theScanSeesTheWholeApp() {
+        let names = Set(Self.appSources.map(\.lastPathComponent))
         #expect(names.isSuperset(of: ["NidusApp.swift", "NidusModel.swift", "FocusSettings.swift", "FocusController.swift", "BrowserBlocker.swift",
                                       "ResumeNotes.swift", "ResumeNote.swift", "ResumeResources.swift", "FocusProjects.swift",
                                       "ProjectSummary.swift", "FocusProjectViews.swift"]))
@@ -34,10 +34,10 @@ struct NoNetworkTests {
         "import Network", "import WebKit", "WKWebView", "CFStream", "CFHTTP", "socket(", "getaddrinfo",
     ])
     func noNetworkingAPI(_ api: String) throws {
-        // A whole name: DroppyKit's DropletURLRequest is a droppy:// link
-        // handed to the droplet, not a network request.
+        // Match whole API names, so a longer identifier does not create
+        // a false positive.
         let pattern = try Regex("(^|[^A-Za-z])" + NSRegularExpression.escapedPattern(for: api))
-        for file in Self.dropletSources {
+        for file in Self.appSources {
             let text = try String(contentsOf: file, encoding: .utf8)
             #expect(!text.contains(pattern), "\(file.lastPathComponent) uses \(api)")
         }
@@ -47,7 +47,7 @@ struct NoNetworkTests {
     /// A bare scheme is fine: typed domains get one so they can be parsed.
     @Test func noWebAddressesInCode() throws {
         let address = /https?:\/\/[A-Za-z0-9]/
-        for file in Self.dropletSources {
+        for file in Self.appSources {
             let lines = try String(contentsOf: file, encoding: .utf8).components(separatedBy: .newlines)
             for (index, line) in lines.enumerated() {
                 let code = line.trimmingCharacters(in: .whitespaces)
@@ -61,7 +61,7 @@ struct NoNetworkTests {
     @Test func theBlockPageLoadsNothingFromAnywhere() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("focus-privacy-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let page = BlockPage(directory: dir, dropletID: "focus")
+        let page = BlockPage(directory: dir)
         try page.install()
         let html = try String(contentsOf: page.fileURL, encoding: .utf8).lowercased()
         // `new URL(...)` in its script only parses the blocked address.
@@ -74,7 +74,7 @@ struct NoNetworkTests {
 // MARK: - No shell
 
 struct NoShellTests {
-    static let sources = NoNetworkTests.dropletSources
+    static let sources = NoNetworkTests.appSources
 
     /// The only child process Nidus starts is `/usr/bin/shortcuts`, from
     /// FocusShortcuts, with the Shortcut's name as one argument.
@@ -141,12 +141,12 @@ struct IdleTests {
 @MainActor
 struct InboxPrivacyTests {
     private func source(_ name: String) throws -> String {
-        let file = try #require(NoNetworkTests.dropletSources.first { $0.lastPathComponent == name }, "\(name) is not scanned")
+        let file = try #require(NoNetworkTests.appSources.first { $0.lastPathComponent == name }, "\(name) is not scanned")
         return try String(contentsOf: file, encoding: .utf8)
     }
 
     @Test func theInboxFilesAreInTheScan() {
-        let names = Set(NoNetworkTests.dropletSources.map(\.lastPathComponent))
+        let names = Set(NoNetworkTests.appSources.map(\.lastPathComponent))
         #expect(names.isSuperset(of: ["FocusInbox.swift", "KeyShortcut.swift", "FocusInboxViews.swift", "FocusCapture.swift"]))
     }
 
@@ -172,7 +172,7 @@ struct InboxPrivacyTests {
     @Test func itWatchesNoKeysButItsOwnShortcut() {
         // A hot key asks macOS about one combination. These would read the keyboard.
         for api in ["addGlobalMonitorForEvents", "CGEvent.tapCreate", "CGEventTapCreate", "IOHIDManager", "AXIsProcessTrusted"] {
-            for file in NoNetworkTests.dropletSources {
+            for file in NoNetworkTests.appSources {
                 let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
                 #expect(!text.contains(api), "\(file.lastPathComponent) uses \(api)")
             }

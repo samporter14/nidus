@@ -62,17 +62,12 @@ extension NidusModel {
         guard let host else { return false }
         let parts = recap.parts
         let title = recap.title
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.recapHUDID,
             // Long enough to read a line of numbers and reach the button.
             duration: 10,
-            priority: .normal,
-            accessibilityLabel: recap.spoken,
-            isExpanded: true,
-            expandedContentHeight: 64
-        ) {
-            FocusHUDStrip(symbol: "chart.bar.fill", text: FocusFormat.long(recap.focused))
-        } expanded: { [weak self] in
+            accessibilityLabel: recap.spoken
+        ) { [weak self] in
             FocusNoticeCard(symbol: "chart.bar.fill", variants: [
                 .init(title: Text(verbatim: title), detail: Text(verbatim: parts.joined(separator: " \u{00B7} ")), button: "Stats"),
                 // The mark goes before a part of the line does: the numbers

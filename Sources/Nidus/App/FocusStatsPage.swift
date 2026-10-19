@@ -18,7 +18,7 @@ struct FocusStatsPage: View {
 
     var body: some View {
         let stats = model.stats
-        DropletSettingsPage {
+        NidusSettingsPage {
             if stats.isEmpty {
                 emptyState
             } else {
@@ -40,13 +40,13 @@ struct FocusStatsPage: View {
     /// With nothing recorded there is nothing to count: one line, not a page
     /// of empty rows. History's own controls stay below it.
     private var emptyState: some View {
-        DropletSettingsCard {
+        NidusSettingsCard {
             Text(model.recordsHistory
                  ? "Your first session will show up here."
                  : "History is off. Turn it on below to see your sessions here.")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, DroppySpacing.md)
+                .padding(.vertical, NidusSpacing.md)
         }
     }
 
@@ -63,37 +63,37 @@ struct FocusStatsPage: View {
             .fixedSize(horizontal: false, vertical: true)
         }
 
-        DropletSettingsCard {
-            DropletStackedRow(title: "Last six months") {
+        NidusSettingsCard {
+            NidusStackedRow(title: "Last six months") {
                 ContributionGraph(stats: stats)
-                    .padding(.vertical, DroppySpacing.xs)
+                    .padding(.vertical, NidusSpacing.xs)
             }
         }
 
-        DropletSettingsCard {
-            DropletControlRow(title: "Time focused") { DropletValuePill(text: FocusFormat.long(stats.totalFocused)) }
-            DropletControlRow(title: "Longest streak") { DropletValuePill(text: FocusFormat.days(stats.longestStreak)) }
-            DropletControlRow(title: "Longest session") { DropletValuePill(text: longest(stats)) }
-            DropletControlRow(title: "Goals finished",
+        NidusSettingsCard {
+            NidusControlRow(title: "Time focused") { NidusValuePill(text: FocusFormat.long(stats.totalFocused)) }
+            NidusControlRow(title: "Longest streak") { NidusValuePill(text: FocusFormat.days(stats.longestStreak)) }
+            NidusControlRow(title: "Longest session") { NidusValuePill(text: longest(stats)) }
+            NidusControlRow(title: "Goals finished",
                               infoTip: "From your answers to \u{201C}Did you finish?\u{201D} at the end of a session.") {
-                DropletValuePill(text: goals(stats))
+                NidusValuePill(text: goals(stats))
             }
         }
 
-        DropletSettingsSection {
+        NidusSettingsSection {
             settingsSectionHeader("Distractions")
         } content: {
-            DropletSettingsCard {
-                DropletControlRow(title: "Most blocked", infoTip: "The app or website stopped most often.") {
-                    DropletValuePill(text: tally(stats.mostBlocked))
+            NidusSettingsCard {
+                NidusControlRow(title: "Most blocked", infoTip: "The app or website stopped most often.") {
+                    NidusValuePill(text: tally(stats.mostBlocked))
                 }
-                DropletControlRow(title: "Most quit", infoTip: "The app Nidus had to quit most often.") {
-                    DropletValuePill(text: tally(stats.mostQuit))
+                NidusControlRow(title: "Most quit", infoTip: "The app Nidus had to quit most often.") {
+                    NidusValuePill(text: tally(stats.mostQuit))
                 }
             }
         }
 
-        DropletSettingsSection {
+        NidusSettingsSection {
             VStack(alignment: .leading, spacing: 2) {
                 settingsSectionHeader("Where you focused")
                 Text("The apps in front while a session ran.")
@@ -101,12 +101,12 @@ struct FocusStatsPage: View {
                     .foregroundStyle(.secondary)
             }
         } content: {
-            DropletSettingsCard {
+            NidusSettingsCard {
                 if stats.topApps.isEmpty {
-                    DropletControlRow(title: "Nothing yet") { EmptyView() }
+                    NidusControlRow(title: "Nothing yet") { EmptyView() }
                 } else {
                     ForEach(stats.topApps, id: \.key) { app in
-                        DropletControlRow(title: app.name) { DropletValuePill(text: FocusFormat.long(app.value)) }
+                        NidusControlRow(title: app.name) { NidusValuePill(text: FocusFormat.long(app.value)) }
                     }
                 }
             }
@@ -114,7 +114,7 @@ struct FocusStatsPage: View {
     }
 
     private func history(_ stats: FocusStats) -> some View {
-        DropletSettingsSection {
+        NidusSettingsSection {
             VStack(alignment: .leading, spacing: 2) {
                 settingsSectionHeader("History")
                 Text("Kept on this Mac only. Nothing is sent anywhere.")
@@ -122,11 +122,11 @@ struct FocusStatsPage: View {
                     .foregroundStyle(.secondary)
             }
         } content: {
-            DropletSettingsCard {
-                DropletToggleRow(title: "Record sessions",
+            NidusSettingsCard {
+                NidusToggleRow(title: "Record sessions",
                                  subtitle: "Turn this off and finished sessions and goals are no longer kept.",
                                  isOn: model.binding(\.recordsHistory))
-                DropletControlRow(title: "Export history",
+                NidusControlRow(title: "Export history",
                                   infoTip: "Saves every session to a file you choose.") {
                     Menu("Export\u{2026}") {
                         Button("Export as CSV\u{2026}") { model.exportHistory(as: .csv) }
@@ -135,7 +135,7 @@ struct FocusStatsPage: View {
                     .fixedSize()
                     .disabled(stats.isEmpty)
                 }
-                DropletControlRow(title: "Clear history",
+                NidusControlRow(title: "Clear history",
                                   infoTip: "Also clears your resume notes. Projects stay.") {
                     Button("Clear\u{2026}", role: .destructive) { confirmingClear = true }
                         .buttonStyle(.bordered)
@@ -246,7 +246,7 @@ struct ContributionGraph: View {
     private let gap: CGFloat = 3
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             ContributionLayout(columns: stats.weeks.count, gap: gap) {
                 // In the order the layout places them: a month over each
                 // column, a weekday beside each row, then the days by column.

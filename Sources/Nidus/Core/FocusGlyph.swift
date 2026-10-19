@@ -9,7 +9,6 @@
 //
 //  Every frame is a pure function of a GlyphState, drawn in a 24-unit square,
 //  so the menu bar item, the spike and the tests all draw the same picture.
-//  No DroppyKit import.
 //
 
 import AppKit

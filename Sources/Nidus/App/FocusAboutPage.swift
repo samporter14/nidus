@@ -17,7 +17,7 @@ struct FocusAboutPage: View {
 
     static let tagline = "Blocks what pulls you away, for as long as you say. Nothing leaves this Mac."
     static let privacy = "Nidus collects nothing and never connects to the internet. What it keeps stays on this Mac."
-    static let credits = "Made by Sam. Nidus began as a droplet for Droppy. MIT licensed."
+    static let credits = "Made by Sam. MIT licensed."
 
     /// The icon and credits are on the page itself, centred as an About box
     /// has them, and the form between holds the one setting. A form would
@@ -25,12 +25,12 @@ struct FocusAboutPage: View {
     var body: some View {
         VStack(spacing: 0) {
             identity
-            DropletSettingsPane {
-                DropletSettingsSection {
+            NidusSettingsPane {
+                NidusSettingsSection {
                     settingsSectionHeader("Privacy", detail: Self.privacy)
                 } content: {
-                    DropletSettingsCard {
-                        DropletToggleRow(title: "Record session history",
+                    NidusSettingsCard {
+                        NidusToggleRow(title: "Record session history",
                                          subtitle: "Used only for your stats and recent goals, and kept only on this Mac. When off, neither is kept.",
                                          isOn: model.binding(\.recordsHistory))
                     }
@@ -58,9 +58,9 @@ struct FocusAboutPage: View {
                 .multilineTextAlignment(.center)
                 .padding(.top, 4)
         }
-        .padding(.horizontal, DroppySpacing.lg)
-        .padding(.top, DroppySpacing.lg + DroppySpacing.sm)
-        .padding(.bottom, DroppySpacing.xs)
+        .padding(.horizontal, NidusSpacing.lg)
+        .padding(.top, NidusSpacing.lg + NidusSpacing.sm)
+        .padding(.bottom, NidusSpacing.xs)
         .accessibilityElement(children: .combine)
     }
 
@@ -69,8 +69,8 @@ struct FocusAboutPage: View {
             .font(.callout)
             .foregroundStyle(.tertiary)
             .multilineTextAlignment(.center)
-            .padding(.horizontal, DroppySpacing.lg)
-            .padding(.bottom, DroppySpacing.lg)
+            .padding(.horizontal, NidusSpacing.lg)
+            .padding(.bottom, NidusSpacing.lg)
             .frame(maxWidth: .infinity)
     }
 

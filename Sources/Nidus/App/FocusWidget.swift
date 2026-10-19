@@ -3,23 +3,15 @@
 //  Nidus
 //
 //  The popover's content: where a session is set up and started, and where
-//  it is paused, extended or ended. (It was the droplet's shelf widget.)
+//  it is paused, extended or ended.
 //
 
 import SwiftUI
-
-/// Where the widget is shown. In the app it is always the popover, at full
-/// width; the droplet also had a narrow, paired form.
-struct ShelfWidgetContext {
-    var isCompact = false
-    var contentInsets = EdgeInsets()
-}
 
 /// The popover: a header row, then the goal and Start, or the running
 /// session's clock and controls.
 struct FocusWidget: View {
     @ObservedObject var model: NidusModel
-    let context: ShelfWidgetContext
     /// Where ↑ and ↓ are in the recent goals; nil is the field as typed.
     @State private var recentIndex: Int?
     /// A strict session's End asks for this phrase first.
@@ -32,27 +24,26 @@ struct FocusWidget: View {
     static let strictEndPhrase = "stop early"
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             header
             if model.isActive {
-                if context.isCompact { compactRunning } else { running }
+                running
             } else if model.isOnBreak {
-                if context.isCompact { compactBreak } else { breakView }
+                breakView
             } else {
-                if context.isCompact { compactIdle } else { idle }
+                idle
             }
             // No trailing Spacer: the root frame already aligns to the top,
             // and the stack's spacing before a Spacer would add 8pt the
             // declared height does not have.
         }
-        .padding(context.contentInsets)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     // MARK: Header
 
     private var header: some View {
-        HStack(spacing: DroppySpacing.sm) {
+        HStack(spacing: NidusSpacing.sm) {
             Image(nsImage: FocusGlyph.image(model.isActive ? .brain : .particle, pointSize: 15))
                 .renderingMode(.template)
                 .foregroundStyle(model.isActive && !model.isPaused ? AnyShapeStyle(FocusPalette.clay) : AnyShapeStyle(.tertiary))
@@ -105,11 +96,11 @@ struct FocusWidget: View {
     /// has no fixed height: whatever is added below the goal moves the rest
     /// down, and the popover follows its content.
     private var idle: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.md) {
+        VStack(alignment: .leading, spacing: NidusSpacing.md) {
             // The newest note waiting, if there is one: nothing otherwise.
             ResumePopoverRow(model: model)
 
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 TextField("What are you working on?", text: $model.goalDraft)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.extraLarge)
@@ -137,15 +128,15 @@ struct FocusWidget: View {
             // Saved setups, one click each; draws nothing until there are any.
             FocusSetupsBar(model: model)
 
-            VStack(alignment: .leading, spacing: DroppySpacing.xs) {
-                HStack(spacing: DroppySpacing.sm) {
+            VStack(alignment: .leading, spacing: NidusSpacing.xs) {
+                HStack(spacing: NidusSpacing.sm) {
                     if model.customLengthDraft == nil {
                         durationMenu
                     } else {
                         customLengthField
                     }
                     categoryMenu
-                    Spacer(minLength: DroppySpacing.sm)
+                    Spacer(minLength: NidusSpacing.sm)
                     startButton
                 }
                 if let draft = model.customLengthDraft {
@@ -177,16 +168,6 @@ struct FocusWidget: View {
     private func start() {
         guard model.commitCustomLength() else { return }
         model.startSession()
-    }
-
-    private var compactIdle: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.xs) {
-            startButton
-            Text(verbatim: "\(model.lengthLabel) · \(model.selectionSummary)")
-                .font(.system(size: 11))
-                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
-                .lineLimit(1)
-        }
     }
 
     /// The last few goals, to start one again without typing it.
@@ -283,7 +264,7 @@ struct FocusWidget: View {
     /// "Custom…" swaps the Length button for this: a length or an end time,
     /// typed. Return sets it, Escape or the cross puts the button back.
     private var customLengthField: some View {
-        HStack(spacing: DroppySpacing.xs) {
+        HStack(spacing: NidusSpacing.xs) {
             TextField("Length", text: customLengthText, prompt: Text("40, 1h30, until 3:30"))
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.large)
@@ -382,7 +363,7 @@ struct FocusWidget: View {
     }
 
     private func menuLabel(_ title: String, symbol: String) -> some View {
-        HStack(spacing: DroppySpacing.xs) {
+        HStack(spacing: NidusSpacing.xs) {
             Image(systemName: symbol)
             Text(verbatim: title).lineLimit(1)
         }
@@ -395,7 +376,7 @@ struct FocusWidget: View {
     /// clipped corners; the quiet line sits above the clock so the buttons
     /// stay level with the clock, and nothing sits in the bottom corners.
     private var running: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             if confirmingEnd, model.isStrict {
                 strictEndRow
             } else {
@@ -414,7 +395,7 @@ struct FocusWidget: View {
     }
 
     private var runningControls: some View {
-        HStack(alignment: .bottom, spacing: DroppySpacing.md) {
+        HStack(alignment: .bottom, spacing: NidusSpacing.md) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: model.goal.isEmpty ? "Blocking \(model.runningSummary)" : model.goal)
                     .font(.system(size: model.goal.isEmpty ? 13 : 15, weight: model.goal.isEmpty ? .regular : .medium))
@@ -432,8 +413,8 @@ struct FocusWidget: View {
                     .accessibilityLabel(model.runningLine.replacingOccurrences(of: " · ", with: ", "))
                 clock(size: 44)
             }
-            Spacer(minLength: DroppySpacing.md)
-            HStack(spacing: DroppySpacing.sm) {
+            Spacer(minLength: NidusSpacing.md)
+            HStack(spacing: NidusSpacing.sm) {
                 if !model.isStrict { pauseButton }
                 if !model.isOpenEnded {
                     Button(action: model.addTime) {
@@ -461,7 +442,7 @@ struct FocusWidget: View {
     /// A strict session ends early only after typing the phrase: enough to
     /// get past an impulse, not a lock.
     private var strictEndRow: some View {
-        HStack(spacing: DroppySpacing.sm) {
+        HStack(spacing: NidusSpacing.sm) {
             TextField("Type \u{201C}\(Self.strictEndPhrase)\u{201D} to end", text: $endPhrase)
                 .textFieldStyle(.roundedBorder)
                 .controlSize(.large)
@@ -505,8 +486,8 @@ struct FocusWidget: View {
     /// until when, and shows its reminder. In a sequence the buttons start
     /// the next block and end the sequence.
     private var breakView: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
-            HStack(alignment: .bottom, spacing: DroppySpacing.md) {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
+            HStack(alignment: .bottom, spacing: NidusSpacing.md) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(verbatim: breakNextLine)
                         .font(.system(size: 13))
@@ -514,8 +495,8 @@ struct FocusWidget: View {
                         .lineLimit(1)
                     breakClock(size: 44)
                 }
-                Spacer(minLength: DroppySpacing.md)
-                HStack(spacing: DroppySpacing.sm) {
+                Spacer(minLength: NidusSpacing.md)
+                HStack(spacing: NidusSpacing.sm) {
                     skipBreakButton(size: 30)
                     Button(action: model.endBreak) {
                         Image(systemName: "stop.fill")
@@ -570,21 +551,11 @@ struct FocusWidget: View {
         }
     }
 
-    private var compactBreak: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            breakClock(size: 28)
-            Text(verbatim: model.nextGoal.isEmpty ? "Break" : "Then \(model.nextGoal)")
-                .font(.system(size: 11))
-                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
-                .lineLimit(1)
-        }
-    }
-
     private func breakClock(size: CGFloat) -> some View {
         Text(verbatim: model.clockText)
             .font(.system(size: size, weight: .light))
             .monospacedDigit()
-            .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+            .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             .accessibilityLabel("Break, \(FocusFormat.spoken(model.breakRemaining))")
     }
 
@@ -597,21 +568,11 @@ struct FocusWidget: View {
         .accessibilityLabel(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
     }
 
-    private var compactRunning: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            clock(size: 28)
-            Text(verbatim: model.goal.isEmpty ? model.runningSummary : model.goal)
-                .font(.system(size: 11))
-                .foregroundStyle(AdaptiveColors.notchSurfaceTertiaryText)
-                .lineLimit(1)
-        }
-    }
-
     private func clock(size: CGFloat) -> some View {
         Text(verbatim: model.clockText)
             .font(.system(size: size, weight: .light))
             .monospacedDigit()
-            .foregroundStyle(model.isPaused ? AdaptiveColors.notchSurfaceTertiaryText : AdaptiveColors.notchSurfacePrimaryText)
+            .foregroundStyle(model.isPaused ? AdaptiveColors.surfaceTertiaryText : AdaptiveColors.surfacePrimaryText)
             .accessibilityLabel(model.isOpenEnded
                 ? "Focused for \(FocusFormat.spoken(model.elapsed).replacingOccurrences(of: " left", with: ""))"
                 : FocusFormat.spoken(model.remaining))
@@ -621,7 +582,7 @@ struct FocusWidget: View {
         Button(action: model.togglePause) {
             Image(systemName: model.isPaused ? "play.fill" : "pause.fill")
                 .id(model.isPaused)
-                .transition(DroppyTransition.element)
+                .transition(NidusTransition.element)
         }
         .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
         .help(model.isPaused ? "Resume" : "Pause")

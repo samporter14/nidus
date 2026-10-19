@@ -30,16 +30,11 @@ extension NidusModel {
         let when = Text(end, style: .relative)
         let next = plan.goal.isEmpty ? "Next session starts" : "Next: \(plan.goal)"
         let seconds = max(1, Int(end.timeIntervalSinceNow.rounded()))
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.breakHUDID,
             duration: min(10, max(3, Double(seconds) - 2)),
-            priority: .normal,
-            accessibilityLabel: "Break ends in \(seconds) seconds. \(next).",
-            isExpanded: true,
-            expandedContentHeight: 64
-        ) {
-            FocusHUDStrip(symbol: "cup.and.saucer.fill", text: "Break")
-        } expanded: { [weak self] in
+            accessibilityLabel: "Break ends in \(seconds) seconds. \(next)."
+        ) { [weak self] in
             FocusNoticeCard(symbol: "cup.and.saucer.fill", variants: [
                 .init(title: Text("Break ends in \(when)"), detail: Text(verbatim: next), button: "Stop here"),
                 .init(title: Text("Break ends"), detail: Text("in \(when)"), button: "Stop", showsSymbol: false),
@@ -55,10 +50,11 @@ extension NidusModel {
     /// Quitting cannot end a strict session; say why, briefly.
     func presentStrictHUD() {
         guard let host else { return }
-        let request = DropletHUDRequest(id: Self.strictHUDID, duration: 4, priority: .normal,
-                                        accessibilityLabel: "Strict session. End it early from the menu bar.") {
-            FocusHUDStrip(symbol: "lock.fill", text: "Strict")
-        } expanded: {
+        let request = HUDRequest(
+            id: Self.strictHUDID,
+            duration: 4,
+            accessibilityLabel: "Strict session. End it early from the menu bar."
+        ) {
             FocusNoticeCard(symbol: "lock.fill", variants: [
                 .init(title: Text("Strict session"),
                       detail: Text("End it early from the menu bar."), button: "OK"),
@@ -80,20 +76,15 @@ extension NidusModel {
         let detail = needsConsent ? "Nidus needs your permission to control it." : "Nidus isn't allowed to control it."
         let short = needsConsent ? "Needs your permission" : "Not allowed"
         let button = needsConsent ? "Allow…" : "Fix…"
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.browserHUDID,
             duration: 12,
-            priority: .normal,
-            accessibilityLabel: "\(title). \(detail)",
-            isExpanded: true,
-            expandedContentHeight: 64
-        ) {
-            FocusHUDStrip(symbol: "exclamationmark.triangle.fill", text: name)
-        } expanded: { [weak self] in
+            accessibilityLabel: "\(title). \(detail)"
+        ) { [weak self] in
             FocusNoticeCard(symbol: "exclamationmark.triangle.fill", variants: [
                 .init(title: Text(verbatim: title), detail: Text(verbatim: detail), button: button),
                 .init(title: Text(verbatim: title), detail: Text(verbatim: short), button: button),
-                // The island leaves about 115pt beside the button: the gist.
+                // The shortest variant keeps the action available for long names.
                 .init(title: Text(verbatim: name),
                       detail: Text(verbatim: needsConsent ? "Needs access" : "Access is off"),
                       button: needsConsent ? "Allow" : "Fix", showsSymbol: false),
@@ -114,16 +105,11 @@ extension NidusModel {
         let name = engine?.session?.names[item] ?? item
         let seconds = max(1, Int(end.timeIntervalSinceNow.rounded()))
         let when = Text(end, style: .relative)
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.snoozeHUDID,
             duration: min(8, max(3, Double(seconds) - 2)),
-            priority: .normal,
-            accessibilityLabel: "Snooze ends in \(seconds) seconds. \(name) is blocked again after that.",
-            isExpanded: true,
-            expandedContentHeight: 64
-        ) {
-            FocusHUDStrip(symbol: "hourglass", text: name)
-        } expanded: { [weak self] in
+            accessibilityLabel: "Snooze ends in \(seconds) seconds. \(name) is blocked again after that."
+        ) { [weak self] in
             FocusNoticeCard(symbol: "hourglass", variants: [
                 .init(title: Text("Snooze ends in \(when)"), detail: Text(verbatim: "\(name) is blocked again after that."), button: "Block now"),
                 .init(title: Text("Snooze ends in \(when)"), detail: Text(verbatim: name), button: "Block now"),
@@ -142,16 +128,11 @@ extension NidusModel {
     /// at the top of its settings.
     func presentWelcomeHUD() {
         guard let host else { return }
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.welcomeHUDID,
             duration: 12,
-            priority: .normal,
-            accessibilityLabel: "Nidus is ready. Start a session from the menu bar.",
-            isExpanded: true,
-            expandedContentHeight: 64
-        ) {
-            FocusHUDStrip(icon: FocusWelcomeCard.glyph, text: "Nidus")
-        } expanded: { [weak self] in
+            accessibilityLabel: "Nidus is ready. Start a session from the menu bar."
+        ) { [weak self] in
             FocusWelcomeCard(showMe: {
                 // The guide is at the top of General.
                 self?.openSettings(.general)
@@ -188,16 +169,11 @@ extension NidusModel {
         case .website: verb = "blocked"
         }
 
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.blockedHUDID,
             duration: 5,
-            priority: .normal,
-            accessibilityLabel: "\(name) \(verb). \(goal.isEmpty ? "" : goal + ", ")\(spokenTime).",
-            isExpanded: true,
-            expandedContentHeight: 64
-        ) {
-            FocusHUDStrip(symbol: "nosign", text: name)
-        } expanded: { [weak self] in
+            accessibilityLabel: "\(name) \(verb). \(goal.isEmpty ? "" : goal + ", ")\(spokenTime)."
+        ) { [weak self] in
             FocusBlockedCard(
                 title: "\(name) \(verb)",
                 detail: detail,
@@ -267,22 +243,17 @@ extension NidusModel {
         let shortDetail = rest.map { "\(time) \u{00B7} \($0)" } ?? streak.map { "\(time) \u{00B7} day \($0)" }
             ?? (blocked == 0 ? "\(time) focused" : "\(time) \u{00B7} \(blocked) blocked")
         let spokenNotes = notes.map { ". " + $0.text }.joined()
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.completedHUDID,
             // Long enough to answer the question, when there is one, to type a
             // next step, to read what a break keeps blocked, or to reach the
             // button for what was saved.
             duration: goal != nil ? 12 : (nextStep != nil ? FinishReply.noteLinger : (saved > 0 ? 10 : notes.isEmpty ? 6 : 9)),
-            priority: .normal,
             accessibilityLabel: "\(title). \(time) focused, \(blocks)\(days.map { ", \($0)" } ?? "")\(rest.map { ". \($0.hasSuffix("break") ? "A " : "")\($0) now" } ?? "")."
                 + spokenNotes + (goal.map { " Did you finish \($0)?" } ?? "")
                 + (nextStep != nil && goal == nil ? " What\u{2019}s the next step? Optional." : "")
-                + (Self.savedForLaterText(saved).map { " \($0)." } ?? ""),
-            isExpanded: true,
-            expandedContentHeight: (goal == nil ? 64 : 96) + CGFloat(notes.count + (saved > 0 ? 1 : 0)) * FocusWrapUpCard.noteHeight
-        ) {
-            FocusHUDStrip(symbol: completed ? "checkmark.circle.fill" : "stop.circle", text: time)
-        } expanded: { [weak self] in
+                + (Self.savedForLaterText(saved).map { " \($0)." } ?? "")
+        ) { [weak self] in
             // The card reads the answer from `cards`, so it changes in place
             // whether the card's buttons or the menu bar gave it.
             FocusFinishReply(cards: cards) { reply in
@@ -325,8 +296,8 @@ extension NidusModel {
 /// to ask about it is two rows instead: the result over the question, and
 /// once the question is answered its row turns into the confirmation and
 /// Again. Both versions of that row are as tall, so the card does not move
-/// (the card is measured once, when it comes up). On the narrower island card
-/// it drops to the short form.
+/// (the card is measured once, when it comes up). Long text falls back to
+/// a shorter form to keep the action visible.
 struct FocusWrapUpCard: View {
     let title: String
     let detail: String
@@ -336,7 +307,7 @@ struct FocusWrapUpCard: View {
     /// nil when there is nothing to press: a sequence's next block is
     /// already running, or its last block is done.
     var button: String? = "Again"
-    /// The island's card has room for a shorter word.
+    /// A shorter label for the last fitting variant.
     var shortButton: String? = "Again"
     /// What Skip break says to VoiceOver.
     var skipLabel = "Skip the break and start the next session"
@@ -364,13 +335,10 @@ struct FocusWrapUpCard: View {
         var text: String
     }
 
-    /// A note's line: 12 point text and the spacing above it.
-    static let noteHeight: CGFloat = 23
-
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             // With a question, Again waits for the answer, on the second row.
             ViewThatFits(in: .horizontal) {
                 row(detail, button: question == nil ? button : nil, last: false)
@@ -384,9 +352,9 @@ struct FocusWrapUpCard: View {
                     Image(systemName: note.symbol).frame(width: 14)
                 }
                 .font(.system(size: 12))
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 // In line with the title above, past the mark.
-                .padding(.leading, 28 + DroppySpacing.md)
+                .padding(.leading, 28 + NidusSpacing.md)
                 .accessibilityElement(children: .combine)
             }
             if let question {
@@ -415,23 +383,23 @@ struct FocusWrapUpCard: View {
 
     /// The last row truncates rather than running past the card's edge.
     private func row(_ detail: String, button: String?, last: Bool) -> some View {
-        HStack(alignment: .center, spacing: DroppySpacing.md) {
-            // The island has no room for the mark; the title says it.
+        HStack(alignment: .center, spacing: NidusSpacing.md) {
+            // The last fitting variant saves room for the result and action.
             if !last {
                 SettingsTile(symbol: completed ? "checkmark" : "stop.fill", size: 28, color: completed ? FocusPalette.clay : .gray)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 Text(verbatim: detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                    .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
             .truncationMode(.tail)
             .fixedSize(horizontal: !last, vertical: false)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             if let button { againButton(button) }
         }
     }
@@ -447,14 +415,14 @@ struct FocusWrapUpCard: View {
 extension FocusWrapUpCard {
     /// The question under the result: Not yet, and a clay Yes.
     fileprivate func questionRow(_ text: String, last: Bool) -> some View {
-        HStack(spacing: DroppySpacing.sm) {
+        HStack(spacing: NidusSpacing.sm) {
             Text(verbatim: text)
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .fixedSize(horizontal: !last, vertical: false)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             Button("Not yet") { answer(false) }
                 .buttonStyle(.bordered)
                 .fixedSize()
@@ -469,12 +437,12 @@ extension FocusWrapUpCard {
 
     /// The same row once answered: a word or two, and Again (or Skip break).
     fileprivate func repliedRow(_ finished: Bool) -> some View {
-        HStack(spacing: DroppySpacing.sm) {
+        HStack(spacing: NidusSpacing.sm) {
             Text(verbatim: FinishReply.confirmation(finished))
                 .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .lineLimit(1)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             if let button { againButton(button) }
         }
     }
@@ -532,21 +500,21 @@ struct FocusWelcomeCard: View {
     }
 
     private func row(_ detail: String, glyph: Bool) -> some View {
-        HStack(alignment: .center, spacing: DroppySpacing.md) {
+        HStack(alignment: .center, spacing: NidusSpacing.md) {
             if glyph {
                 SettingsTile(image: Self.glyph, size: 28)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: "Nidus is ready")
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 Text(verbatim: detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                    .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
             .fixedSize()
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             Button("Show me", action: showMe)
                 .buttonStyle(.bordered)
                 .fixedSize()
@@ -556,8 +524,8 @@ struct FocusWelcomeCard: View {
 }
 
 /// A card with one action: a symbol, a title over a line, and a
-/// button. Variants go longest first; the first that fits is shown, so the
-/// island's narrower card gets a shorter one.
+/// button. Variants go longest first; the first that fits is shown, keeping
+/// long text and the action within the card.
 struct FocusNoticeCard: View {
     struct Variant {
         var title: Text
@@ -582,22 +550,22 @@ struct FocusNoticeCard: View {
     /// The last variant is what shows when nothing fits, so its text gives
     /// way (truncating) rather than running past the card's edge.
     private func row(_ v: Variant, last: Bool) -> some View {
-        HStack(alignment: .center, spacing: DroppySpacing.md) {
+        HStack(alignment: .center, spacing: NidusSpacing.md) {
             if v.showsSymbol {
                 SettingsTile(symbol: symbol, size: 28)
             }
             VStack(alignment: .leading, spacing: 2) {
                 v.title
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 v.detail
                     .font(.system(size: 12))
-                    .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                    .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
             .truncationMode(.tail)
             .fixedSize(horizontal: !last, vertical: false)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             Button(v.button, action: action)
                 .buttonStyle(.bordered)
                 .fixedSize()
@@ -605,40 +573,8 @@ struct FocusNoticeCard: View {
     }
 }
 
-/// Glyph at the far left, text at the far right, nothing in the middle: on a
-/// notch the middle of a strip is the camera housing.
-struct FocusHUDStrip: View {
-    let icon: Image
-    let text: String
-
-    init(symbol: String, text: String) {
-        self.init(icon: Image(systemName: symbol), text: text)
-    }
-
-    init(icon: Image, text: String) {
-        self.icon = icon
-        self.text = text
-    }
-
-    var body: some View {
-        HStack(spacing: 0) {
-            icon
-                .font(.system(size: DroppyLiveActivityMetrics.iconSize, weight: .semibold))
-            Spacer(minLength: 0)
-            Text(verbatim: text)
-                .font(.system(size: DroppyLiveActivityMetrics.labelFontSize, weight: .semibold))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: 80, alignment: .trailing)
-        }
-        .frame(maxWidth: .infinity)
-        .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
-    }
-}
-
-/// The card: what was stopped, the goal and time left, and Snooze. The
-/// island's card is 208pt wide against 344 on a notch, so when the full row
-/// does not fit it drops the goal and shortens the button.
+/// The card: what was stopped, the goal and time left, and Snooze. When
+/// the full row does not fit, it drops the goal and shortens the button.
 struct FocusBlockedCard: View {
     let title: String
     let detail: String
@@ -655,19 +591,19 @@ struct FocusBlockedCard: View {
 
     /// The short row truncates a long name rather than overflowing.
     private func row(detail: String, button: String?, last: Bool) -> some View {
-        HStack(alignment: .center, spacing: DroppySpacing.md) {
+        HStack(alignment: .center, spacing: NidusSpacing.md) {
             if !last { SettingsTile(symbol: "nosign", size: 28) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
                     .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 Text(verbatim: detail)
                     .font(.system(size: 12))
-                    .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                    .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
             .truncationMode(.tail)
-            Spacer(minLength: DroppySpacing.sm)
+            Spacer(minLength: NidusSpacing.sm)
             if let button {
                 Button(button, action: snooze)
                     .buttonStyle(.bordered)
@@ -764,16 +700,11 @@ extension NidusModel {
     /// the renders.
     func presentSnoozeWaitHUD(_ wait: SnoozeWait, asOf frozen: Date? = nil) {
         guard let host else { return }
-        let request = DropletHUDRequest(
+        let request = HUDRequest(
             id: Self.snoozeWaitHUDID,
             duration: wait.cardDuration,
-            priority: .normal,
-            accessibilityLabel: wait.spokenSummary,
-            isExpanded: true,
-            expandedContentHeight: 96
-        ) {
-            FocusHUDStrip(symbol: "hourglass", text: wait.name)
-        } expanded: { [weak self] in
+            accessibilityLabel: wait.spokenSummary
+        ) { [weak self] in
             FocusSnoozeWaitCard(wait: wait, asOf: frozen,
                                 snooze: { self?.confirmSnooze(wait) },
                                 cancel: { self?.cancelSnoozeWait() })
@@ -830,22 +761,22 @@ struct FocusSnoozeWaitCard: View {
 
     private func content(at now: Date) -> some View {
         let left = wait.secondsLeft(at: now)
-        return VStack(alignment: .leading, spacing: DroppySpacing.sm) {
-            HStack(alignment: .center, spacing: DroppySpacing.md) {
+        return VStack(alignment: .leading, spacing: NidusSpacing.sm) {
+            HStack(alignment: .center, spacing: NidusSpacing.md) {
                 FocusCountdownRing(secondsLeft: left, progress: wait.progress(at: now))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: wait.title)
                         .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                        .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                     Text(verbatim: wait.detail(at: now))
                         .font(.system(size: 12))
-                        .foregroundStyle(AdaptiveColors.notchSurfaceSecondaryText)
+                        .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 }
                 .lineLimit(1)
                 .truncationMode(.tail)
                 Spacer(minLength: 0)
             }
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 Spacer(minLength: 0)
                 Button("Never mind", action: cancel)
                     .buttonStyle(.bordered)
@@ -880,7 +811,7 @@ struct FocusCountdownRing: View {
                     .rotationEffect(.degrees(-90))
                 Text("\(secondsLeft)")
                     .font(.system(size: 12, weight: .semibold).monospacedDigit())
-                    .foregroundStyle(AdaptiveColors.notchSurfacePrimaryText)
+                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
             } else {
                 Circle()
                     .fill(FocusPalette.clay.gradient)

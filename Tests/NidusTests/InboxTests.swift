@@ -912,7 +912,7 @@ struct InboxSurfaceTests {
 struct BlockPageSaveTests {
     private func installed() throws -> (html: String, page: BlockPage, folder: URL) {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("nidus-blockpage-\(UUID().uuidString)")
-        let page = BlockPage(directory: folder, dropletID: "focus")
+        let page = BlockPage(directory: folder)
         try page.install()
         return (try String(contentsOf: page.fileURL, encoding: .utf8), page, folder)
     }

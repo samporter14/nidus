@@ -8,7 +8,7 @@
 //  here schedules anything: the app asks when it launches, wakes or is
 //  opened, and this answers.
 //
-//  No DroppyKit import: this file also compiles into the tests.
+//  Shared by the app and its tests.
 //
 
 import Foundation

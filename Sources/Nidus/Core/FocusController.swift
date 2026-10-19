@@ -7,8 +7,7 @@
 //  sleep, and undoes everything when the session pauses or ends. Between
 //  sessions the clock is stopped and nothing runs at all.
 //
-//  Everything start() sets up, stop() tears down. No DroppyKit import: the
-//  app wraps this.
+//  Everything start() sets up, stop() tears down. The app wraps this.
 //
 
 import AppKit
@@ -125,8 +124,8 @@ final class FocusController: ObservableObject {
     private var shortcutChain: Task<Void, Never>?
 
     /// `now` is the engine's clock; tests move it by hand.
-    init(directory: URL, dropletID: String = "focus", now: @escaping () -> Date = Date.init) {
-        blockPage = BlockPage(directory: directory, dropletID: dropletID)
+    init(directory: URL, now: @escaping () -> Date = Date.init) {
+        blockPage = BlockPage(directory: directory)
         browsers = BrowserBlocker(blockPage: blockPage)
         engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")), now: now)
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")

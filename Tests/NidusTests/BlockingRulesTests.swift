@@ -67,11 +67,11 @@ struct BlockPageTests {
     @Test func installWritesThePageWithTheSnoozeLink() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("focus-page-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let page = BlockPage(directory: dir, dropletID: "focus")
+        let page = BlockPage(directory: dir)
         try page.install()
         let html = try String(contentsOf: page.fileURL, encoding: .utf8)
         #expect(html.contains("nidus://snooze?site="))
-        #expect(!html.contains("{{DROPLET}}"))
+        #expect(!html.contains("{{TOKEN}}"))
     }
 }
 
@@ -142,9 +142,17 @@ struct AppBlockerRuleTests {
         let blocker = AppBlocker(mode: .allow(["com.apple.dt.Xcode"]), action: .hide)
         #expect(!blocker.isBlocked("com.apple.dt.Xcode"))
         #expect(blocker.isBlocked("com.tinyspeck.slackmacgap"))
-        for exempt in ["com.apple.finder", "iordv.Droppy", "iordv.DroppyPlayground", "com.apple.systempreferences"] {
+        for exempt in ["com.apple.finder", "com.apple.systempreferences"] {
             #expect(!blocker.isBlocked(exempt), "\(exempt) must never be quit")
         }
+    }
+
+    @Test(arguments: ["iordv.Droppy", "iordv.DroppyPlayground"])
+    func formerHostsFollowTheSelectedRules(_ bundleID: String) {
+        #expect(AppBlocker.isBlocked(bundleID, under: .block([bundleID])))
+        #expect(!AppBlocker.isBlocked(bundleID, under: .block([])))
+        #expect(AppBlocker.isBlocked(bundleID, under: .allow([])))
+        #expect(!AppBlocker.isBlocked(bundleID, under: .allow([bundleID])))
     }
 
     @Test func exemptionsWinEvenWhenListed() {

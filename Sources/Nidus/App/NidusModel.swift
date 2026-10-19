@@ -13,9 +13,6 @@ import SwiftUI
 /// Blocks distracting apps and websites for a set time.
 @MainActor
 final class NidusModel: NSObject, ObservableObject {
-    /// The block page's folder name and the id the core was written with.
-    nonisolated static let id = "focus"
-
     private(set) var host: NidusHost?
     private(set) var controller: FocusController?
     private var subscriptions: Set<AnyCancellable> = []
@@ -95,8 +92,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     func activate(host: NidusHost) {
         self.host = host
-        let controller = FocusController(directory: host.environment.containerDirectory,
-                                         dropletID: Self.id)
+        let controller = FocusController(directory: host.environment.containerDirectory)
         self.controller = controller
         // A demo or render draws sample sessions and breaks, some with rules
         // of their own: none of them may quit an app or ask a browser.
@@ -151,11 +147,9 @@ final class NidusModel: NSObject, ObservableObject {
         publishFocus()
         startWeeklyRecap()
 
-        if host.isGranted(.menuBar) {
-            let menuBar = FocusMenuBar(model: self)
-            menuBar.start()
-            self.menuBar = menuBar
-        }
+        let menuBar = FocusMenuBar(model: self)
+        menuBar.start()
+        self.menuBar = menuBar
         startSchedules()
 
         if let harnessScenario {

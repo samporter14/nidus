@@ -589,7 +589,7 @@ struct ResumeResourceTests {
     }
 
     @Test func theNotesAddNoNetworkReachAndHaveNoWebAddressInCode() {
-        let names = Set(NoNetworkTests.dropletSources.map(\.lastPathComponent))
+        let names = Set(NoNetworkTests.appSources.map(\.lastPathComponent))
         #expect(names.isSuperset(of: ["ResumeNotes.swift", "ResumeNote.swift", "ResumeResources.swift", "FocusProjects.swift",
                                       "ProjectSummary.swift", "FocusProjectViews.swift"]))
     }

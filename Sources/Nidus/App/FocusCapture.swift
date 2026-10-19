@@ -233,8 +233,8 @@ struct FocusCaptureView: View {
     @FocusState private var focused: Field?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: DroppySpacing.md) {
-            HStack(spacing: DroppySpacing.md) {
+        VStack(alignment: .leading, spacing: NidusSpacing.md) {
+            HStack(spacing: NidusSpacing.md) {
                 SettingsTile(symbol: "tray.and.arrow.down", size: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Save for later")
@@ -246,7 +246,7 @@ struct FocusCaptureView: View {
                 .lineLimit(1)
                 Spacer(minLength: 0)
             }
-            VStack(alignment: .leading, spacing: DroppySpacing.sm) {
+            VStack(alignment: .leading, spacing: NidusSpacing.sm) {
                 TextField("What's on your mind?", text: $draft.text)
                     .textFieldStyle(.roundedBorder)
                     .controlSize(.large)
@@ -266,13 +266,13 @@ struct FocusCaptureView: View {
                     .onChange(of: draft.link) { _, _ in draft.note = nil }
                     .accessibilityLabel("Link, optional")
             }
-            HStack(spacing: DroppySpacing.sm) {
+            HStack(spacing: NidusSpacing.sm) {
                 footnote
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)
-                Spacer(minLength: DroppySpacing.sm)
+                Spacer(minLength: NidusSpacing.sm)
                 Button("Cancel", action: cancel)
                     .buttonStyle(.bordered)
                     .keyboardShortcut(.cancelAction)
@@ -336,7 +336,7 @@ struct ShortcutRecorder: View {
     @State private var recorder = ShortcutRecording()
 
     var body: some View {
-        HStack(spacing: DroppySpacing.sm) {
+        HStack(spacing: NidusSpacing.sm) {
             Button {
                 recorder.isRecording ? recorder.stop() : recorder.start { shortcut = $0 }
             } label: {
