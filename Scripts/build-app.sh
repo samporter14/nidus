@@ -24,6 +24,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Nidus"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# The build number is the commit count: it only goes up, so every build
+# installed reads differently in Finder and About, and it names its commit.
+BUILD=$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)
+/usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD" "$APP/Contents/Info.plist"
 
 # The icon: an Icon Composer document, Nidus's own in Solanum's product
 # family (amber tile, the broken ring, five ribbons; Scripts/render-icon.swift
