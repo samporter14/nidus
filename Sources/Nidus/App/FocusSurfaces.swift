@@ -203,6 +203,9 @@ extension NidusModel {
         let cards = self.cards
         cards.finishAnswer = nil
         cards.nextStep = nextStep
+        let activitySessionID = controller?.history.sessions.last.flatMap { entry in
+            entry.start == final.startedAt ? entry.id : nil
+        }
         let focused = final.focusedTime ?? 0
         let minutes = Int((focused / 60).rounded())
         let time = minutes < 1 ? "Under a minute" : FocusFormat.duration(minutes: minutes)
@@ -275,6 +278,12 @@ extension NidusModel {
                         self?.host?.hud.dismiss(id: Self.completedHUDID)
                     },
                     nextStep: nextStep,
+                    openActivity: activitySessionID.map { sessionID in
+                        { [weak self] in
+                            self?.openActivity(sessionID: sessionID)
+                            self?.host?.hud.dismiss(id: Self.completedHUDID)
+                        }
+                    },
                     answer: { self?.answerFinished($0) },
                     chooseDocument: { self?.chooseNextStepDocument() },
                     addWebAddress: { self?.addNextStepWebAddress() },
@@ -324,6 +333,7 @@ struct FocusWrapUpCard: View {
     /// The next step being written, under the question once it is answered
     /// (or from the start when there is no question).
     var nextStep: NextStepSession? = nil
+    var openActivity: (() -> Void)? = nil
     var answer: (Bool) -> Void = { _ in }
     var chooseDocument: () -> Void = {}
     var addWebAddress: () -> Void = {}
@@ -374,6 +384,15 @@ struct FocusWrapUpCard: View {
             if let nextStep, question == nil || reply != nil {
                 NextStepRow(step: nextStep, chooseDocument: chooseDocument, addWebAddress: addWebAddress, done: finishNextStep)
                     .transition(.opacity)
+            }
+            if let openActivity {
+                Button(action: openActivity) {
+                    Label("View session activity", systemImage: "chart.bar.xaxis")
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(FocusPalette.clay)
+                .padding(.leading, 28 + NidusSpacing.md)
             }
             if saved > 0 { FocusSavedForLaterRow(count: saved, open: openInbox) }
         }

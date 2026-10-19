@@ -325,6 +325,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             setups.forEach(menu.addItem)
             sequences.forEach(menu.addItem)
             menu.addItem(.separator())
+            menu.addItem(action("Activity…", #selector(openActivity)))
             menu.addItem(action("Stats…", #selector(openStats)))
             menu.addItem(action("Nidus settings…", #selector(openSettings)))
         }
@@ -351,6 +352,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     @objc private func addNextStep() { model?.focusNextStep() }
     @objc private func endBreak() { model?.endBreak() }
     @objc private func openSettings() { model?.openSettings() }
+    @objc private func openActivity() { model?.openActivity() }
     @objc private func openStats() { model?.openStats() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

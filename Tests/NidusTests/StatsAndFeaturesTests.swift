@@ -38,6 +38,7 @@ struct CounterTests {
         h.engine.recordBlock("youtube.com", name: "youtube.com")
         h.engine.recordQuit("com.tinyspeck.slackmacgap", name: "Slack")
         h.engine.recordQuit("com.tinyspeck.slackmacgap", name: "Slack")
+        h.clock.advance(90) // Observed time cannot precede elapsed focus time.
         h.engine.recordForeground("com.apple.dt.Xcode", name: "Xcode", seconds: 90)
         h.engine.checkpoint()
 

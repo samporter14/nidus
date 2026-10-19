@@ -344,6 +344,7 @@ final class NidusModel: NSObject, ObservableObject {
         guard let controller else { return }
         switch scenario {
         case "idle", "stats": return controller.end()
+        case "activity-filled": controller.end(); return seedActivityPreview()
         case "stats-filled": controller.end(); return seedSampleHistory()
         case "recap": controller.end(); return presentSampleRecap()
         case "break":
@@ -738,6 +739,7 @@ extension NidusModel {
         controller?.appAction = hidesInsteadOfQuitting ? .hide : .terminate
         controller?.snoozeLength = TimeInterval(snoozeMinutes * 60)
         controller?.recordsHistory = recordsHistory
+        applyActivitySettings()
         controller?.breakLength = TimeInterval(breakMinutes * 60)
     }
 
@@ -862,16 +864,13 @@ extension NidusModel {
     /// Writes `focus.json` beside the session and says so on this Mac
     /// (`local.sam.nidus.focus`), for other Solanum apps: Bench holds its
     /// "Finished" cards while a session runs. Only whether one runs and until
-    /// when; never the goal or what is blocked. Paused or on a break is not
-    /// focusing. Demos and captures publish nothing.
+    /// when; never the goal, activity, or what is blocked. System lock/sleep
+    /// pauses publish away so Capsid keeps holding cards; manual pauses and
+    /// breaks release them. Demos and captures publish nothing.
     func publishFocus(quitting: Bool = false) {
         publishPlaqueFocus(quitting: quitting)
         guard !Demo.isActive, let host else { return }
-        let focusing = !quitting && isActive && !isPaused
-        let until: Double? = focusing && !isOpenEnded
-            ? Date().addingTimeInterval(remaining).timeIntervalSince1970.rounded()
-            : nil
-        let state = FocusFile(version: 1, focusing: focusing, until: until)
+        let state = FocusFile.snapshot(session: engine?.session, quitting: quitting)
         guard state != lastPublishedFocus else { return }
         lastPublishedFocus = state
         let url = host.environment.containerDirectory.appendingPathComponent("focus.json")
@@ -928,5 +927,19 @@ struct FocusFile: Codable, Equatable {
     var focusing: Bool
     /// Seconds since 1970; nil for an open-ended session or when not focusing.
     var until: Double?
+    /// A lock/sleep pause keeps the session's blocking in force. Capsid
+    /// already understands this optional v1 field; old consumers ignore it.
+    var away: Bool? = nil
+
+    static func snapshot(session: SessionState?, quitting: Bool = false) -> FocusFile {
+        guard !quitting, let session else { return FocusFile(version: 1, focusing: false) }
+        switch session.phase {
+        case .running(let deadline):
+            return FocusFile(version: 1, focusing: true,
+                             until: session.plan.duration == nil ? nil : deadline.timeIntervalSince1970.rounded())
+        case .paused(_, let bySleep):
+            return FocusFile(version: 1, focusing: false, away: bySleep ? true : nil)
+        }
+    }
 }
 

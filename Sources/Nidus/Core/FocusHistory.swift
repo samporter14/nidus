@@ -28,6 +28,12 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
     var quits: [String: Int]
     /// App to seconds frontmost while the session ran.
     var foreground: [String: TimeInterval]
+    /// Optional opt-in breakdown; nil for legacy or untracked sessions.
+    var activity: [FocusActivity]?
+    /// Ordered observed intervals; nil for older or untracked sessions.
+    var activitySegments: [FocusActivitySegment]?
+    /// The oldest observations were dropped to keep the local file bounded.
+    var activityTimelineTruncated: Bool?
     /// Display names for every key above.
     var names: [String: String]
     /// Whether the goal was finished, as answered on the wrap-up card. nil
@@ -59,6 +65,9 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
         blocks = state.blocks
         quits = state.quitCounts
         foreground = state.foreground
+        activity = state.activity
+        activitySegments = state.activitySegments
+        activityTimelineTruncated = state.activityTimelineTruncated
         names = state.names
         projectID = state.plan.projectID
         projectName = state.plan.projectName
@@ -68,7 +77,9 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
 
     init(start: Date, end: Date, focused: TimeInterval, planned: TimeInterval?, outcome: SessionEndReason, goal: String = "",
          blocks: [String: Int] = [:], quits: [String: Int] = [:], foreground: [String: TimeInterval] = [:],
-         names: [String: String] = [:], finished: Bool? = nil, projectID: UUID? = nil, projectName: String? = nil) {
+         names: [String: String] = [:], finished: Bool? = nil, projectID: UUID? = nil, projectName: String? = nil,
+         activity: [FocusActivity]? = nil, activitySegments: [FocusActivitySegment]? = nil,
+         activityTimelineTruncated: Bool? = nil) {
         self.projectID = projectID
         self.projectName = projectName
         self.finished = finished
@@ -81,15 +92,23 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
         self.blocks = blocks
         self.quits = quits
         self.foreground = foreground
+        self.activity = activity
+        self.activitySegments = activitySegments
+        self.activityTimelineTruncated = activityTimelineTruncated
         self.names = names
     }
+
+    /// Nil means the session predates ordered observations. Counts cover only
+    /// retained observed intervals when the bounded timeline was truncated.
+    var activitySwitchCount: Int? { activitySegments.map(ActivityTimeline.switchCount) }
+    var longestObservedStretch: TimeInterval? { activitySegments.map(ActivityTimeline.longestStretch) }
 
     static let minimumFocus: TimeInterval = 60
 }
 
 extension SessionEntry {
     enum CodingKeys: String, CodingKey {
-        case id, start, end, focused, planned, outcome, goal, blocks, quits, foreground, names, finished
+        case id, start, end, focused, planned, outcome, goal, blocks, quits, foreground, activity, activitySegments, activityTimelineTruncated, names, finished
         case projectID, projectName, setupID, sequenceStep
     }
 
@@ -107,6 +126,9 @@ extension SessionEntry {
         blocks = try c.decode([String: Int].self, forKey: .blocks)
         quits = try c.decode([String: Int].self, forKey: .quits)
         foreground = try c.decode([String: TimeInterval].self, forKey: .foreground)
+        activity = c.decodeTolerant([FocusActivity].self, forKey: .activity)
+        activitySegments = c.decodeTolerant([FocusActivitySegment].self, forKey: .activitySegments)
+        activityTimelineTruncated = c.decodeTolerant(Bool.self, forKey: .activityTimelineTruncated)
         names = try c.decode([String: String].self, forKey: .names)
         finished = try c.decodeIfPresent(Bool.self, forKey: .finished)
         projectID = c.decodeTolerant(UUID.self, forKey: .projectID)
@@ -167,6 +189,27 @@ final class FocusHistory {
         sessions.append(entry)
         if sessions.count > Self.limit { sessions.removeFirst(sessions.count - Self.limit) }
         save()
+    }
+
+    /// Takes document and conversation names out of every finished session,
+    /// keeping the time, apps, sites and timeline boundaries. Returns how many
+    /// sessions had names. Nothing is written when none did.
+    @discardableResult
+    func removeActivityTitles() -> Int {
+        var changed = 0
+        for index in sessions.indices
+        where ActivityRedaction.hasTitles(sessions[index].activity, sessions[index].activitySegments) {
+            sessions[index].activity = sessions[index].activity.map(ActivityRedaction.withoutTitles)
+            sessions[index].activitySegments = sessions[index].activitySegments.map(ActivityRedaction.withoutTitles)
+            changed += 1
+        }
+        if changed > 0 { save() }
+        return changed
+    }
+
+    /// Whether any finished session still holds a name.
+    var hasActivityTitles: Bool {
+        sessions.contains { ActivityRedaction.hasTitles($0.activity, $0.activitySegments) }
     }
 
     /// Records the answer to "did you finish?" for one session.

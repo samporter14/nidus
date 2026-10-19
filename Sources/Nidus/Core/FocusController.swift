@@ -11,6 +11,7 @@
 //
 
 import AppKit
+import ApplicationServices
 import Combine
 
 /// Something the session just stopped, for the "blocked" HUD.
@@ -82,7 +83,34 @@ final class FocusController: ObservableObject {
 
     /// Finished sessions, for the stats. Recorded only while this is on.
     let history: FocusHistory
-    var recordsHistory = true
+    var recordsHistory = true {
+        didSet {
+            guard oldValue != recordsHistory else { return }
+            if !recordsHistory { invalidateActivityProbe(); engine.clearCurrentActivity() }
+        }
+    }
+    /// Activity is opt-in and stays off in demos and when history is off.
+    var activityTrackingEnabled = false {
+        didSet {
+            guard oldValue != activityTrackingEnabled else { return }
+            invalidateActivityProbe()
+            if !activityTrackingEnabled { engine.clearCurrentActivity() }
+        }
+    }
+    var activityDocumentTitlesEnabled = false {
+        didSet {
+            guard oldValue != activityDocumentTitlesEnabled else { return }
+            invalidateActivityProbe()
+            if !activityDocumentTitlesEnabled { engine.removeCurrentActivityTitles() }
+        }
+    }
+    var activityExcludedApps: Set<String> = [] {
+        didSet {
+            guard oldValue != activityExcludedApps else { return }
+            invalidateActivityProbe()
+            engine.excludeCurrentActivity(appIDs: activityExcludedApps)
+        }
+    }
     /// Tells the stats page something was added.
     @Published private(set) var historyVersion = 0
 
@@ -95,6 +123,14 @@ final class FocusController: ObservableObject {
     /// The next sweep's redirects are tabs put back at quit; see above.
     private(set) var quietsNextSweep = false
     private let browserQueue = DispatchQueue(label: "focus.browsers", qos: .utility)
+    private let activityQueue = DispatchQueue(label: "focus.activity", qos: .utility)
+    private var activityProbeInFlight = false
+    private var activityProbeGeneration = 0
+    private var activityProbeAt: Date?
+    private var activityDetail: ActivityDetail?
+    private var activityDetailApp: (id: String, pid: pid_t)?
+    private var activityDetailAt: Date?
+    private var lastAppActivation: Date?
     private var sweepInFlight = false
     private lazy var appBlocker = AppBlocker(mode: .block([]), action: .terminate) { [weak self] app in
         self?.appWasBlocked(app)
@@ -106,7 +142,6 @@ final class FocusController: ObservableObject {
     /// When each item was last reported, so a relaunch loop is one HUD, not ten.
     private var lastReported: [String: Date] = [:]
     /// When the frontmost app was last credited, and ticks since a save.
-    private var lastForegroundTick: Date?
     private var ticksSinceCheckpoint = 0
     /// Snoozes already warned about, by the end they were warned for, so a
     /// snooze taken again is warned about again.
@@ -140,7 +175,9 @@ final class FocusController: ObservableObject {
         try? blockPage.install()
         engine.onEvent = { [weak self] event in self?.handle(event) }
         now = Date()
-        engine.restore()
+        engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
+                       allowTitles: activityDocumentTitlesEnabled,
+                       excludedApps: activityExcludedApps)
         if FileManager.default.fileExists(atPath: tabsRestoredMarker.path) {
             try? FileManager.default.removeItem(at: tabsRestoredMarker)
             quietsNextSweep = engine.session != nil || engine.isOnBreak
@@ -153,6 +190,12 @@ final class FocusController: ObservableObject {
             },
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.systemDidWake() }
+            },
+            center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.lastAppActivation = Date()
+                    self?.invalidateActivityProbe()
+                }
             },
         ]
         let distributed = DistributedNotificationCenter.default()
@@ -189,6 +232,7 @@ final class FocusController: ObservableObject {
             }
         }
         isStarted = false
+        invalidateActivityProbe()
         updateClock()
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         observers.removeAll()
@@ -256,9 +300,25 @@ final class FocusController: ObservableObject {
         historyVersion += 1
     }
 
+    /// Names out of history and out of the running session; times stay.
+    func removeActivityTitles() {
+        history.removeActivityTitles()
+        engine.removeCurrentActivityTitles()
+        invalidateActivityProbe()
+        historyVersion += 1
+    }
+
     func clearHistory() {
         history.clear()
+        invalidateActivityProbe()
+        engine.clearCurrentActivity()
         historyVersion += 1
+    }
+
+    /// Called only from an explicit Settings action; never from a timer.
+    @discardableResult
+    func requestActivityAccessibilityAccess() -> Bool {
+        AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary)
     }
 
     // MARK: Commands
@@ -306,22 +366,85 @@ final class FocusController: ObservableObject {
     /// Credits the frontmost app with the time since the last tick. A gap
     /// longer than a few seconds (a sleep, a stall) is not counted.
     private func creditForeground(since previous: Date) {
-        guard engine.isRunning else { return }
-        let seconds = now.timeIntervalSince(previous)
+        guard recordsHistory, activityTrackingEnabled, !blocksNothing, engine.isRunning else { return }
+        var seconds = now.timeIntervalSince(previous)
+        if let lastAppActivation { seconds = min(seconds, max(0, now.timeIntervalSince(lastAppActivation))) }
         guard seconds > 0, seconds < 5,
               let app = NSWorkspace.shared.frontmostApplication, app.activationPolicy == .regular,
-              let bundleID = app.bundleIdentifier, !Self.notWork.contains(bundleID) else { return }
-        engine.recordForeground(bundleID, name: app.localizedName ?? bundleID, seconds: seconds)
+              let bundleID = app.bundleIdentifier, !Self.notWork.contains(bundleID),
+              !activityExcludedApps.contains(bundleID) else {
+            engine.breakActivityContinuity(at: now)
+            return
+        }
+        let name = app.localizedName ?? bundleID
+        engine.initializeActivity()
+        if ActivityProbe.needsProbe(bundleID, titles: activityDocumentTitlesEnabled) { probeActivity(for: app, id: bundleID) }
+        let detail: ActivityDetail?
+        if let cached = activityDetailApp, cached.id == bundleID, cached.pid == app.processIdentifier,
+           let at = activityDetailAt, now.timeIntervalSince(at) < 5 {
+            detail = activityDetail
+        } else {
+            detail = nil
+        }
+        engine.recordActivity(appID: bundleID, appName: name,
+                              site: detail?.site,
+                              title: activityDocumentTitlesEnabled ? detail?.title : nil,
+                              seconds: seconds, sampledAt: now)
+    }
+
+    private func invalidateActivityProbe() {
+        activityProbeGeneration &+= 1
+        activityDetail = nil
+        activityDetailApp = nil
+        activityDetailAt = nil
+        activityProbeAt = nil
+    }
+
+    /// At most one selected-tab or focused-window read every four seconds.
+    /// A result is usable only for the same session and same foreground PID.
+    private func probeActivity(for app: NSRunningApplication, id: String) {
+        guard !activityProbeInFlight,
+              activityProbeAt.map({ now.timeIntervalSince($0) >= 4 }) ?? true,
+              let startedAt = engine.session?.startedAt else { return }
+        activityProbeInFlight = true
+        activityProbeAt = now
+        let generation = activityProbeGeneration
+        let pid = app.processIdentifier
+        let titles = activityDocumentTitlesEnabled
+        activityQueue.async { [weak self] in
+            let detail = ActivityProbe.detail(bundleID: id, pid: pid, titles: titles)
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    self.activityProbeInFlight = false
+                    guard self.activityProbeGeneration == generation,
+                          self.recordsHistory, self.activityTrackingEnabled, !self.blocksNothing,
+                          self.engine.isRunning, self.engine.session?.startedAt == startedAt,
+                          self.activityDocumentTitlesEnabled == titles,
+                          !self.activityExcludedApps.contains(id),
+                          let front = NSWorkspace.shared.frontmostApplication,
+                          front.bundleIdentifier == id, front.processIdentifier == pid else { return }
+                    self.activityDetail = detail
+                    self.activityDetailApp = (id, pid)
+                    self.activityDetailAt = Date()
+                }
+            }
+        }
     }
 
     /// Frontmost without being worked in: the lock screen and the like.
     private static let notWork: Set<String> = ["com.apple.loginwindow", "com.apple.ScreenSaver.Engine"]
 
     private func handle(_ event: SessionEvent) {
+        switch event {
+        case .started, .ended, .paused, .resumed: invalidateActivityProbe()
+        default: break
+        }
         var opened: (WorkspaceReport, SessionPlan)?
         switch event {
         case .started:
             guard let plan = engine.session?.plan else { break }
+            if recordsHistory && activityTrackingEnabled && !blocksNothing { engine.initializeActivity() }
             // Apps and the start Shortcut run at every work start, after a
             // break too (how Apple Focus comes back on). Documents, folders
             // and pages open once, at the start the person asked for: not

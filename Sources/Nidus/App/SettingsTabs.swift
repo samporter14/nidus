@@ -11,7 +11,7 @@
 import Foundation
 
 enum SettingsTab: String, CaseIterable, Sendable {
-    case general, blocking, setups, schedules, stats, about
+    case general, blocking, setups, schedules, activity, stats, about
 
     /// The label under the toolbar icon, and the window's title while it is
     /// the one showing.
@@ -21,6 +21,7 @@ enum SettingsTab: String, CaseIterable, Sendable {
         case .blocking: "Blocking"
         case .setups: "Setups"
         case .schedules: "Schedules"
+        case .activity: "Activity"
         case .stats: "Stats"
         case .about: "About"
         }
@@ -32,6 +33,7 @@ enum SettingsTab: String, CaseIterable, Sendable {
         case .blocking: "nosign"
         case .setups: "square.stack"
         case .schedules: "calendar.badge.clock"
+        case .activity: "chart.xyaxis.line"
         case .stats: "chart.bar.xaxis"
         case .about: "info.circle"
         }
@@ -73,6 +75,7 @@ struct SettingsRoute: Equatable, Sendable {
         // A tab's own id first: "setups" is the Setups tab, and "setup:<id>"
         // (checked below, with its colon) is one setup inside it.
         if let tab = SettingsTab(rawValue: pageID) { return SettingsRoute(tab: tab, pushes: false) }
+        if pageID.hasPrefix("activity:") { return SettingsRoute(tab: .activity, pushes: true) }
         if pageID == NidusModel.launchAppsPageID { return SettingsRoute(tab: .general, pushes: true) }
         if pageID == NidusModel.inboxPageID { return SettingsRoute(tab: .general, pushes: true) }
         if pageID.hasPrefix(NidusModel.categoryPagePrefix) { return SettingsRoute(tab: .blocking, pushes: true) }

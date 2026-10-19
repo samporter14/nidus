@@ -1,3 +1,7 @@
+> Activity V2 follow-up: new insights, local Claude Science recognition and Capsid task metadata are implemented and tested. Nidus build 11 and Capsid 0.7.3/build 36 are installed; further V2 live testing was stopped at the user’s request. See [the current Activity handoff](activity-claude-handoff.md).
+
+> **Latest installed update (October 19, 2026):** Activity V1 and the Capsid away-status compatibility fix supersede this document's installed build identity. See [activity-claude-handoff.md](activity-claude-handoff.md) for build 10, validation and remaining access checks. The Brick setup and real-phone evidence below remain valid; the phone automation was not changed.
+
 # Claude Code handoff: Brick automation and Nidus UI
 
 ## Current state

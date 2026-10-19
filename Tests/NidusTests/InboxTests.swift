@@ -873,7 +873,7 @@ struct InboxShortcutTests {
 struct InboxSurfaceTests {
     @Test func theInboxIsAPageInsideGeneralNotATab() {
         #expect(SettingsRoute.resolve(NidusModel.inboxPageID) == SettingsRoute(tab: .general, pushes: true))
-        #expect(SettingsTab.allCases.map(\.rawValue) == ["general", "blocking", "setups", "schedules", "stats", "about"])
+        #expect(SettingsTab.allCases.map(\.rawValue) == ["general", "blocking", "setups", "schedules", "activity", "stats", "about"])
         let model = NidusModel()
         #expect(model.makeSettingsPage(id: NidusModel.inboxPageID) != nil)
     }

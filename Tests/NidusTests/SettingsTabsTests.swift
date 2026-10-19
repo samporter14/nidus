@@ -26,6 +26,8 @@ struct SettingsRouteTests {
         ("setups", .setups, false),
         ("schedules", .schedules, false),
         ("stats", .stats, false),
+        ("activity", .activity, false),
+        ("activity:sample", .activity, true),
         ("about", .about, false),
         // Pages inside the others.
         (NidusModel.launchAppsPageID, .general, true),
@@ -98,7 +100,7 @@ struct SettingsRouteTests {
 @MainActor
 struct SettingsTabTests {
     @Test func theTabsAreInTheOrderOfTheToolbar() {
-        #expect(SettingsTab.allCases == [.general, .blocking, .setups, .schedules, .stats, .about])
+        #expect(SettingsTab.allCases == [.general, .blocking, .setups, .schedules, .activity, .stats, .about])
     }
 
     @Test func eachTabHasAnItsOwnNameAndASymbolThatExists() {
@@ -142,7 +144,7 @@ struct SettingsTabTests {
         // How Schedules stayed out until its page existed, and came in with
         // no other change.
         let without = SettingsTab.available { $0 != .schedules }
-        #expect(without == [.general, .blocking, .setups, .stats, .about])
+        #expect(without == [.general, .blocking, .setups, .activity, .stats, .about])
         #expect(SettingsTab.available { _ in true } == SettingsTab.allCases)
     }
 

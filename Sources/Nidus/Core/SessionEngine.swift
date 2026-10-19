@@ -103,6 +103,15 @@ struct SessionState: Codable, Equatable, Sendable {
     var quitCounts: [String: Int] = [:]
     /// Seconds each app spent frontmost while the session ran.
     var foreground: [String: TimeInterval] = [:]
+    /// Opt-in activity detail. nil means an older or untracked session.
+    var activity: [FocusActivity]?
+    /// Ordered local observations. nil means an older or untracked session.
+    var activitySegments: [FocusActivitySegment]?
+    var activityTimelineTruncated: Bool? = nil
+    /// Separates observations across pauses and process relaunches.
+    var activityContinuity: Int = 0
+    /// The first moment a new running span may claim as observed.
+    var activityContinuityStartedAt: Date?
     /// Display names for the keys above.
     var names: [String: String] = [:]
     /// Focused time as of the last checkpoint: all that is known of a session
@@ -318,10 +327,16 @@ final class SessionEngine {
     /// Loads the saved record. A session whose deadline passed while Nidus was
     /// not running ends now, with `.expiredWhileAway`, so the owner still
     /// restores what it changed.
-    func restore() {
+    func restore(allowActivity: Bool = true, allowTitles: Bool = true, excludedApps: Set<String> = []) {
         guard let record = store?.load() else { return }
         lastPlan = record.lastPlan
         session = record.session
+        // The interval while Nidus was closed was not observed, even when
+        // two recorded dates might happen to touch at the clock's precision.
+        if session?.activitySegments != nil {
+            session?.activityContinuity += 1
+            session?.activityContinuityStartedAt = now()
+        }
         // A break that ran out while Nidus was away: see `tick()`.
         breakState = record.pendingBreak
         sequence = record.sequence
@@ -333,6 +348,14 @@ final class SessionEngine {
             if !run.steps.indices.contains(run.index) { sequence = nil }
             if let session, session.plan.sequenceStep?.runID != run.id { sequence = nil }
             if session == nil, let pending = breakState, pending.plan.sequenceStep?.runID != run.id { sequence = nil }
+        }
+        // Apply current privacy choices before an overdue session can finish
+        // and enter history. Settings are loaded before the controller starts.
+        if !allowActivity {
+            clearCurrentActivity()
+        } else {
+            if !allowTitles { removeCurrentActivityTitles() }
+            excludeCurrentActivity(appIDs: excludedApps)
         }
         guard var session else { return }
         switch session.phase {
@@ -388,6 +411,7 @@ final class SessionEngine {
     func resume() {
         guard var session, case .paused(let remaining, _) = session.phase else { return }
         session.phase = .running(deadline: now().addingTimeInterval(remaining))
+        session.activityContinuityStartedAt = now()
         self.session = session
         commit(.resumed)
     }
@@ -463,10 +487,180 @@ final class SessionEngine {
     /// checkpoint or event saves it, so a once-a-second caller does not
     /// write the file once a second.
     func recordForeground(_ bundleID: String, name: String, seconds: TimeInterval) {
-        guard var session, case .running = session.phase, seconds > 0 else { return }
-        session.foreground[bundleID, default: 0] += seconds
+        guard var session, case .running = session.phase, seconds.isFinite, seconds > 0,
+              let elapsed else { return }
+        let credited = session.foreground.values.reduce(0, +)
+        let amount = min(seconds, max(0, elapsed - credited))
+        guard amount > 0 else { return }
+        session.foreground[bundleID, default: 0] += amount
         session.names[bundleID] = name
         self.session = session
+    }
+
+    /// Makes a tracked session distinguishable from legacy history even if
+    /// no app qualifies for a row. Called only after the user enables tracking.
+    func initializeActivity() {
+        guard var session else { return }
+        if session.activity == nil { session.activity = [] }
+        if session.activitySegments == nil { session.activitySegments = [] }
+        self.session = session
+    }
+
+    /// A tracked tick that could not identify a qualifying frontmost app
+    /// separates the observations on either side of it.
+    func breakActivityContinuity(at sampledAt: Date? = nil) {
+        guard var session, case .running = session.phase, session.activitySegments != nil else { return }
+        session.activityContinuity += 1
+        session.activityContinuityStartedAt = sampledAt ?? now()
+        self.session = session
+    }
+
+    /// Credits a single observed interval, never more than the focused time
+    /// available at this instant. This also updates the historical app totals
+    /// once, so detail and aggregate cannot double-count a tick.
+    func recordActivity(appID: String, appName: String, site: String? = nil,
+                        title: String? = nil, seconds: TimeInterval, sampledAt: Date? = nil) {
+        guard var session, case .running(let deadline) = session.phase,
+              seconds.isFinite, seconds > 0, !appID.isEmpty,
+              let elapsed else { return }
+        var rows = session.activity ?? []
+        let credited = session.foreground.values.reduce(0, +)
+        let amount = min(seconds, max(0, elapsed - credited))
+        guard amount > 0 else { return }
+        // Bound the number and length of distinct names retained per session.
+        let safeTitle = title.flatMap(ActivityProbe.cleanTitle)
+        let rowTitle = rows.count < 120 ? safeTitle : nil
+        let rowSite = rows.count < 200 ? ActivityTimeline.safeSite(site) : nil
+        if let index = rows.firstIndex(where: { $0.appID == appID && $0.site == rowSite && $0.title == rowTitle }) {
+            rows[index].seconds += amount
+            rows[index].appName = appName
+        } else if rows.count < 240 {
+            rows.append(FocusActivity(appID: appID, appName: appName, site: rowSite,
+                                      title: rowTitle, seconds: amount))
+        } else if let index = rows.firstIndex(where: { $0.appID == appID && $0.site == nil && $0.title == nil }) {
+            rows[index].seconds += amount
+        } else {
+            // Keep detailed seconds reconciled with app totals at the cap.
+            // Collapse the smallest row for this app, or use an honest
+            // cross-app overflow row when this is a new app.
+            if let index = rows.indices.filter({ rows[$0].appID == appID })
+                .min(by: { rows[$0].seconds < rows[$1].seconds }) {
+                rows[index].site = nil
+                rows[index].title = nil
+                rows[index].seconds += amount
+            } else if let index = rows.firstIndex(where: { $0.appID == "com.nidus.activity.other" }) {
+                rows[index].seconds += amount
+            } else if let index = rows.indices.min(by: { rows[$0].seconds < rows[$1].seconds }) {
+                let rolled = rows[index].seconds + amount
+                rows[index] = FocusActivity(id: rows[index].id, appID: "com.nidus.activity.other",
+                                            appName: "Other apps", seconds: rolled)
+            }
+        }
+        session.activity = rows
+        // This path is called for brief, sampled foreground intervals. A
+        // stalled timer cannot prove that the same context stayed in front.
+        if seconds <= 5 {
+            var segments = session.activitySegments ?? []
+            let observationEnd = sampledAt ?? now()
+            let end = min(observationEnd, deadline)
+            var start = max(observationEnd.addingTimeInterval(-seconds),
+                            end.addingTimeInterval(-amount),
+                            session.activityContinuityStartedAt ?? session.startedAt)
+            if let last = segments.last {
+                start = max(start, last.end)
+            }
+            if start < end {
+                let next = FocusActivitySegment(start: start, end: end, appID: appID,
+                                                appName: appName, site: rowSite, title: rowTitle,
+                                                continuity: session.activityContinuity)
+                if let last = segments.last, ActivityTimeline.touches(last, next),
+                   ActivityTimeline.sameContext(last, next) {
+                    segments[segments.count - 1].end = end
+                } else {
+                    segments.append(next)
+                    if segments.count > ActivityTimeline.limit {
+                        segments.removeFirst(segments.count - ActivityTimeline.limit)
+                        session.activityTimelineTruncated = true
+                    }
+                }
+                session.activitySegments = segments
+            }
+        }
+        session.foreground[appID, default: 0] += amount
+        session.names[appID] = appName
+        self.session = session
+    }
+
+    /// Clear the running session too when history is cleared or disabled.
+    func clearCurrentActivity() {
+        guard var session else { return }
+        for appID in session.foreground.keys where session.blocks[appID] == nil && session.quitCounts[appID] == nil {
+            session.names.removeValue(forKey: appID)
+        }
+        session.foreground = [:]
+        session.activity = nil
+        session.activitySegments = nil
+        session.activityTimelineTruncated = nil
+        self.session = session
+        save()
+    }
+
+    /// An app excluded in Settings disappears from the running checkpoint,
+    /// including the older app-total field used by existing Stats views.
+    func excludeCurrentActivity(appIDs: Set<String>) {
+        guard var session, !appIDs.isEmpty else { return }
+        session.activity?.removeAll { appIDs.contains($0.appID) }
+        if let segments = session.activitySegments {
+            var kept: [FocusActivitySegment] = []
+            var offset = 0
+            var removedSinceLastKept = false
+            var removedAny = false
+            for var segment in segments {
+                if appIDs.contains(segment.appID) {
+                    removedSinceLastKept = true
+                    removedAny = true
+                    continue
+                }
+                // The removed interval might be shorter than the switch
+                // threshold. Keep a boundary across that hidden interval.
+                if removedSinceLastKept && !kept.isEmpty { offset += 1 }
+                removedSinceLastKept = false
+                segment.continuity += offset
+                kept.append(segment)
+            }
+            session.activitySegments = kept
+            if removedAny {
+                session.activityContinuity = max(session.activityContinuity, kept.last?.continuity ?? 0) + 1
+                session.activityContinuityStartedAt = now()
+            }
+        }
+        for appID in appIDs {
+            session.foreground.removeValue(forKey: appID)
+            if session.blocks[appID] == nil && session.quitCounts[appID] == nil {
+                session.names.removeValue(forKey: appID)
+            }
+        }
+        self.session = session
+        save()
+    }
+
+    /// Turning off names removes them from the active checkpoint as well as
+    /// the controller's transient probe cache. Finished history is retained.
+    func removeCurrentActivityTitles() {
+        guard var session, session.activity != nil || session.activitySegments != nil else { return }
+        if let activity = session.activity {
+            session.activity = ActivityRedaction.withoutTitles(activity)
+        }
+        if let segments = session.activitySegments {
+            let redacted = ActivityRedaction.withoutTitles(segments)
+            session.activitySegments = redacted
+            if segments.contains(where: { $0.title != nil }) {
+                session.activityContinuity = max(session.activityContinuity, redacted.last?.continuity ?? 0) + 1
+                session.activityContinuityStartedAt = now()
+            }
+        }
+        self.session = session
+        save()
     }
 
     /// Saves the session with its focused time so far.
@@ -563,6 +757,7 @@ final class SessionEngine {
     private func pause(bySleep: Bool) {
         guard var session, case .running(let deadline) = session.phase else { return }
         session.phase = .paused(remaining: max(0, deadline.timeIntervalSince(now())), bySleep: bySleep)
+        session.activityContinuity += 1
         self.session = session
         commit(.paused)
     }
@@ -733,7 +928,7 @@ extension SessionRecord {
 
 extension SessionState {
     enum CodingKeys: String, CodingKey {
-        case plan, startedAt, phase, budget, snoozes, quitApps, blocks, quitCounts, foreground, names
+        case plan, startedAt, phase, budget, snoozes, quitApps, blocks, quitCounts, foreground, activity, activitySegments, activityTimelineTruncated, activityContinuity, activityContinuityStartedAt, names
         case seenElapsed, endedAt, focusedTime
     }
 
@@ -748,6 +943,11 @@ extension SessionState {
         blocks = try c.decodeIfPresent([String: Int].self, forKey: .blocks) ?? [:]
         quitCounts = try c.decodeIfPresent([String: Int].self, forKey: .quitCounts) ?? [:]
         foreground = try c.decodeIfPresent([String: TimeInterval].self, forKey: .foreground) ?? [:]
+        activity = c.decodeTolerant([FocusActivity].self, forKey: .activity)
+        activitySegments = c.decodeTolerant([FocusActivitySegment].self, forKey: .activitySegments)
+        activityTimelineTruncated = c.decodeTolerant(Bool.self, forKey: .activityTimelineTruncated)
+        activityContinuity = c.decodeTolerant(Int.self, forKey: .activityContinuity) ?? 0
+        activityContinuityStartedAt = c.decodeTolerant(Date.self, forKey: .activityContinuityStartedAt)
         names = try c.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
         seenElapsed = try c.decodeIfPresent(TimeInterval.self, forKey: .seenElapsed) ?? 0
         endedAt = try c.decodeIfPresent(Date.self, forKey: .endedAt)

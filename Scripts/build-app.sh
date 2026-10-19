@@ -16,7 +16,7 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
-swift build -c release --product Nidus
+swift build -c release --product Nidus --jobs "${NIDUS_BUILD_JOBS:-2}"
 BIN="$(swift build -c release --product Nidus --show-bin-path)/Nidus"
 
 APP="$ROOT/build/Nidus.app"

@@ -174,8 +174,24 @@ struct InboxPrivacyTests {
         for api in ["addGlobalMonitorForEvents", "CGEvent.tapCreate", "CGEventTapCreate", "IOHIDManager", "AXIsProcessTrusted"] {
             for file in NoNetworkTests.appSources {
                 let text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+                // Activity's explicit opt-in reads only focused-window titles.
+                // A trust check is not a keyboard monitor; keep it confined to
+                // the probe, its access control, and its explicit prompt helper.
+                let titleAccessFiles: Set<String> = ["ActivityProbe.swift", "ActivitySettings.swift", "FocusController.swift"]
+                if api == "AXIsProcessTrusted", titleAccessFiles.contains(file.lastPathComponent) { continue }
                 #expect(!text.contains(api), "\(file.lastPathComponent) uses \(api)")
             }
+        }
+    }
+
+    @Test func activityReadsOnlyOptInMetadataNotDocumentContents() throws {
+        let probe = try source("ActivityProbe.swift")
+        #expect(probe.contains("guard AXIsProcessTrusted()"))
+        #expect(probe.contains("kAXFocusedWindowAttribute"))
+        #expect(probe.contains("kAXTitleAttribute"))
+        #expect(probe.contains("automationPermission(ask: false)"))
+        for api in ["kAXValueAttribute", "kAXSelectedTextAttribute", "kAXChildrenAttribute", "CGWindowListCreateImage", "NSPasteboard"] {
+            #expect(!probe.contains(api), "Activity must not read document content with \(api)")
         }
     }
 

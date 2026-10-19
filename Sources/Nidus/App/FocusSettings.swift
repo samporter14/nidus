@@ -23,7 +23,7 @@ extension NidusModel {
         case .general: return AnyView(FocusGeneralPage(model: self))
         case .blocking: return AnyView(FocusBlockingPage(model: self))
         case .about: return AnyView(FocusAboutPage(model: self))
-        case .setups, .schedules, .stats: return makeSettingsPage(id: tab.pageID)
+        case .setups, .schedules, .activity, .stats: return makeSettingsPage(id: tab.pageID)
         }
     }
 
@@ -32,7 +32,11 @@ extension NidusModel {
     func makeSettingsPage(id: String) -> AnyView? {
         if let page = makeSchedulesPage(id: id) { return page }
         if let page = makeProjectsPage(id: id) { return page }
+        if id.hasPrefix("activity:"), let sessionID = UUID(uuidString: String(id.dropFirst("activity:".count))) {
+            return AnyView(FocusActivityPage(model: self, initialSessionID: sessionID))
+        }
         switch id {
+        case SettingsTab.activity.pageID: return AnyView(FocusActivityPage(model: self))
         case SettingsTab.stats.pageID: return AnyView(FocusStatsPage(model: self))
         case Self.launchAppsPageID: return AnyView(FocusLaunchAppsPage(model: self))
         case Self.inboxPageID: return AnyView(FocusInboxPage(model: self))

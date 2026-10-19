@@ -372,7 +372,12 @@ struct NextStepTests {
         step.onSettled = { told.append($0) }
         for text in ["R", "Re", "Rerun it "] { step.setText(text) }
         #expect(told.isEmpty, "nothing yet: the person is still typing")
-        try await Task.sleep(for: .milliseconds(400))
+        // Waits for the report rather than a fixed time: a busy Mac can run
+        // the 30 ms debounce late, which is no failure of the debounce.
+        let deadline = ContinuousClock.now + .seconds(5)
+        while told.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        // A few more debounce periods: still one report.
+        try await Task.sleep(for: .milliseconds(150))
         #expect(told == ["Rerun it"], "one report, the step as it is kept")
     }
 
