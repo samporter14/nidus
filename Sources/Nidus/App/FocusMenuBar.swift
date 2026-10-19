@@ -154,7 +154,8 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     /// while a session runs, and only when the setting is on.
     private func updateTime() {
         guard let item, let button = item.button, let model else { return }
-        let text = model.menuBarShowsTime && (model.isActive || model.isOnBreak) ? model.clockText : ""
+        let status = model.menuBarShowsTime && (model.isActive || model.isOnBreak) ? model.menuBarStatus : nil
+        let text = status?.text ?? ""
         if text.isEmpty {
             guard button.imagePosition != .imageOnly else { return }
             button.attributedTitle = NSAttributedString()
@@ -171,8 +172,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             button.attributedTitle = title
             button.imagePosition = .imageLeading
             item.length = NSStatusItem.variableLength
-            button.setAccessibilityValue(model.isOnBreak ? "\(text) of break left"
-                                         : model.isOpenEnded ? "\(text) focused" : "\(text) left")
+            button.setAccessibilityValue(status?.spoken)
         }
         placeGlyph()
     }
@@ -392,5 +392,33 @@ struct FocusMenuHeader: View {
     private var title: String {
         if model.isOnBreak { return model.nextGoal.isEmpty ? "Break" : "Break, then \(model.nextGoal)" }
         return model.goal.isEmpty ? (model.isPaused ? "Paused" : "Focusing") : model.goal
+    }
+}
+
+// MARK: - What the menu bar reads
+
+/// The menu bar's time beside the glyph and what VoiceOver says for it.
+struct MenuBarStatus: Equatable {
+    var text: String
+    var spoken: String
+
+    /// A block of a sequence reads "2/3 \u{00B7} 18:40" (its number among the
+    /// work blocks, then the clock); a break, an ordinary session and an
+    /// open-ended block read the clock alone, as before.
+    static func make(clock: String, onBreak: Bool, openEnded: Bool, remaining: TimeInterval,
+                     block: (number: Int, of: Int)?) -> MenuBarStatus {
+        if onBreak { return MenuBarStatus(text: clock, spoken: "\(clock) of break left") }
+        if openEnded { return MenuBarStatus(text: clock, spoken: "\(clock) focused") }
+        guard let block else { return MenuBarStatus(text: clock, spoken: "\(clock) left") }
+        return MenuBarStatus(text: "\(block.number)/\(block.of) \u{00B7} \(clock)",
+                             spoken: "Block \(block.number) of \(block.of), \(FocusFormat.spoken(remaining))")
+    }
+}
+
+extension NidusModel {
+    var menuBarStatus: MenuBarStatus {
+        let run = isOnBreak ? nil : runningSequence
+        return MenuBarStatus.make(clock: clockText, onBreak: isOnBreak, openEnded: isOpenEnded, remaining: remaining,
+                                  block: run.map { ($0.blockNumber, $0.workCount) })
     }
 }

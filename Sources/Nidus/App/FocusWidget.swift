@@ -106,9 +106,10 @@ struct FocusWidget: View {
     /// down, and the popover follows its content.
     private var idle: some View {
         VStack(alignment: .leading, spacing: 14) {
-            // The newest note waiting, if there is one: nothing otherwise.
-            ResumePopoverRow(model: model)
-            BrickPopoverRow(model: model)
+            // One nudge at a time: the most urgent, nothing otherwise. When
+            // it is dismissed or handled the next one comes up.
+            if nudge == .brick { BrickPopoverRow(model: model) }
+            if nudge == .resume { ResumePopoverRow(model: model) }
 
             VStack(alignment: .leading, spacing: 0) {
                 VStack(alignment: .leading, spacing: 8) {
@@ -181,7 +182,7 @@ struct FocusWidget: View {
                 if isOpen { focusCustomLengthField() } else { goalFocused = true }
             }
 
-            if todayCache.line(for: model) != nil || model.inboxOpenCount > 0 {
+            if todayCache.line(for: model) != nil || nudge == .inbox {
                 HStack(spacing: NidusSpacing.sm) {
                     if let line = todayCache.line(for: model) {
                         Text(verbatim: line)
@@ -190,11 +191,18 @@ struct FocusWidget: View {
                             .lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                    FocusInboxRow(model: model)
+                    if nudge == .inbox { FocusInboxRow(model: model) }
                 }
                 .padding(.horizontal, 2)
             }
         }
+    }
+
+    /// The one nudge the idle popover shows now.
+    private var nudge: IdleNudge? {
+        IdleNudge.top(brickOffer: model.currentBrickOffer != nil,
+                      resumeNote: model.newestResumeNote != nil,
+                      inbox: model.inboxOpenCount > 0)
     }
 
     /// Start, with any length still being typed taken first, as Return in
@@ -631,6 +639,22 @@ struct FocusWidget: View {
 
     private var progressBar: some View {
         ProgressTrack(progress: model.progress, tint: model.isPaused ? .gray : FocusPalette.clay)
+    }
+}
+
+/// What the idle popover can nudge about. Three things may be waiting at
+/// once and the popover shows one, so it stays a place to start.
+enum IdleNudge: Equatable, CaseIterable {
+    case brick, resume, inbox
+
+    /// The most urgent of those waiting, in this order: a phone's request to
+    /// focus (it goes stale), a note to pick up, the inbox. The project
+    /// picker is not a nudge and is not asked about here.
+    static func top(brickOffer: Bool, resumeNote: Bool, inbox: Bool) -> IdleNudge? {
+        if brickOffer { return .brick }
+        if resumeNote { return .resume }
+        if inbox { return .inbox }
+        return nil
     }
 }
 

@@ -160,6 +160,35 @@ struct FocusSavedForLaterRow: View {
     }
 }
 
+/// The wrap-up card's last line when both a count and the session's activity
+/// are on offer: "3 saved for later" and a button for each, in the room the
+/// two separate rows took. Each button does what its own row's did.
+struct FocusWrapUpFooter: View {
+    let saved: Int
+    let openInbox: () -> Void
+    let openActivity: () -> Void
+
+    var body: some View {
+        HStack(spacing: NidusSpacing.sm) {
+            Text(verbatim: NidusModel.savedForLaterText(saved) ?? "")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(AdaptiveColors.surfacePrimaryText)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            Spacer(minLength: NidusSpacing.sm)
+            Button("Open inbox", action: openInbox)
+                .accessibilityLabel("Open the inbox in Settings")
+            Button("Activity", action: openActivity)
+                .accessibilityLabel("View session activity")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .fixedSize(horizontal: false, vertical: true)
+        // In line with the title above, past the mark.
+        .padding(.leading, 28 + NidusSpacing.md)
+    }
+}
+
 // MARK: - General's link
 
 extension FocusGeneralPage {
