@@ -260,14 +260,16 @@ final class FocusInbox {
     let directory: URL
     let url: URL
     private let now: () -> Date
+    private let persistence: PersistenceCoordinator?
     private(set) var items: [InboxItem] = []
     /// Called after every change, for the views.
     var onChange: (() -> Void)?
 
-    init(directory: URL, now: @escaping () -> Date = Date.init) {
+    init(directory: URL, now: @escaping () -> Date = Date.init, persistence: PersistenceCoordinator? = nil) {
         self.directory = directory
         self.url = directory.appendingPathComponent(Self.fileName)
         self.now = now
+        self.persistence = persistence
         if let data = try? Data(contentsOf: url) {
             if let file = try? JSONDecoder().decode(File.self, from: data) {
                 items = file.items
@@ -398,7 +400,8 @@ final class FocusInbox {
     /// token stays: the pages already up would otherwise stop working.
     func clear() {
         items.removeAll()
-        try? FileManager.default.removeItem(at: url)
+        if let persistence { persistence.remove(url, label: "Inbox") }
+        else { try? FileManager.default.removeItem(at: url) }
         onChange?()
     }
 
@@ -425,12 +428,22 @@ final class FocusInbox {
     }
 
     private func save() {
+        if let persistence {
+            let snapshot = items
+            persistence.write(to: url, label: "Inbox") { try Self.encode(snapshot) }
+            onChange?()
+            return
+        }
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.sortedKeys]
-        if let data = try? encoder.encode(File(items: items)) {
+        if let data = try? Self.encode(items) {
             try? data.write(to: url, options: .atomic)
         }
         onChange?()
+    }
+
+    nonisolated static func encode(_ items: [InboxItem]) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try encoder.encode(File(items: items))
     }
 }

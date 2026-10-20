@@ -402,7 +402,7 @@ struct FocusWrapUpCard: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(FocusPalette.clay)
+                .foregroundStyle(Solanum.clayText)
                 .padding(.leading, 28 + NidusSpacing.md)
             } else if saved > 0 {
                 FocusSavedForLaterRow(count: saved, open: openInbox)

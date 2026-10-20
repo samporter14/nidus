@@ -1,3 +1,4 @@
+#if DEBUG
 import AppKit
 import SwiftUI
 
@@ -62,3 +63,5 @@ extension RenderSurfaces {
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
     }
 }
+
+#endif

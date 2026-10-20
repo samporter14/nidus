@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusWorkspaceRender.swift
 //  Nidus
@@ -174,3 +175,5 @@ extension RenderSurfaces {
         model.setups = others
     }
 }
+
+#endif

@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  PopoverQualityRender.swift
 //  Nidus
@@ -57,3 +58,5 @@ extension RenderSurfaces {
         model.durationMinutes = savedLength
     }
 }
+
+#endif

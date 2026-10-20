@@ -85,20 +85,24 @@ extension NidusModel {
 /// starts. What is blocked is the Blocking tab's.
 struct FocusGeneralPage: View {
     @ObservedObject var model: NidusModel
+    @Environment(\.settingsJump) private var jump
 
     @State private var opensAtLogin = LoginItem.isOn
+    @State private var loginMessage: String?
 
     var body: some View {
         NidusSettingsPane {
-            if model.showsGettingStarted { gettingStarted }
+            if model.showsGettingStarted || jump?.destination?.anchor == "get-started" {
+                gettingStarted.settingsJumpAnchor("get-started")
+            }
             sessions
             // Only once breaks are on: with none there is nothing to set.
-            if model.breakMinutes > 0 { breakRules }
+            if model.breakMinutes > 0 { breakRules.settingsJumpAnchor("break-rules") }
             menuBarAndLogin
             whenASessionStarts
             inboxSection
-            plaque
-            BrickSettingsSection(model: model)
+            plaque.settingsJumpAnchor("plaque")
+            BrickSettingsSection(model: model).settingsJumpAnchor("brick")
         }
     }
 
@@ -143,7 +147,10 @@ struct FocusGeneralPage: View {
                     CategoryTile(symbol: "nosign")
                 }
                 NidusControlRow(title: "This guide goes after your first session") {
-                    Button("Hide now", action: model.hideGettingStarted)
+                    Button("Hide now") {
+                        model.hideGettingStarted()
+                        jump?.clearDestination()
+                    }
                         .buttonStyle(.bordered)
                 }
             }
@@ -165,6 +172,7 @@ struct FocusGeneralPage: View {
                         }
                     }
                 }
+                .settingsJumpAnchor("session-length")
                 NidusGroupedPickerRow(title: "Break after a session",
                                         subtitle: "When a session runs its full length, a break starts. When the break ends, the next session starts with the same goal.") {
                     Picker("Break after a session", selection: model.binding(\.breakMinutes)) {
@@ -173,9 +181,11 @@ struct FocusGeneralPage: View {
                         }
                     }
                 }
+                .settingsJumpAnchor("break", aliases: model.breakMinutes > 0 ? [] : ["break-rules"])
                 NidusToggleRow(title: "Strict mode",
                                  subtitle: "No snooze or pause during a session, and ending one early means typing \u{201C}stop early\u{201D} in the popover. Applies to sessions you start from now on.",
                                  isOn: model.binding(\.strictMode))
+                    .settingsJumpAnchor("strict")
             }
         }
     }
@@ -201,11 +211,22 @@ struct FocusGeneralPage: View {
                 NidusToggleRow(title: "Time left in the menu bar",
                                  subtitle: "Shows the countdown beside the brain while a session runs.",
                                  isOn: model.binding(\.menuBarShowsTime))
+                    .settingsJumpAnchor("menu-bar-time")
                 NidusToggleRow(title: "Open at login",
                                  subtitle: "A session left running carries on after a restart.",
                                  isOn: Binding(get: { opensAtLogin },
-                                               set: { LoginItem.set($0); opensAtLogin = LoginItem.isOn }))
-                OpenNidusShortcutRows(model: model)
+                                               set: {
+                                                   loginMessage = LoginItem.set($0)
+                                                   opensAtLogin = LoginItem.isOn
+                                               }))
+                    .settingsJumpAnchor("login")
+                if let loginMessage {
+                    Text(loginMessage)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                OpenNidusShortcutRows(model: model).settingsJumpAnchor("open-shortcut")
             }
         }
     }
@@ -222,7 +243,7 @@ struct FocusGeneralPage: View {
             }
             if FocusShortcuts.isAvailable {
                 NidusSettingsCard {
-                    FocusShortcutRows(model: model)
+                    FocusShortcutRows(model: model).settingsJumpAnchor("focus-shortcuts")
                 }
             }
         }
@@ -248,8 +269,8 @@ struct FocusBlockingPage: View {
     var body: some View {
         NidusSettingsPane {
             behaviour
-            categories
-            browsers
+            categories.settingsJumpAnchor("categories")
+            browsers.settingsJumpAnchor("browsers")
         }
     }
 
@@ -263,6 +284,7 @@ struct FocusBlockingPage: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .settingsJumpAnchor("block-mode")
             NidusGroupedPickerRow(title: "When a blocked app opens",
                                     subtitle: "Quitting asks the app to close normally, so it can save your work.") {
                 Picker("When a blocked app opens", selection: model.binding(\.hidesInsteadOfQuitting)) {
@@ -271,6 +293,7 @@ struct FocusBlockingPage: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .settingsJumpAnchor("blocked-app")
             NidusGroupedPickerRow(title: "Snooze length",
                                     subtitle: "How long Snooze lets one app or website through.") {
                 Picker("Snooze length", selection: model.binding(\.snoozeMinutes)) {
@@ -280,6 +303,7 @@ struct FocusBlockingPage: View {
                 }
             }
             .disabled(model.strictMode)
+            .settingsJumpAnchor("snooze")
             NidusGroupedPickerRow(title: "Before a snooze",
                                     subtitle: "A short wait gets you past the impulse.") {
                 Picker("Before a snooze", selection: model.binding(\.snoozeWaitSeconds)) {
@@ -292,6 +316,7 @@ struct FocusBlockingPage: View {
             NidusToggleRow(title: "Reopen quit apps",
                              subtitle: "When a session ends, opens the apps it quit, in the background.",
                              isOn: model.binding(\.reopensQuitApps))
+                .settingsJumpAnchor("reopen")
         }
     }
 

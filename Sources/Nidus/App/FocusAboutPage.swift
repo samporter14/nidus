@@ -33,6 +33,7 @@ struct FocusAboutPage: View {
                         NidusToggleRow(title: "Record session history",
                                          subtitle: "Used only for your stats and recent goals, and kept only on this Mac. When off, neither is kept.",
                                          isOn: model.binding(\.recordsHistory))
+                            .settingsJumpAnchor("privacy")
                     }
                 }
             }

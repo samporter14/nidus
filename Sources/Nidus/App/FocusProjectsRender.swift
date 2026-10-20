@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusProjectsRender.swift
 //  Nidus
@@ -151,3 +152,5 @@ extension RenderSurfaces {
         model.controller?.clearHistory()
     }
 }
+
+#endif

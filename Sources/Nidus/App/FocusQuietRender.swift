@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusQuietRender.swift
 //  Nidus
@@ -30,3 +31,5 @@ extension RenderSurfaces {
         model.runHarnessScenario("idle")
     }
 }
+
+#endif

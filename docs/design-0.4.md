@@ -47,9 +47,10 @@ disagree, this file wins until it is changed on purpose.
   Configuration goes in Settings, revealed progressively (off until turned
   on, details under a disclosure). Keyboard access, accessibility labels and
   both appearances for everything. No renaming, no rebranding.
-- **Renders.** `swift build` then `.build/debug/Nidus --render-surfaces <dir>`
+- **Renders.** `swift build` then `"$(swift build --show-bin-path)/Nidus" --render-surfaces <dir>`
   draws every surface off-screen in Ivory and Slate with demo settings and a
-  throwaway folder. Add scenarios for new surfaces in `RenderSurfaces.swift`
+  throwaway folder. Demo and render fixtures are excluded from release builds.
+  Add scenarios for new surfaces in `RenderSurfaces.swift`
   and `NidusModel.runHarnessScenario`. **Add new `case`s only: do not edit
   the existing sample goal strings there or in `StatsRenders.swift`** (the
   user has uncommitted edits on those lines).
@@ -299,7 +300,9 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
 
 - Off by default. The user optionally chooses a JSON signal file; no saved
   setup or setup mapping is required. Enabled file monitoring is an explicit exception to idle
-  inactivity: Nidus reads only that selected file about every two seconds.
+  inactivity: Nidus observes only that selected file for changes and debounces
+  notifications. A 30-second recovery poll with tolerance catches updates from
+  providers that do not deliver notifications; reads are serialized off-main.
   Disabling it stops monitoring. No networking API or service is added;
   iCloud Drive or another file provider, when chosen, handles delivery.
 - A request means an intention to focus, never verified Brick state. It

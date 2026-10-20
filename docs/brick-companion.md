@@ -4,7 +4,7 @@ Nidus can invite you to choose a Mac session after an iPhone focus request. A ma
 
 ## What happens
 
-When enabled, Nidus watches one JSON file that you choose in iCloud Drive or another location visible in Files. It checks the file locally about every two seconds. A fresh, valid request is offered only while Nidus is idle. **Choose session** dismisses the offer and opens the normal session editor. Choose your goal, a saved setup if you want one, and your duration, then explicitly start. **Not now** dismisses the offer. No setup is selected or started by the Brick action. An existing session or break is left alone, and a pending offer expires rather than starting later.
+When enabled, Nidus watches one JSON file that you choose in iCloud Drive or another location visible in Files. File-change notifications trigger local checks; a recovery check about every 30 seconds covers providers that do not deliver notifications. A fresh, valid request is offered only while Nidus is idle. **Choose session** dismisses the offer and opens the normal session editor. Choose your goal, a saved setup if you want one, and your duration, then explicitly start. **Not now** dismisses the offer. No setup is selected or started by the Brick action. An existing session or break is left alone, and a pending offer expires rather than starting later.
 
 The receiver accepts this small event:
 

@@ -28,7 +28,7 @@ extension NidusModel {
     /// Opens the inbox file in Nidus's folder and registers the capture
     /// shortcut, if one is set. Called from `activate`.
     func startInbox(host: NidusHost) {
-        let inbox = FocusInbox(directory: host.environment.containerDirectory)
+        let inbox = FocusInbox(directory: host.environment.containerDirectory, persistence: persistence)
         inbox.onChange = { [weak self] in self?.objectWillChange.send() }
         self.inbox = inbox
         capture.start(model: self)
@@ -273,6 +273,7 @@ struct FocusInboxPage: View {
                         ShortcutRecorder(shortcut: model.binding(\.captureShortcut), name: "Capture shortcut",
                                          conflict: { model.shortcutConflict($0, for: .capture) })
                     }
+                    .settingsJumpAnchor("capture-shortcut")
                     if model.captureShortcut != nil, model.capture.shortcutIsRefused {
                         Label("Another app is using that combination. Choose a different one.",
                               systemImage: "exclamationmark.circle")

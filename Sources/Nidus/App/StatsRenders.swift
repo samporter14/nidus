@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  StatsRenders.swift
 //  Nidus
@@ -116,3 +117,5 @@ extension RenderSurfaces {
         model.controller?.clearHistory()
     }
 }
+
+#endif

@@ -32,6 +32,6 @@ The existing Capsid integration uses Nidus's local `focus.json` and `local.sam.n
 
 ## Validation / previews
 
-`--render-activity-surfaces <directory>` renders a small set of isolated light/dark Activity views with explicitly fictional data. `--demo activity-filled --open activity` is an isolated interactive demo. Neither can probe real apps or use real history. Keep builds at two workers (`NIDUS_BUILD_JOBS`, default 2).
+In a debug build, `--render-activity-surfaces <directory>` renders a small set of isolated light/dark Activity views with explicitly fictional data. `--demo activity-filled --open activity` is an isolated interactive demo. Neither can probe real apps or use real history. Release builds exclude these fixtures. Keep builds at two workers (`NIDUS_BUILD_JOBS`, default 2).
 
 See `activity-claude-handoff.md` for final validation, installed build identity, and remaining live checks.

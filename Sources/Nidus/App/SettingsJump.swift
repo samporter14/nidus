@@ -49,6 +49,18 @@ struct SettingsJumpEntry: Identifiable, Equatable, Sendable {
 
     /// "General › Sessions": where it is.
     var place: String { ([tab.title] + [section].compactMap { $0 }).joined(separator: " \u{203A} ") }
+
+    /// A stable row/section id, independent of its visible wording. Settings
+    /// that belong to an individual item lead to its chooser, never an
+    /// arbitrary first category or schedule.
+    var anchorID: String? {
+        switch id {
+        case "general", "blocking", "setups", "schedules", "activity", "stats", "about",
+             "apps-to-open", "inbox": nil
+        case "exceptions": "categories"
+        default: id
+        }
+    }
 }
 
 enum SettingsJumpIndex {
@@ -194,6 +206,10 @@ final class SettingsJump {
     var selection = 0
     /// Counts ⌘F presses; the field focuses itself when it changes.
     private(set) var focusRequest = 0
+    /// A new identity lets selecting the same result scroll and emphasize it
+    /// again. A newly-created tab can consume it on its first appearance.
+    private(set) var destination: SettingsJumpDestination?
+    private var destinationRevision = 0
     @ObservationIgnored private let opener: (String, String) -> Void
 
     init(open: @escaping (String, String) -> Void) { opener = open }
@@ -219,10 +235,91 @@ final class SettingsJump {
     /// Clears the field and goes to the entry's page.
     func open(_ entry: SettingsJumpEntry) {
         query = ""
+        destinationRevision += 1
+        destination = entry.anchorID.map {
+            SettingsJumpDestination(page: entry.page, anchor: $0, revision: destinationRevision)
+        }
         opener(entry.page, entry.pageTitle)
     }
 
     func clear() { query = "" }
+
+    func clearDestination() { destination = nil }
+}
+
+struct SettingsJumpDestination: Equatable, Sendable {
+    let page: String
+    let anchor: String
+    let revision: Int
+
+    func matches(page: String, anchor: String) -> Bool {
+        self.page == page && self.anchor == anchor
+    }
+}
+
+/// Optional environment values keep standalone previews/render fixtures
+/// usable without a Settings window.
+private struct SettingsJumpEnvironmentKey: EnvironmentKey {
+    static let defaultValue: SettingsJump? = nil
+}
+
+private struct SettingsPageEnvironmentKey: EnvironmentKey {
+    static let defaultValue = ""
+}
+
+extension EnvironmentValues {
+    var settingsJump: SettingsJump? {
+        get { self[SettingsJumpEnvironmentKey.self] }
+        set { self[SettingsJumpEnvironmentKey.self] = newValue }
+    }
+
+    var settingsPageID: String {
+        get { self[SettingsPageEnvironmentKey.self] }
+        set { self[SettingsPageEnvironmentKey.self] = newValue }
+    }
+}
+
+private struct SettingsJumpAnchor: ViewModifier {
+    let anchor: String
+    let aliases: [String]
+    @Environment(\.settingsJump) private var jump
+    @Environment(\.settingsPageID) private var page
+    @State private var isHighlighted = false
+
+    private var effectiveAnchor: String {
+        guard let destination = jump?.destination, destination.page == page,
+              aliases.contains(destination.anchor) else { return anchor }
+        return destination.anchor
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .id(effectiveAnchor)
+            .overlay {
+                RoundedRectangle(cornerRadius: 7)
+                    .strokeBorder(Solanum.clayText.opacity(isHighlighted ? 0.6 : 0), lineWidth: 1.5)
+                    .padding(-3)
+                    .allowsHitTesting(false)
+                    .accessibilityHidden(true)
+            }
+            .task(id: jump?.destination) {
+                guard jump?.destination?.matches(page: page, anchor: effectiveAnchor) == true else {
+                    isHighlighted = false
+                    return
+                }
+                isHighlighted = true
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                isHighlighted = false
+            }
+    }
+}
+
+extension View {
+    /// Marks a setting that Jump to can reveal and briefly emphasize.
+    func settingsJumpAnchor(_ id: String, aliases: [String] = []) -> some View {
+        modifier(SettingsJumpAnchor(anchor: id, aliases: aliases))
+    }
 }
 
 // MARK: - The views

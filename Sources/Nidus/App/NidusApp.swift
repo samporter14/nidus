@@ -15,6 +15,14 @@ import SwiftUI
 @main
 enum NidusMain {
     static func main() {
+        #if !DEBUG
+        let developmentFlags: Set<String> = ["--demo", "--render-surfaces", "--render-brick-surfaces",
+                                             "--render-activity-surfaces", "--capture-surfaces"]
+        if ProcessInfo.processInfo.arguments.contains(where: developmentFlags.contains) {
+            FileHandle.standardError.write(Data("Demo and render modes require a debug build of Nidus.\n".utf8))
+            return
+        }
+        #endif
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -31,6 +39,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sigterm: DispatchSourceSignal?
     /// Links that arrived before the model was ready.
     private var pendingURLs: [URL] = []
+    private var terminationPending = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         if !Demo.isActive, handOffToRunningCopy() { return }
@@ -55,6 +64,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingURLs.forEach(model.handle)
         pendingURLs = []
         Demo.openRequestedSurfaces(model: model, settings: settings)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !Demo.isActive, let model, let controller = model.controller else { return .terminateNow }
+        guard !terminationPending else { return .terminateLater }
+        terminationPending = true
+        controller.prepareForTermination { [weak self, model] in
+            Task { @MainActor in
+                var durable = await model.persistence.flush()
+                // A note or inbox edit can arrive while the writer's idle
+                // callback is returning to the main actor. Recheck its current
+                // state before approving quit, without yielding after the check.
+                while durable && !model.persistence.isDurable {
+                    durable = await model.persistence.flush()
+                }
+                guard let self else { return }
+                if !durable {
+                    controller.resumeAfterCancelledTermination()
+                    model.host?.log.error("Quit cancelled because local changes could not be saved")
+                }
+                if durable, controller.shutdownRestorationIncomplete {
+                    model.host?.log.warning("Some browser tabs could not be restored within the quit deadline")
+                }
+                self.terminationPending = false
+                NSApp.reply(toApplicationShouldTerminate: durable)
+            }
+        }
+        return .terminateLater
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -160,14 +197,34 @@ enum LoginItem {
     /// it off, and macOS shows it under Login Items.
     static func registerOnFirstLaunch() {
         guard !Demo.isActive, !UserDefaults.standard.bool(forKey: key) else { return }
-        UserDefaults.standard.set(true, forKey: key)
-        try? SMAppService.mainApp.register()
+        do {
+            try SMAppService.mainApp.register()
+            // A failed registration can be retried on a later launch.
+            // Approval pending is an actual registration, exposed in Settings.
+            let status = SMAppService.mainApp.status
+            if status == .enabled || status == .requiresApproval {
+                UserDefaults.standard.set(true, forKey: key)
+            }
+        } catch {
+            Logger(subsystem: "local.sam.nidus", category: "app").error("Open at login could not be registered: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     static var isOn: Bool { SMAppService.mainApp.status == .enabled }
 
-    static func set(_ on: Bool) {
-        if on { try? SMAppService.mainApp.register() } else { try? SMAppService.mainApp.unregister() }
+    @discardableResult
+    static func set(_ on: Bool) -> String? {
+        do {
+            if on { try SMAppService.mainApp.register() } else { try SMAppService.mainApp.unregister() }
+            if on, SMAppService.mainApp.status == .requiresApproval {
+                return "Allow Nidus in System Settings › General › Login Items."
+            }
+            guard isOn == on else { return "macOS has not applied this change. Try again in Login Items." }
+            UserDefaults.standard.set(true, forKey: key)
+            return nil
+        } catch {
+            return "Couldn’t change Open at login. \(error.localizedDescription)"
+        }
     }
 }
 
@@ -178,6 +235,7 @@ enum LoginItem {
 /// settings and a throwaway folder. Launch it with `open -n` beside a real
 /// copy. Scenarios are NidusModel.harnessScenario's.
 enum Demo {
+    #if DEBUG
     private static let arguments = ProcessInfo.processInfo.arguments
 
     private static func value(after flag: String) -> String? {
@@ -201,4 +259,9 @@ enum Demo {
             }
         }
     }
+    #else
+    static let scenario: String? = nil
+    static let isActive = false
+    @MainActor static func openRequestedSurfaces(model: NidusModel, settings: SettingsWindowController) {}
+    #endif
 }

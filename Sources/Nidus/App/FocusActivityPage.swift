@@ -40,9 +40,10 @@ struct FocusActivityPage: View {
     @State private var displayedCacheKey: ActivityCacheKey?
     @State private var displayedProjects: [ActivityProjectChoice] = []
     @State private var displayedProjectsVersion = -1
+    @State private var displayedProjectInsights: [ActivityProjectInsight] = []
 
     private var sessions: [SessionEntry] { model.activitySessions }
-    private var effectiveNow: Date { now ?? model.controller?.now ?? Date() }
+    private var effectiveNow: Date { now ?? Date() }
     private var requestedCacheKey: ActivityCacheKey {
         let interval = period.interval(around: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar), calendar: calendar)
         return ActivityCacheKey(version: model.controller?.historyVersion ?? 0,
@@ -95,7 +96,7 @@ struct FocusActivityPage: View {
                 if let lead = totals.lead {
                     Text("Most observed: \(lead.name) · \(ActivityDuration.string(lead.seconds))")
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(ActivityInk.clay)
+                        .foregroundStyle(ActivityInk.clayText)
                         .padding(.top, 4)
                         .accessibilityLabel("Most observed: \(lead.name), \(ActivityDuration.string(lead.seconds))")
                 }
@@ -141,10 +142,11 @@ struct FocusActivityPage: View {
                 }
                 .buttonStyle(.plain)
                 Text(periodLabel)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .frame(maxWidth: 96)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 110)
             }
             .padding(.vertical, 4)
         }
@@ -155,7 +157,7 @@ struct FocusActivityPage: View {
             VStack(spacing: 8) {
                 Image(systemName: "rectangle.stack.badge.clock")
                     .font(.system(size: 26, weight: .light))
-                    .foregroundStyle(ActivityInk.clay)
+                    .foregroundStyle(ActivityInk.clayText)
                 Text("No activity in this view")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.primary)
@@ -173,13 +175,13 @@ struct FocusActivityPage: View {
     private func overview(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
         NidusSettingsCard {
             HStack(alignment: .center, spacing: 0) {
-                ActivityFigure(label: "Focused", value: ActivityDuration.string(totals.focused), color: ActivityInk.clay)
+                ActivityFigure(label: "Focused", value: ActivityDuration.string(totals.focused), color: ActivityInk.clayText)
                 Divider().frame(height: 42)
-                ActivityFigure(label: "Observed", value: ActivityDuration.string(totals.observed), color: ActivityInk.blue)
+                ActivityFigure(label: "Observed", value: ActivityDuration.string(totals.observed), color: ActivityInk.blueText)
                 Divider().frame(height: 42)
-                ActivityFigure(label: "Unobserved", value: ActivityDuration.string(max(0, totals.focused - totals.observed)), color: ActivityInk.sage)
+                ActivityFigure(label: "Unobserved", value: ActivityDuration.string(max(0, totals.focused - totals.observed)), color: ActivityInk.sageText)
                 Divider().frame(height: 42)
-                ActivityFigure(label: "Sessions", value: "\(sessions.count)", color: ActivityInk.blue)
+                ActivityFigure(label: "Sessions", value: "\(sessions.count)", color: ActivityInk.blueText)
             }
             .padding(.vertical, 8)
         }
@@ -200,12 +202,12 @@ struct FocusActivityPage: View {
                                    calendar: calendar, series: totals.services, selectedDay: $selectedDay)
                     .frame(height: period == .today ? 106 : 144)
                     .padding(.top, 6)
-                HStack(spacing: 14) {
+                FlowLayout(spacing: 12) {
                     ForEach(Array(totals.services.enumerated()), id: \.element.id) { index, item in
                         ActivityLegend(color: ActivityInk.series(index), title: item.name)
                     }
                 }
-                .font(.system(size: 10))
+                .font(.system(size: 11))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 3)
             }
@@ -213,7 +215,7 @@ struct FocusActivityPage: View {
     }
 
     private var projectInsights: some View {
-        let values = projectInsightValues
+        let values = displayedProjectInsights
         guard !values.isEmpty else { return AnyView(EmptyView()) }
         return AnyView(NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
@@ -236,7 +238,7 @@ struct FocusActivityPage: View {
                                     .foregroundStyle(.primary)
                                     .lineLimit(1)
                                 Text(item.lead.map { "Most observed: \($0.name)" } ?? "No observed activity")
-                                    .font(.system(size: 10))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                                     .lineLimit(1)
                             }
@@ -244,14 +246,14 @@ struct FocusActivityPage: View {
                             VStack(alignment: .trailing, spacing: 3) {
                                 Text(ActivityDuration.string(item.observed))
                                     .font(.system(size: 11, weight: .medium, design: .rounded))
-                                    .foregroundStyle(ActivityInk.blue)
+                                    .foregroundStyle(ActivityInk.blueText)
                                     .monospacedDigit()
                                 Text("\(item.sessionCount) \(item.sessionCount == 1 ? "session" : "sessions")")
-                                    .font(.system(size: 9))
+                                    .font(.system(size: 11))
                                     .foregroundStyle(.tertiary)
                             }
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .semibold))
+                                .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(.tertiary)
                         }
                         .padding(.vertical, 6)
@@ -262,12 +264,6 @@ struct FocusActivityPage: View {
                 }
             }
         })
-    }
-
-    private var projectInsightValues: [ActivityProjectInsight] {
-        let anchor = period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar)
-        let interval = period.interval(around: anchor, calendar: calendar)
-        return ActivityProjectInsights.summaries(sessions: sessions, interval: interval, calendar: calendar)
     }
 
     private func rankings(title: String, subtitle: String, rows: [ActivityRank], expanded: Binding<Bool>, tint: Color) -> some View {
@@ -291,7 +287,7 @@ struct FocusActivityPage: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(ActivityInk.clay)
+                    .foregroundStyle(ActivityInk.clayText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.top, 3)
                     .accessibilityHint("Expands the ranked list")
@@ -335,7 +331,7 @@ struct FocusActivityPage: View {
                     }
                     .buttonStyle(.plain)
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(ActivityInk.clay)
+                    .foregroundStyle(ActivityInk.clayText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
@@ -375,6 +371,12 @@ struct FocusActivityPage: View {
             displayedProjectsVersion = key.version
         }
         guard key != displayedCacheKey else { return }
+        // Project comparison ignores the project filter, and only needs fresh
+        // aggregation when the history or time range changes.
+        if displayedCacheKey?.version != key.version || displayedCacheKey?.start != key.start || displayedCacheKey?.end != key.end {
+            displayedProjectInsights = ActivityProjectInsights.summaries(
+                sessions: source, interval: DateInterval(start: key.start, end: key.end), calendar: calendar)
+        }
         displayedSessions = source.filter { entry in
             key.start <= entry.start && entry.start < key.end
                 && (key.projectID == nil || entry.projectID == key.projectID)
@@ -474,6 +476,10 @@ enum ActivityDuration {
 }
 
 private enum ActivityInk {
+    // Fills retain the softer chart palette; text uses contrast-safe variants.
+    static let clayText = Solanum.clayText
+    static let blueText = Color(light: Color(.sRGB, red: 0.21, green: 0.40, blue: 0.56, opacity: 1), dark: Color(.sRGB, red: 0.53, green: 0.69, blue: 0.81, opacity: 1))
+    static let sageText = Color(light: Color(.sRGB, red: 0.29, green: 0.44, blue: 0.33, opacity: 1), dark: Color(.sRGB, red: 0.63, green: 0.76, blue: 0.65, opacity: 1))
     static let clay = FocusPalette.clay
     static let blue = Color(light: Color(.sRGB, red: 0.36, green: 0.55, blue: 0.70, opacity: 1), dark: Color(.sRGB, red: 0.53, green: 0.69, blue: 0.81, opacity: 1))
     static let sage = Color(light: Color(.sRGB, red: 0.48, green: 0.62, blue: 0.52, opacity: 1), dark: Color(.sRGB, red: 0.63, green: 0.76, blue: 0.65, opacity: 1))
@@ -632,29 +638,29 @@ private struct ActivityDailyChart: View {
         return result
     }
 
-    private var ceiling: TimeInterval { max(1, days.map(\.total).max() ?? 1) }
-
     var body: some View {
-        VStack(spacing: 7) {
+        let chartDays = days
+        let ceiling = max(1, chartDays.map(\.total).max() ?? 1)
+        return VStack(spacing: 7) {
             HStack(alignment: .bottom, spacing: period == .month ? 2 : 6) {
-                ForEach(days) { day in
+                ForEach(chartDays) { day in
                     Button { selectedDay = day.date } label: {
                         VStack(spacing: 4) {
                             GeometryReader { proxy in
                                 let available = max(8, proxy.size.height)
                                 VStack(spacing: 1) {
                                     ForEach(Array(series.enumerated()), id: \.element.id) { index, item in
-                                        bar(day.values[item.id == "__other__" ? "__other__" : item.name, default: 0], height: available, color: ActivityInk.series(index))
+                                        bar(day.values[item.id == "__other__" ? "__other__" : item.name, default: 0], height: available, maximum: ceiling, color: ActivityInk.series(index))
                                     }
                                 }
                                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                             }
                             .frame(height: 85)
-                            Text(axisLabel(day.date))
-                                .font(.system(size: period == .month ? 8 : 9, weight: .medium))
-                                .foregroundStyle(selectedDay.map { calendar.isDate($0, inSameDayAs: day.date) } == true ? ActivityInk.clay : Color.secondary)
+                            Text(axisLabel(day.date, dayCount: chartDays.count))
+                                .font(.system(size: 11, weight: .medium))
+                                .foregroundStyle(selectedDay.map { calendar.isDate($0, inSameDayAs: day.date) } == true ? ActivityInk.clayText : Color.secondary)
                                 .lineLimit(1)
-                                .minimumScaleFactor(0.65)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
                     }
                     .buttonStyle(.plain)
@@ -669,26 +675,26 @@ private struct ActivityDailyChart: View {
                 Spacer()
                 Text("Up to " + ActivityDuration.string(ceiling))
             }
-            .font(.system(size: 9))
+            .font(.system(size: 11))
             .foregroundStyle(.tertiary)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Daily observed activity chart")
     }
 
-    private func bar(_ seconds: TimeInterval, height: CGFloat, color: Color) -> some View {
+    private func bar(_ seconds: TimeInterval, height: CGFloat, maximum: TimeInterval, color: Color) -> some View {
         RoundedRectangle(cornerRadius: 3, style: .continuous)
             .fill(seconds > 0 ? color.opacity(0.88) : Color.clear)
-            .frame(height: seconds > 0 ? max(2, height * CGFloat(seconds / ceiling)) : 0)
+            .frame(height: seconds > 0 ? max(2, height * CGFloat(seconds / maximum)) : 0)
     }
 
-    private func axisLabel(_ date: Date) -> String {
+    private func axisLabel(_ date: Date, dayCount: Int) -> String {
         switch period {
         case .today: return "Today"
         case .week: return date.formatted(.dateTime.weekday(.narrow))
         case .month:
             let day = calendar.component(.day, from: date)
-            return day == 1 || day == days.count ? "\(day)" : (day.isMultiple(of: 5) ? "\(day)" : "")
+            return day == 1 || day == dayCount ? "\(day)" : (day.isMultiple(of: 5) ? "\(day)" : "")
         }
     }
 
@@ -709,6 +715,8 @@ private struct ActivityLegend: View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
             Text(title).foregroundStyle(.secondary)
+                .lineLimit(2)
+                .frame(maxWidth: 180, alignment: .leading)
         }
         .accessibilityElement(children: .combine)
     }
@@ -724,7 +732,7 @@ private struct ActivityRankRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 9) {
                 Text(String(format: "%02d", rank))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
+                    .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(.tertiary)
                     .frame(width: 22, alignment: .leading)
                 Text(verbatim: item.name)
@@ -740,7 +748,7 @@ private struct ActivityRankRow: View {
             }
             if let subtitle = item.subtitle, !subtitle.isEmpty {
                 Text(verbatim: subtitle)
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
                     .lineLimit(1)
                     .padding(.leading, 31)
@@ -779,13 +787,13 @@ private struct ActivitySessionRow: View {
                         .font(.system(size: 11, weight: .medium))
                         .foregroundStyle(.primary)
                     Text(entry.start.formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                     if !hasDetails {
                         Text("APP ONLY")
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .tracking(0.4)
-                            .foregroundStyle(ActivityInk.blue)
+                            .foregroundStyle(ActivityInk.blueText)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
                             .background(ActivityInk.blue.opacity(0.12), in: Capsule())
@@ -802,11 +810,11 @@ private struct ActivitySessionRow: View {
                     .font(.system(size: 11, weight: .semibold, design: .rounded))
                     .foregroundStyle(.primary)
                 Text("\(ActivityDuration.string(observed)) observed")
-                    .font(.system(size: 9))
+                    .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .padding(.leading, 3)
         }
@@ -854,9 +862,9 @@ struct ActivitySessionRecap: View {
                             .foregroundStyle(.secondary)
                     }
                     HStack(spacing: 0) {
-                        ActivityFigure(label: "Focused", value: ActivityDuration.string(entry.focused), color: ActivityInk.clay)
+                        ActivityFigure(label: "Focused", value: ActivityDuration.string(entry.focused), color: ActivityInk.clayText)
                         Divider().frame(height: 40)
-                        ActivityFigure(label: "Observed", value: ActivityDuration.string(observed), color: ActivityInk.blue)
+                        ActivityFigure(label: "Observed", value: ActivityDuration.string(observed), color: ActivityInk.blueText)
                     }
                     .padding(.vertical, 8)
                     composition
@@ -925,7 +933,7 @@ struct ActivitySessionRecap: View {
     private var legacyRecap: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("App-only coverage", systemImage: "info.circle")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(ActivityInk.blue)
+                .font(.system(size: 12, weight: .medium)).foregroundStyle(ActivityInk.blueText)
             Text("Detailed activity was not recorded for this session. Any available app totals are shown below.")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
             recapGroup("Apps observed", rows: legacyApps)
@@ -935,7 +943,7 @@ struct ActivitySessionRecap: View {
     private func recapGroup(_ title: String, rows: [ActivityRank]) -> some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(.secondary)
             if rows.isEmpty {
@@ -946,7 +954,7 @@ struct ActivitySessionRecap: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: row.name).lineLimit(1).truncationMode(.middle)
                             if let subtitle = row.subtitle, !subtitle.isEmpty {
-                                Text(verbatim: subtitle).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
+                                Text(verbatim: subtitle).font(.system(size: 11)).foregroundStyle(.tertiary).lineLimit(1)
                             }
                         }
                         Spacer(minLength: 8)
@@ -1021,24 +1029,36 @@ private struct ActivitySessionTimeline: View {
         }
     }
 
+    private func metrics(horizontal: Bool) -> some View {
+        let layout = horizontal ? AnyLayout(HStackLayout(spacing: 0))
+            : AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+        return layout {
+            ActivityTimelineMetric(label: "Context switches", value: "\(entry.activitySwitchCount ?? 0)", color: ActivityInk.clayText)
+                .frame(width: horizontal ? 120 : nil)
+            if horizontal { Divider().frame(height: 42) }
+            ActivityTimelineMetric(label: "Document switches", value: "\(documentSwitches)", color: ActivityInk.clayText)
+                .frame(width: horizontal ? 120 : nil)
+            if horizontal { Divider().frame(height: 42) }
+            ActivityTimelineMetric(label: entry.activityTimelineTruncated == true ? "Longest retained context stretch" : "Longest same-context stretch",
+                                   value: ActivityDuration.string(entry.longestObservedStretch ?? 0), color: ActivityInk.blueText)
+                .frame(width: horizontal ? 120 : nil)
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Observed timeline")
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(.secondary)
             if let segments = entry.activitySegments {
-                HStack(spacing: 0) {
-                    ActivityTimelineMetric(label: "Context switches", value: "\(entry.activitySwitchCount ?? 0)", color: ActivityInk.clay)
-                    Divider().frame(height: 34)
-                    ActivityTimelineMetric(label: "Document switches", value: "\(documentSwitches)", color: ActivityInk.clay)
-                    Divider().frame(height: 34)
-                    ActivityTimelineMetric(label: entry.activityTimelineTruncated == true ? "Longest retained context stretch" : "Longest same-context stretch",
-                                           value: ActivityDuration.string(entry.longestObservedStretch ?? 0), color: ActivityInk.blue)
+                ViewThatFits(in: .horizontal) {
+                    metrics(horizontal: true)
+                    metrics(horizontal: false)
                 }
                 .padding(.vertical, 4)
                 if entry.activityTimelineTruncated == true {
                     Label("Earlier observations were omitted; metrics describe the retained timeline.", systemImage: "info.circle")
-                        .font(.system(size: 10))
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -1061,15 +1081,15 @@ private struct ActivitySessionTimeline: View {
                             expanded.toggle()
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .medium))
-                        .foregroundStyle(ActivityInk.clay)
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(ActivityInk.clayText)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
             } else {
                 Label("Timeline unavailable for this older session", systemImage: "clock.badge.questionmark")
                     .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(ActivityInk.blue)
+                    .foregroundStyle(ActivityInk.blueText)
                 Text("This session has app totals, but no ordered observations were saved. Context switches and uninterrupted stretches cannot be determined.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -1089,9 +1109,8 @@ private struct ActivityTimelineMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 8, weight: .medium))
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
-                .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Text(verbatim: value)
                 .font(.system(size: 15, weight: .regular, design: .serif))
@@ -1140,22 +1159,23 @@ private struct ActivityTimelineRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(block.start.formatted(.dateTime.hour().minute()) + "–" + block.end.formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .font(.system(size: 11, weight: .medium, design: .monospaced))
+                        .foregroundStyle(.secondary)
                     Spacer(minLength: 4)
                     Text(ActivityDuration.string(block.seconds))
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(ActivityInk.blue)
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(ActivityInk.blueText)
                         .monospacedDigit()
                 }
                 Text(block.contextName)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundStyle(.primary)
-                    .lineLimit(1)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let detail = block.detail {
-                    Text(detail).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(detail).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                 } else if block.firstSegment.site != nil {
-                    Text(block.appName).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(block.appName).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
                 }
             }
             .padding(.bottom, 9)
@@ -1175,8 +1195,9 @@ private struct ActivityTimelineGap: View {
             Text("No observation · \(ActivityDuration.string(end.timeIntervalSince(start))) · \(start.formatted(.dateTime.hour().minute()))–\(end.formatted(.dateTime.hour().minute()))")
             Spacer(minLength: 0)
         }
-        .font(.system(size: 8, weight: .medium))
-        .foregroundStyle(.tertiary)
+        .font(.system(size: 11, weight: .medium))
+        .foregroundStyle(.secondary)
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.leading, 18)
         .padding(.bottom, 8)
         .accessibilityElement(children: .combine)

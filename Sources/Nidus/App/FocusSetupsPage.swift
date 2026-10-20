@@ -40,7 +40,7 @@ struct FocusSetupsPage: View {
                     }
                 }
             }
-            FocusSequencesSection(model: model)
+            FocusSequencesSection(model: model).settingsJumpAnchor("sequences")
         }
     }
 }

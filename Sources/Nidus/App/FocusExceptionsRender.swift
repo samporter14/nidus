@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusExceptionsRender.swift
 //  Nidus
@@ -78,3 +79,5 @@ extension RenderSurfaces {
         }
     }
 }
+
+#endif

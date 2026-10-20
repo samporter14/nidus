@@ -228,3 +228,45 @@ struct AboutPageTests {
         #expect(FocusAboutPage.credits.contains("MIT"))
     }
 }
+
+@MainActor
+struct LazySettingsTabTests {
+    private final class Page: NSViewController {
+        override func loadView() { view = NSView() }
+    }
+
+    @Test func placeholderLoadingDoesNotBuildThePageAndSelectionBuildsItOnce() {
+        var builds = 0
+        let tab = LazySettingsTabController {
+            builds += 1
+            return Page()
+        }
+        _ = tab.view
+        #expect(builds == 0)
+        #expect(tab.page == nil)
+        tab.materialize()
+        let first = tab.page
+        tab.materialize()
+        #expect(builds == 1)
+        #expect(tab.page === first)
+        #expect(tab.children.count == 1)
+    }
+
+    @Test func closingContentReleasesItsPageEvenWhileTheContainerLives() {
+        let tab = LazySettingsTabController { Page() }
+        weak var releasedPage: NSViewController?
+        autoreleasepool {
+            tab.materialize()
+            releasedPage = tab.page
+            tab.releasePage()
+        }
+        // AppKit property reads may return autoreleased objects. Check after
+        // the pool drains, without an expectation retaining the old page.
+        #expect(tab.page == nil)
+        #expect(tab.children.isEmpty)
+        #expect(tab.view.subviews.isEmpty)
+        #expect(releasedPage == nil)
+        tab.materialize()
+        #expect(tab.page != nil, "reopening can build a new page")
+    }
+}

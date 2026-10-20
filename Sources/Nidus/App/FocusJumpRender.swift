@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusJumpRender.swift
 //  Nidus
@@ -43,3 +44,5 @@ extension RenderSurfaces {
         jump.clear()
     }
 }
+
+#endif

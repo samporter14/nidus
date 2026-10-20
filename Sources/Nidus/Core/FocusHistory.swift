@@ -163,10 +163,12 @@ final class FocusHistory {
     static let limit = 5000
 
     let url: URL
+    private let persistence: PersistenceCoordinator?
     private(set) var sessions: [SessionEntry] = []
 
-    init(url: URL) {
+    init(url: URL, persistence: PersistenceCoordinator? = nil) {
         self.url = url
+        self.persistence = persistence
         guard let data = try? Data(contentsOf: url) else { return }
         if let file = try? JSONDecoder().decode(File.self, from: data) {
             sessions = file.sessions
@@ -233,10 +235,16 @@ final class FocusHistory {
 
     func clear() {
         sessions.removeAll()
-        try? FileManager.default.removeItem(at: url)
+        if let persistence { persistence.remove(url, label: "Session history") }
+        else { try? FileManager.default.removeItem(at: url) }
     }
 
     private func save() {
+        if let persistence {
+            let snapshot = sessions
+            persistence.write(to: url, label: "Session history") { try Self.encode(snapshot) }
+            return
+        }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? Self.encode(sessions).write(to: url, options: .atomic)
     }

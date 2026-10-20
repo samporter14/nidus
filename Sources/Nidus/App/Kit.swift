@@ -38,11 +38,23 @@ enum NidusTransition {
 /// The whole of a settings page: a grouped form, as System Settings is.
 struct NidusSettingsPane<Content: View>: View {
     @ViewBuilder let content: () -> Content
+    @Environment(\.settingsJump) private var jump
+    @Environment(\.settingsPageID) private var page
 
     var body: some View {
-        Form { content() }
-            .formStyle(.grouped)
-            .tint(FocusPalette.clay)
+        ScrollViewReader { scroll in
+            Form { content() }
+                .formStyle(.grouped)
+                .tint(FocusPalette.clay)
+                .task(id: jump?.destination) {
+                    guard let destination = jump?.destination, destination.page == page else { return }
+                    // Navigation can create this hosting view in the same turn.
+                    // Wait for its first layout, without a repeating timer.
+                    await Task.yield()
+                    guard !Task.isCancelled else { return }
+                    scroll.scrollTo(destination.anchor, anchor: .center)
+                }
+        }
     }
 }
 

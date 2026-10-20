@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusSetupsRender.swift
 //  Nidus
@@ -117,3 +118,5 @@ private struct InPopover: View {
         }
     }
 }
+
+#endif

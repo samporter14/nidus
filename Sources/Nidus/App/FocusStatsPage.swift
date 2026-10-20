@@ -25,7 +25,9 @@ struct FocusStatsPage: View {
                 summary(stats)
             }
             FocusProjectsSection(model: model)
+                .settingsJumpAnchor("projects")
             history(stats)
+                .settingsJumpAnchor("history")
         }
         .confirmationDialog("Clear your focus history?", isPresented: $confirmingClear) {
             Button("Clear history", role: .destructive, action: model.clearHistory)
@@ -65,8 +67,11 @@ struct FocusStatsPage: View {
 
         NidusSettingsCard {
             NidusStackedRow(title: "Last six months") {
-                ContributionGraph(stats: stats)
-                    .padding(.vertical, NidusSpacing.xs)
+                VStack(alignment: .leading, spacing: NidusSpacing.sm) {
+                    ContributionGraph(stats: stats)
+                        .padding(.vertical, NidusSpacing.xs)
+                    FocusDayDetails(stats: stats)
+                }
             }
         }
 
@@ -238,6 +243,43 @@ extension NidusModel {
 }
 
 // MARK: - The graph
+
+/// A keyboard- and VoiceOver-readable alternative to hovering the graph.
+/// The concise chart remains the default; exact days are disclosed on demand.
+struct FocusDayDetails: View {
+    let stats: FocusStats
+    @State private var expanded = false
+
+    static func days(in stats: FocusStats) -> [FocusStats.Day] {
+        stats.weeks.flatMap { $0 }.filter { !$0.isFuture }.sorted { $0.date > $1.date }
+    }
+
+    var body: some View {
+        DisclosureGroup(isExpanded: $expanded) {
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Self.days(in: stats)) { day in
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(day.date, format: .dateTime.weekday(.abbreviated).month(.abbreviated).day().year())
+                            Spacer(minLength: 12)
+                            Text(day.focused <= 0 ? "No focus" : day.focused < 60 ? "Less than 1 min" : FocusFormat.long(day.focused))
+                                .foregroundStyle(.secondary)
+                                .monospacedDigit()
+                        }
+                        .font(.callout)
+                        .padding(.vertical, 5)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
+                .padding(.trailing, 8)
+            }
+            .frame(maxHeight: 220)
+        } label: {
+            Text("Daily details").font(.callout)
+        }
+        .accessibilityHint("Shows each date and its focused time, newest first")
+    }
+}
 
 /// Six months of days, a column a week, shaded by time focused. The squares
 /// grow or shrink to fill the card's width, so the graph ends where the card

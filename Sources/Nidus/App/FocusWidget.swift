@@ -12,8 +12,8 @@ import SwiftUI
 /// session's clock and controls.
 struct FocusWidget: View {
     @ObservedObject var model: NidusModel
-    /// Where ↑ and ↓ are in the recent goals; nil is the field as typed.
-    @State private var recentIndex: Int?
+    /// Recent-goal navigation keeps an unfinished draft beneath the history.
+    @State private var recentHistory = RecentGoalHistory()
     /// A strict session's End asks for this phrase first.
     @State private var confirmingEnd = false
     @State private var endPhrase = ""
@@ -22,6 +22,7 @@ struct FocusWidget: View {
     @FocusState private var customLengthFocused: Bool
     @State private var todayCache = TodayLineCache()
     static let strictEndPhrase = "stop early"
+    private static let headerGlyph = FocusGlyph.image(.brain, pointSize: 17)
 
     var body: some View {
         VStack(alignment: .leading, spacing: NidusSpacing.sm) {
@@ -33,6 +34,7 @@ struct FocusWidget: View {
             } else {
                 idle
             }
+            PersistenceWarningView(persistence: model.persistence)
             // No trailing Spacer: the root frame already aligns to the top,
             // and the stack's spacing before a Spacer would add 8pt the
             // declared height does not have.
@@ -46,7 +48,7 @@ struct FocusWidget: View {
     /// sans title, so nothing changes shape when a session starts or ends.
     private var header: some View {
         HStack(spacing: 11) {
-            Image(nsImage: FocusGlyph.image(.brain, pointSize: 17))
+            Image(nsImage: Self.headerGlyph)
                 .renderingMode(.template)
                 .foregroundStyle(model.isPaused || model.isOnBreak ? Solanum.inkMuted : Solanum.clayText)
                 .frame(width: 35, height: 35)
@@ -259,8 +261,8 @@ struct FocusWidget: View {
             Section("Recent goals") {
                 ForEach(model.recentGoals, id: \.self) { goal in
                     Button(goal) {
+                        recentHistory.select(goal, from: model.recentGoals, current: model.goalDraft)
                         model.goalDraft = goal
-                        recentIndex = model.recentGoals.firstIndex(of: goal)
                     }
                 }
             }
@@ -278,19 +280,12 @@ struct FocusWidget: View {
         .accessibilityLabel("Recent goals")
     }
 
-    /// ↑ steps back through the recent goals and ↓ forward, back to an
-    /// empty field, as a shell's history does.
+    /// Browsing recent goals preserves the unfinished draft underneath.
     private func stepRecentGoal(_ step: Int) -> KeyPress.Result {
-        let goals = model.recentGoals
-        guard !goals.isEmpty else { return .ignored }
-        let next = (recentIndex ?? -1) + step
-        if next < 0 {
-            recentIndex = nil
-            model.goalDraft = ""
-        } else if next < goals.count {
-            recentIndex = next
-            model.goalDraft = goals[next]
+        guard let text = recentHistory.move(step, current: model.goalDraft, goals: model.recentGoals) else {
+            return .ignored
         }
+        model.goalDraft = text
         return .handled
     }
 
@@ -627,7 +622,9 @@ struct FocusWidget: View {
                 }
                 .padding(.bottom, 8)
             }
-            ProgressTrack(progress: model.breakProgress, tint: .gray)
+            FocusClockView(model: model) { _ in
+                ProgressTrack(progress: model.breakProgress, tint: .gray)
+            }
             breakRestrictions
             FocusInboxRow(model: model)
         }
@@ -672,11 +669,13 @@ struct FocusWidget: View {
     }
 
     private func breakClock(size: CGFloat) -> some View {
-        Text(verbatim: model.clockText)
-            .font(.system(size: size, weight: .light))
-            .monospacedDigit()
-            .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
-            .accessibilityLabel("Break, \(FocusFormat.spoken(model.breakRemaining))")
+        FocusClockView(model: model) { _ in
+            Text(verbatim: model.clockText)
+                .font(.system(size: size, weight: .light))
+                .monospacedDigit()
+                .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
+                .accessibilityLabel("Break, \(FocusFormat.spoken(model.breakRemaining))")
+        }
     }
 
     /// Labeled, so a play mark is not read as "resume" or "pause".
@@ -689,13 +688,15 @@ struct FocusWidget: View {
     }
 
     private func clock(size: CGFloat) -> some View {
-        Text(verbatim: model.clockText)
-            .font(.system(size: size, weight: .light))
-            .monospacedDigit()
-            .foregroundStyle(model.isPaused ? AdaptiveColors.surfaceTertiaryText : AdaptiveColors.surfacePrimaryText)
-            .accessibilityLabel(model.isOpenEnded
-                ? "Focused for \(FocusFormat.spoken(model.elapsed).replacingOccurrences(of: " left", with: ""))"
-                : FocusFormat.spoken(model.remaining))
+        FocusClockView(model: model) { _ in
+            Text(verbatim: model.clockText)
+                .font(.system(size: size, weight: .light))
+                .monospacedDigit()
+                .foregroundStyle(model.isPaused ? AdaptiveColors.surfaceTertiaryText : AdaptiveColors.surfacePrimaryText)
+                .accessibilityLabel(model.isOpenEnded
+                    ? "Focused for \(FocusFormat.spoken(model.elapsed).replacingOccurrences(of: " left", with: ""))"
+                    : FocusFormat.spoken(model.remaining))
+        }
     }
 
     private var pauseButton: some View {
@@ -710,7 +711,39 @@ struct FocusWidget: View {
     }
 
     private var progressBar: some View {
-        ProgressTrack(progress: model.progress, tint: model.isPaused ? .gray : FocusPalette.clay)
+        FocusClockView(model: model) { _ in
+            ProgressTrack(progress: model.progress, tint: model.isPaused ? .gray : FocusPalette.clay)
+        }
+    }
+}
+
+/// The history cursor remembers the draft, including edits made after browsing.
+/// Kept separate from the field so the round trip can be checked without a window.
+struct RecentGoalHistory {
+    private var index: Int?
+    private var draft = ""
+    private var displayed: String?
+
+    mutating func move(_ step: Int, current: String, goals: [String]) -> String? {
+        guard !goals.isEmpty else { return nil }
+        if current != displayed { index = nil }
+        if index == nil { draft = current }
+        let next = (index ?? -1) + step
+        if next < 0 {
+            index = nil
+            displayed = draft
+            return draft
+        }
+        guard goals.indices.contains(next) else { return current }
+        index = next
+        displayed = goals[next]
+        return goals[next]
+    }
+
+    mutating func select(_ goal: String, from goals: [String], current: String) {
+        if index == nil || current != displayed { draft = current }
+        index = goals.firstIndex(of: goal)
+        displayed = goal
     }
 }
 

@@ -201,8 +201,18 @@ enum BrickFileReader {
 final class BrickCompanion {
     private weak var model: NidusModel?
     private var pollTask: Task<Void, Never>?
+    private var readTask: Task<Void, Never>?
+    private var eventTask: Task<Void, Never>?
+    private var observation: BrickFileObservation?
+    private var generation = 0
+    private var readRequested = false
     private var fileGate = BrickFileGate()
     private var offerExpiryTask: Task<Void, Never>?
+
+    /// File-provider notifications handle the normal path. A modest fallback
+    /// also catches uncoordinated replacements and provider recovery, within
+    /// the request's two-minute freshness window.
+    static let recoveryInterval: Duration = .seconds(30)
 
     func activate(_ model: NidusModel) {
         self.model = model
@@ -211,27 +221,80 @@ final class BrickCompanion {
     }
 
     func deactivate() {
-        pollTask?.cancel()
-        pollTask = nil
+        stopMonitoring()
         offerExpiryTask?.cancel()
         offerExpiryTask = nil
         model = nil
     }
 
     func refresh() {
-        pollTask?.cancel()
-        pollTask = nil
+        stopMonitoring()
         guard let model, model.brickEnabled else {
             model?.dismissBrickOffer()
             fileGate.reset()
             return
         }
         guard !model.brickFileBookmark.isEmpty else { return }
+        let bookmark = model.brickFileBookmark
+        let generation = generation
         pollTask = Task { [weak self] in
+            await self?.observe(bookmark: bookmark, generation: generation)
             while !Task.isCancelled {
-                await self?.readSelectedFile()
-                try? await Task.sleep(for: .seconds(2))
+                self?.requestRead(generation: generation)
+                try? await Task.sleep(for: Self.recoveryInterval, tolerance: .seconds(3))
             }
+        }
+    }
+
+    private func stopMonitoring() {
+        generation += 1
+        pollTask?.cancel()
+        readTask?.cancel()
+        eventTask?.cancel()
+        pollTask = nil
+        readTask = nil
+        eventTask = nil
+        readRequested = false
+        observation?.invalidate()
+        observation = nil
+    }
+
+    private func observe(bookmark: Data, generation: Int) async {
+        let watcher = await Task.detached(priority: .utility) { [weak self] in
+            BrickFileObservation(bookmark: bookmark) { [weak self] in
+                Task { @MainActor [weak self] in self?.fileChanged(generation: generation) }
+            }
+        }.value
+        guard !Task.isCancelled, self.generation == generation else {
+            watcher?.invalidate()
+            return
+        }
+        observation?.invalidate()
+        observation = watcher
+    }
+
+    private func fileChanged(generation: Int) {
+        guard self.generation == generation else { return }
+        // A provider may report several changes for one atomic save.
+        eventTask?.cancel()
+        eventTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(150))
+            guard !Task.isCancelled else { return }
+            self?.requestRead(generation: generation)
+        }
+    }
+
+    private func requestRead(generation: Int) {
+        guard self.generation == generation else { return }
+        readRequested = true
+        guard readTask == nil else { return }
+        readTask = Task { [weak self] in
+            guard let self else { return }
+            while self.generation == generation, readRequested, !Task.isCancelled {
+                readRequested = false
+                await readSelectedFile(generation: generation)
+            }
+            if self.generation == generation { readTask = nil }
         }
     }
 
@@ -273,17 +336,20 @@ final class BrickCompanion {
         }
     }
 
-    private func readSelectedFile() async {
+    private func readSelectedFile(generation: Int) async {
         guard let model, model.brickEnabled else { return }
         model.expireBrickOffer()
         let bookmark = model.brickFileBookmark
         let result = await Task.detached { BrickFileReader.read(bookmark: bookmark) }.value
-        guard !Task.isCancelled, model.brickEnabled, model.brickFileBookmark == bookmark else { return }
+        guard !Task.isCancelled, self.generation == generation,
+              model.brickEnabled, model.brickFileBookmark == bookmark else { return }
         if let refreshed = result.refreshedBookmark {
             model.host?.preferences.setValueQuietly(refreshed, forKey: NidusModel.Key.brickFileBookmark)
+            await observe(bookmark: refreshed, generation: generation)
+            guard !Task.isCancelled, self.generation == generation else { return }
         }
-        model.brickFileName = result.name
-        model.brickFileStatus = result.status
+        if model.brickFileName != result.name { model.brickFileName = result.name }
+        if model.brickFileStatus != result.status { model.brickFileStatus = result.status }
         guard let data = result.data else { return }
         // A selected file's existing value is a baseline on launch, enable,
         // or selection. Subsequent identical reads are inert.
@@ -350,7 +416,7 @@ extension NidusModel {
     }
 
     func dismissBrickOffer() {
-        brickOffer = nil
+        if brickOffer != nil { brickOffer = nil }
         brickCompanion.cancelOfferExpiry()
         host?.hud.dismiss(id: Self.brickHUDID)
     }

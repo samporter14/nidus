@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusSequencesRender.swift
 //  Nidus
@@ -194,3 +195,5 @@ extension RenderSurfaces {
         model.sequences = []
     }
 }
+
+#endif

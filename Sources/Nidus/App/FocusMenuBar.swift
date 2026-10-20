@@ -28,8 +28,11 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     private var frameObserver: NSObjectProtocol?
     private var popover: NSPopover?
     private let menu = NSMenu()
+    private var lastAccessibilityValue: String?
 
     static let glyphSize: CGFloat = 18
+    private static let clockFont = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize,
+                                                                  weight: .regular)
     /// Holds the glyph's place, so the title lays out beside it.
     private static let placeholder: NSImage = {
         let image = NSImage(size: NSSize(width: glyphSize, height: glyphSize))
@@ -82,6 +85,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
         glyph = nil
         if let item { NSStatusBar.system.removeStatusItem(item) }
         item = nil
+        lastAccessibilityValue = nil
     }
 
     // MARK: Session events
@@ -154,17 +158,22 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     /// while a session runs, and only when the setting is on.
     private func updateTime() {
         guard let item, let button = item.button, let model else { return }
-        let status = model.menuBarShowsTime && (model.isActive || model.isOnBreak) ? model.menuBarStatus : nil
-        let text = status?.text ?? ""
+        let status = model.menuBarStatus
+        // State is available to VoiceOver whether or not the visual clock is
+        // enabled. Update it before the title's no-change early returns.
+        let spoken = status.accessibilityValue(isActive: model.isActive, onBreak: model.isOnBreak, isPaused: model.isPaused)
+        if spoken != lastAccessibilityValue {
+            button.setAccessibilityValue(spoken)
+            lastAccessibilityValue = spoken
+        }
+        let text = model.menuBarShowsTime && (model.isActive || model.isOnBreak) ? status.text : ""
         if text.isEmpty {
             guard button.imagePosition != .imageOnly else { return }
             button.attributedTitle = NSAttributedString()
             button.imagePosition = .imageOnly
             item.length = NSStatusItem.squareLength
-            button.setAccessibilityValue(nil)
         } else {
-            let font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.menuBarFont(ofSize: 0).pointSize, weight: .regular)
-            var attributes: [NSAttributedString.Key: Any] = [.font: font]
+            var attributes: [NSAttributedString.Key: Any] = [.font: Self.clockFont]
             // Paused, the digits dim with the brain; a break's are quiet too.
             if model.isPaused || model.isOnBreak { attributes[.foregroundColor] = NSColor.secondaryLabelColor }
             let title = NSAttributedString(string: text, attributes: attributes)
@@ -172,7 +181,6 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             button.attributedTitle = title
             button.imagePosition = .imageLeading
             item.length = NSStatusItem.variableLength
-            button.setAccessibilityValue(status?.spoken)
         }
         placeGlyph()
     }
@@ -364,35 +372,36 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
 }
 
 /// The running session at the top of the menu: goal, countdown, progress.
-/// It ticks while the menu is open because the model publishes every second
-/// of a session.
+/// Only this small clock surface observes the session's second-by-second ticks.
 struct FocusMenuHeader: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(verbatim: title)
-                .font(.system(size: 13, weight: .medium))
-                .lineLimit(1)
-            Text(verbatim: model.clockText)
-                .font(.system(size: 28, weight: .light))
-                .monospacedDigit()
-                .foregroundStyle(model.isPaused || model.isOnBreak ? .secondary : .primary)
-            if model.isOnBreak || !model.isOpenEnded {
-                GeometryReader { proxy in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(.quaternary)
-                        Capsule().fill(model.isPaused || model.isOnBreak ? AnyShapeStyle(.tertiary) : AnyShapeStyle(FocusPalette.clay))
-                            .frame(width: max(3, proxy.size.width * (model.isOnBreak ? model.breakProgress : model.progress)))
+        FocusClockView(model: model) { _ in
+            VStack(alignment: .leading, spacing: 6) {
+                Text(verbatim: title)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Text(verbatim: model.clockText)
+                    .font(.system(size: 28, weight: .light))
+                    .monospacedDigit()
+                    .foregroundStyle(model.isPaused || model.isOnBreak ? .secondary : .primary)
+                if model.isOnBreak || !model.isOpenEnded {
+                    GeometryReader { proxy in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(.quaternary)
+                            Capsule().fill(model.isPaused || model.isOnBreak ? AnyShapeStyle(.tertiary) : AnyShapeStyle(FocusPalette.clay))
+                                .frame(width: max(3, proxy.size.width * (model.isOnBreak ? model.breakProgress : model.progress)))
+                        }
                     }
+                    .frame(height: 3)
                 }
-                .frame(height: 3)
             }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 8)
+            .frame(width: 240, alignment: .leading)
+            .accessibilityElement(children: .combine)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .frame(width: 240, alignment: .leading)
-        .accessibilityElement(children: .combine)
     }
 
     private var title: String {
@@ -407,6 +416,13 @@ struct FocusMenuHeader: View {
 struct MenuBarStatus: Equatable {
     var text: String
     var spoken: String
+
+    /// Independent of whether the person wants to see digits in the menu bar.
+    func accessibilityValue(isActive: Bool, onBreak: Bool, isPaused: Bool) -> String {
+        if onBreak { return "On a break, \(spoken)" }
+        guard isActive else { return "Ready to focus" }
+        return "\(isPaused ? "Paused" : "Focusing"), \(spoken)"
+    }
 
     /// A block of a sequence reads "2/3 \u{00B7} 18:40" (its number among the
     /// work blocks, then the clock); a break, an ordinary session and an

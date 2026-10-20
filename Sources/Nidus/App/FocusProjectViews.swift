@@ -62,7 +62,7 @@ struct FocusProjectPickerRow: View {
 
     /// Shown once at least one project isn't archived: archived ones aren't
     /// offered, so a list of only those has nothing to pick.
-    static func isVisible(projects: [FocusProject]) -> Bool {
+    nonisolated static func isVisible(projects: [FocusProject]) -> Bool {
         !FocusProject.active(projects).isEmpty
     }
 

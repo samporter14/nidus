@@ -122,7 +122,16 @@ final class FocusController: ObservableObject {
     private let tabsRestoredMarker: URL
     /// The next sweep's redirects are tabs put back at quit; see above.
     private(set) var quietsNextSweep = false
-    private let browserQueue = DispatchQueue(label: "focus.browsers", qos: .utility)
+    private let browserWork = BrowserWorkPool()
+    private var quietBrowserIDs: Set<String> = []
+    private var browserRestoration = BrowserRestorationLedger()
+    private var shutdownTask: Task<Void, Never>?
+    private var shutdownCompletion: (() -> Void)?
+    private var shutdownRemaining = 0
+    private var shutdownRestored = 0
+    private(set) var isPreparingForTermination = false
+    private(set) var shutdownRestorationIncomplete = false
+    static let browserShutdownBudget: TimeInterval = 5
     private let activityQueue = DispatchQueue(label: "focus.activity", qos: .utility)
     private var activityProbeInFlight = false
     private var activityProbeGeneration = 0
@@ -131,7 +140,6 @@ final class FocusController: ObservableObject {
     private var activityDetailApp: (id: String, pid: pid_t)?
     private var activityDetailAt: Date?
     private var lastAppActivation: Date?
-    private var sweepInFlight = false
     private lazy var appBlocker = AppBlocker(mode: .block([]), action: .terminate) { [weak self] app in
         self?.appWasBlocked(app)
     }
@@ -159,29 +167,33 @@ final class FocusController: ObservableObject {
     private var shortcutChain: Task<Void, Never>?
 
     /// `now` is the engine's clock; tests move it by hand.
-    init(directory: URL, now: @escaping () -> Date = Date.init) {
+    init(directory: URL, now: @escaping () -> Date = Date.init, persistence: PersistenceCoordinator? = nil) {
         blockPage = BlockPage(directory: directory)
         browsers = BrowserBlocker(blockPage: blockPage)
-        engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")), now: now)
+        engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json"), persistence: persistence), now: now)
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
-        history = FocusHistory(url: directory.appendingPathComponent("history.json"))
+        history = FocusHistory(url: directory.appendingPathComponent("history.json"), persistence: persistence)
     }
 
     // MARK: Lifecycle
 
-    func start() {
+    func start() { start(restoringSession: true) }
+
+    private func start(restoringSession: Bool) {
         guard !isStarted else { return }
         isStarted = true
         try? blockPage.install()
         engine.onEvent = { [weak self] event in self?.handle(event) }
         engine.isAway = { [weak self] in self?.isScreenLocked ?? false }
         now = Date()
-        engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
-                       allowTitles: activityDocumentTitlesEnabled,
-                       excludedApps: activityExcludedApps)
-        if FileManager.default.fileExists(atPath: tabsRestoredMarker.path) {
+        if restoringSession {
+            engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
+                           allowTitles: activityDocumentTitlesEnabled,
+                           excludedApps: activityExcludedApps)
+        }
+        if restoringSession, FileManager.default.fileExists(atPath: tabsRestoredMarker.path) {
             try? FileManager.default.removeItem(at: tabsRestoredMarker)
-            quietsNextSweep = engine.session != nil || engine.isOnBreak
+            armQuietSweep(engine.session != nil || engine.isOnBreak)
         }
 
         let center = NSWorkspace.shared.notificationCenter
@@ -212,27 +224,16 @@ final class FocusController: ObservableObject {
         updateClock()
     }
 
-    /// Stops watching. The session itself is saved and resumes on the next
-    /// start(), so this does not end it. With `restoringTabs` (Nidus is
-    /// quitting), tabs on the block page go back to their pages first: a
-    /// blocker that isn't running shouldn't leave them stuck. The next
-    /// start() blocks them again, quietly.
+    /// Local teardown is idempotent. Production quit uses the bounded async
+    /// preparation below; legacy callers can still request restoration.
     func stop(restoringTabs: Bool = false) {
-        if restoringTabs, let enforcing, !(enforcing.mode == .block && enforcing.websites.isEmpty) {
-            // Synchronous, after any sweep in flight: the process is about
-            // to end. Every Apple Event has a timeout, so a hung browser
-            // costs seconds, not the quit.
-            let browsers = self.browsers
-            let restored = browserQueue.sync {
-                BrowserProfile.known.reduce(0) { count, browser in
-                    count + ((try? browsers.restore(browser))?.count ?? 0)
-                }
-            }
-            if Self.marksTabsRestored(restored: restored, hasSession: engine.session != nil, isOnBreak: engine.isOnBreak) {
-                FileManager.default.createFile(atPath: tabsRestoredMarker.path, contents: Data())
-            }
+        if restoringTabs {
+            prepareForTermination(completion: {})
+            return
         }
+        guard isStarted else { return }
         isStarted = false
+        browserWork.invalidate()
         invalidateActivityProbe()
         updateClock()
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
@@ -245,7 +246,72 @@ final class FocusController: ObservableObject {
         engine.onEvent = { _ in }
     }
 
-    func endSnooze(_ item: String) { engine.endSnooze(item) }
+    /// Stops producing work before restoring tabs. Each browser has its own
+    /// serial lane, and one monotonic budget bounds the whole shutdown.
+    func prepareForTermination(completion: @escaping () -> Void) {
+        guard !isPreparingForTermination else { return }
+        isPreparingForTermination = true
+        shutdownRestorationIncomplete = false
+        let shouldRestore = browserRestoration.needsShutdownRestore(enforcement: enforcing, disabled: blocksNothing)
+        stop()
+        guard shouldRestore else { completion(); return }
+        shutdownCompletion = completion
+        shutdownRemaining = BrowserProfile.known.count
+        shutdownRestored = 0
+        let deadline = ProcessInfo.processInfo.systemUptime + Self.browserShutdownBudget
+        let browsers = self.browsers
+        for browser in BrowserProfile.known {
+            browserWork.submit(browser, replacing: true, deadline: deadline) { permit in
+                do throws(AppleEventError) {
+                    return .success(BrowserWorkResult(restored: try browsers.restore(browser, permit: permit).count))
+                } catch { return .failure(error) }
+            } completion: { [weak self] result in
+                guard let self, self.shutdownCompletion != nil else { return }
+                switch result {
+                case .success(let value):
+                    self.shutdownRestored += value.restored
+                    self.browserRestoration.didRestore(browser.bundleID)
+                case .failure: self.shutdownRestorationIncomplete = true
+                }
+                self.shutdownRemaining -= 1
+                if self.shutdownRemaining == 0 { self.finishBrowserShutdown() }
+            }
+        }
+        shutdownTask = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(Self.browserShutdownBudget))
+            guard !Task.isCancelled else { return }
+            self?.finishBrowserShutdown()
+        }
+    }
+
+    private func finishBrowserShutdown() {
+        guard let completion = shutdownCompletion else { return }
+        shutdownCompletion = nil
+        if shutdownRemaining > 0 { shutdownRestorationIncomplete = true }
+        shutdownTask?.cancel()
+        shutdownTask = nil
+        browserWork.invalidate()
+        if Self.marksTabsRestored(restored: shutdownRestored, hasSession: engine.session != nil, isOnBreak: engine.isOnBreak) {
+            FileManager.default.createFile(atPath: tabsRestoredMarker.path, contents: Data())
+        }
+        completion()
+    }
+
+    /// A failed persistence flush cancels quitting. Resume the in-memory
+    /// session, never reload the older file whose save just failed.
+    func resumeAfterCancelledTermination() {
+        guard isPreparingForTermination else { return }
+        isPreparingForTermination = false
+        armQuietSweep(engine.session != nil || engine.isOnBreak)
+        start(restoringSession: false)
+    }
+
+    private func armQuietSweep(_ quiet: Bool) {
+        quietsNextSweep = quiet
+        quietBrowserIDs = quiet ? Set(BrowserProfile.known.map(\.bundleID)) : []
+    }
+
+    func endSnooze(_ item: String) { if !isPreparingForTermination { engine.endSnooze(item) } }
 
     // MARK: Away
 
@@ -271,10 +337,11 @@ final class FocusController: ObservableObject {
         engine.systemDidWake()
     }
     func skipBreak() {
+        guard !isPreparingForTermination else { return }
         now = Date()
         engine.skipBreak()
     }
-    func endBreak() { engine.endBreak() }
+    func endBreak() { if !isPreparingForTermination { engine.endBreak() } }
 
     private func warnAboutEndingBreak() {
         guard let end = engine.breakEnding(within: Self.breakWarningLead), warnedBreakEnd != end,
@@ -325,6 +392,7 @@ final class FocusController: ObservableObject {
     // MARK: Commands
 
     func start(_ plan: SessionPlan) {
+        guard !isPreparingForTermination else { return }
         // The clock stood still between sessions. Bring it up to date before
         // the session exists, so the first countdown is right and nothing
         // animates twice.
@@ -335,22 +403,25 @@ final class FocusController: ObservableObject {
     /// guarded start path; the engine itself refuses while anything is on.
     @discardableResult
     func startSequence(_ run: SequenceRun) -> Bool {
+        guard !isPreparingForTermination else { return false }
         now = Date()
         return engine.startSequence(run)
     }
-    func pause() { engine.pause() }
-    func resume() { engine.resume() }
-    func end() { engine.end() }
+    func pause() { if !isPreparingForTermination { engine.pause() } }
+    func resume() { if !isPreparingForTermination { engine.resume() } }
+    func end() { if !isPreparingForTermination { engine.end() } }
     /// Takes back the last early end, if the engine still allows it (see
     /// `SessionEngine.canUndoEnd`). The handler for `.undone` does the rest.
     @discardableResult
     func undoEnd() -> Bool {
+        guard !isPreparingForTermination else { return false }
         now = Date()
         return engine.undoEnd()
     }
-    func extend(by seconds: TimeInterval) { engine.extend(by: seconds) }
+    func extend(by seconds: TimeInterval) { if !isPreparingForTermination { engine.extend(by: seconds) } }
 
     func snooze(_ item: String) {
+        guard !isPreparingForTermination else { return }
         engine.snooze(item, for: snoozeLength)
     }
 
@@ -489,7 +560,7 @@ final class FocusController: ObservableObject {
             // The end put blocked tabs back; the first sweep blocks them again.
             // That is the same block as before, not a new one to count or show
             // (as after a quit). Armed only when a sweep will run to clear it.
-            quietsNextSweep = engine.enforcement.map { !($0.mode == .block && $0.websites.isEmpty) } ?? false
+            armQuietSweep(engine.enforcement.map { !($0.mode == .block && $0.websites.isEmpty) } ?? false)
         default:
             break
         }
@@ -559,22 +630,24 @@ final class FocusController: ObservableObject {
         // carry rules, and a rule set that is empty blocks nothing.
         if blocksNothing, target != nil { target = Enforcement(mode: .block, apps: [], websites: []) }
         let restarting = Self.restartsBlocker(sessionStarted: sessionStarted, from: enforcing, to: target)
-        guard target != enforcing || restarting else { return }
+        guard target != enforcing || restarting || !browserRestoration.pending.isEmpty else { return }
         let before = enforcing
         enforcing = target
+        browserWork.invalidate()
+        let restore = browserRestoration.transition(from: before, to: target, disabled: blocksNothing)
 
         guard let target else {
             appBlocker.stop()
-            if Self.tabHandling(from: before, to: nil) == .restoreAll { restoreTabs(keepBlocked: nil) }
+            if restore { restoreTabs(keepBlocked: nil) }
             return
         }
         if restarting { appBlocker.stop() }
         appBlocker.mode = target.mode == .block ? .block(target.apps) : .allow(target.apps)
         appBlocker.start()
-        if case .keepBlocked(let rule) = Self.tabHandling(from: before, to: target) {
-            restoreTabs(keepBlocked: websiteRule(for: rule))
-        }
-        sweepBrowsers()
+        // Even a nil-to-plan transition reconciles old block pages: an End
+        // followed immediately by Start can supersede an unfinished restore.
+        // Only pages permitted by the new snapshot are put back.
+        sweepBrowsers(restoring: restore, replacing: true)
     }
 
     /// What happens to tabs sitting on the block page when the rules change.
@@ -633,49 +706,56 @@ final class FocusController: ObservableObject {
         Self.websiteRule(for: enforcement, session: engine.session)
     }
 
-    private func sweepBrowsers() {
-        guard let enforcing, !sweepInFlight else { return }
-        // Nothing to find: no browser needs asking.
-        if enforcing.mode == .block, enforcing.websites.isEmpty { return }
-        sweepInFlight = true
+    private func sweepBrowsers(restoring: Bool = false, replacing: Bool = false) {
+        guard !blocksNothing, let enforcing else { return }
+        if enforcing.mode == .block, enforcing.websites.isEmpty, !restoring, browserRestoration.pending.isEmpty { return }
         let rule = websiteRule(for: enforcing)
         let browsers = self.browsers
         let goal = engine.session?.plan.goal ?? ""
-        // 0 hides the block page's Snooze: a strict session has none, and
-        // neither has a break (the page would offer what nothing can do).
         let onBreak = engine.session == nil
         let minutes = onBreak || engine.session?.plan.strict == true ? 0 : Int((snoozeLength / 60).rounded())
-        browserQueue.async { [weak self] in
-            var redirected: [String] = []
-            var access: [String: AppleEventError] = [:]
-            for browser in BrowserProfile.known {
+        for browser in BrowserProfile.known {
+            let needsRestore = restoring || browserRestoration.pending.contains(browser.bundleID)
+            browserWork.submit(browser, replacing: replacing) { permit in
                 do throws(AppleEventError) {
-                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes, onBreak: onBreak)
-                } catch {
-                    access[browser.bundleID] = error
-                }
-            }
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.sweepInFlight = false
-                    if self.browserAccess != access { self.browserAccess = access }
-                    // Tabs put back at quit, blocked again: not a new block.
-                    if self.quietsNextSweep {
-                        self.quietsNextSweep = false
-                    } else {
-                        for key in redirected { self.report(.website(domain: key)) }
-                    }
+                    // Reconcile old block pages before enforcing a new plan.
+                    // Both operations share the same per-browser serial lane.
+                    if needsRestore { _ = try browsers.restore(browser, keepBlocked: rule, permit: permit) }
+                    return .success(BrowserWorkResult(redirected: try browsers.sweep(
+                        browser, rule: rule, goal: goal, snoozeMinutes: minutes, onBreak: onBreak, permit: permit)))
+                } catch { return .failure(error) }
+            } completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .failure(let error):
+                    if self.browserAccess[browser.bundleID] != error { self.browserAccess[browser.bundleID] = error }
+                case .success(let value):
+                    if needsRestore { self.browserRestoration.didRestore(browser.bundleID) }
+                    if self.browserAccess[browser.bundleID] != nil { self.browserAccess.removeValue(forKey: browser.bundleID) }
+                    let quiet = self.quietBrowserIDs.remove(browser.bundleID) != nil
+                    self.quietsNextSweep = !self.quietBrowserIDs.isEmpty
+                    if !quiet { value.redirected.forEach { self.report(.website(domain: $0)) } }
                 }
             }
         }
     }
 
     private func restoreTabs(keepBlocked rule: WebsiteRule?) {
+        guard !blocksNothing else { return }
         let browsers = self.browsers
-        browserQueue.async {
-            for browser in BrowserProfile.known {
-                _ = try? browsers.restore(browser, keepBlocked: rule)
+        for browser in BrowserProfile.known {
+            browserWork.submit(browser, replacing: true) { permit in
+                do throws(AppleEventError) {
+                    return .success(BrowserWorkResult(restored: try browsers.restore(browser, keepBlocked: rule, permit: permit).count))
+                } catch { return .failure(error) }
+            } completion: { [weak self] result in
+                guard let self else { return }
+                switch result {
+                case .success:
+                    self.browserRestoration.didRestore(browser.bundleID)
+                case .failure(let error):
+                    if self.browserAccess[browser.bundleID] != error { self.browserAccess[browser.bundleID] = error }
+                }
             }
         }
     }

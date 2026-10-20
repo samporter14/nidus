@@ -506,16 +506,17 @@ struct BrowserBlocker: Sendable {
 
     /// Every tab of a running browser. An empty array when it is not running,
     /// in which case nothing was sent.
-    func tabs(in browser: BrowserProfile) throws(AppleEventError) -> [TabLocation] {
+    func tabs(in browser: BrowserProfile, permit: BrowserWorkPermit? = nil) throws(AppleEventError) -> [TabLocation] {
+        _ = try eventTimeout(permit)
         guard let target = AppleEventTarget(runningBundleID: browser.bundleID) else { return [] }
         let windows = ObjectSpecifier.every("cwin")
         // Two bulk reads, not one per tab. The windows are listed in the same
         // order both times; a window opening between the two shows up as a
         // count mismatch, and the caller retries on the next sweep.
-        let ids = try target.get(ObjectSpecifier.property("ID  ", of: windows), timeout: timeout).listItems
+        let ids = try target.get(ObjectSpecifier.property("ID  ", of: windows), timeout: try eventTimeout(permit)).listItems
         let urls = try target.get(ObjectSpecifier.property(browser.urlProperty,
                                                            of: ObjectSpecifier.every(browser.tabClass, of: windows)),
-                                  timeout: timeout).listItems
+                                  timeout: try eventTimeout(permit)).listItems
         guard ids.count == urls.count else { throw .failed(-1) }
         var result: [TabLocation] = []
         for (window, tabURLs) in zip(ids, urls) {
@@ -557,11 +558,11 @@ struct BrowserBlocker: Sendable {
     /// key of each tab it redirected.
     @discardableResult
     func sweep(_ browser: BrowserProfile, rule: WebsiteRule, goal: String = "", snoozeMinutes: Int = 3,
-               onBreak: Bool = false) throws(AppleEventError) -> [String] {
+               onBreak: Bool = false, permit: BrowserWorkPermit? = nil) throws(AppleEventError) -> [String] {
         var redirected: [String] = []
-        for redirect in redirects(for: try tabs(in: browser), rule: rule, goal: goal, snoozeMinutes: snoozeMinutes,
+        for redirect in redirects(for: try tabs(in: browser, permit: permit), rule: rule, goal: goal, snoozeMinutes: snoozeMinutes,
                                   onBreak: onBreak) {
-            if try replace(redirect.tab, in: browser, with: redirect.page) {
+            if try replace(redirect.tab, in: browser, with: redirect.page, permit: permit) {
                 redirected.append(redirect.key)
             }
         }
@@ -571,10 +572,10 @@ struct BrowserBlocker: Sendable {
     /// Puts block-page tabs back on the URL they were showing: every one, or
     /// with `keepBlocked`, those the rule no longer blocks (after a snooze).
     @discardableResult
-    func restore(_ browser: BrowserProfile, keepBlocked rule: WebsiteRule? = nil) throws(AppleEventError) -> [String] {
+    func restore(_ browser: BrowserProfile, keepBlocked rule: WebsiteRule? = nil, permit: BrowserWorkPermit? = nil) throws(AppleEventError) -> [String] {
         var restored: [String] = []
-        for (tab, original) in restorations(in: try tabs(in: browser), keepBlocked: rule) {
-            if try replace(tab, in: browser, with: original) {
+        for (tab, original) in restorations(in: try tabs(in: browser, permit: permit), keepBlocked: rule) {
+            if try replace(tab, in: browser, with: original, permit: permit) {
                 restored.append(original)
             }
         }
@@ -583,12 +584,20 @@ struct BrowserBlocker: Sendable {
 
     /// Sets one tab's URL, after checking it still shows what the snapshot
     /// saw: tabs are addressed by index, and indices shift when tabs close.
-    func replace(_ tab: TabLocation, in browser: BrowserProfile, with url: String) throws(AppleEventError) -> Bool {
+    func replace(_ tab: TabLocation, in browser: BrowserProfile, with url: String,
+                 permit: BrowserWorkPermit? = nil) throws(AppleEventError) -> Bool {
+        _ = try eventTimeout(permit)
         guard let target = AppleEventTarget(runningBundleID: browser.bundleID) else { return false }
         let tabSpec = ObjectSpecifier.index(browser.tabClass, tab.index, of: ObjectSpecifier.id("cwin", tab.windowID))
         let urlSpec = ObjectSpecifier.property(browser.urlProperty, of: tabSpec)
-        guard try target.get(urlSpec, timeout: timeout).stringValue == tab.url else { return false }
-        try target.set(urlSpec, to: NSAppleEventDescriptor(string: url), timeout: timeout)
+        guard try target.get(urlSpec, timeout: try eventTimeout(permit)).stringValue == tab.url else { return false }
+        try target.set(urlSpec, to: NSAppleEventDescriptor(string: url), timeout: try eventTimeout(permit))
         return true
+    }
+
+    private func eventTimeout(_ permit: BrowserWorkPermit?) throws(AppleEventError) -> TimeInterval {
+        guard let permit else { return timeout }
+        guard let remaining = permit.timeout(maximum: timeout) else { throw .timedOut }
+        return remaining
     }
 }

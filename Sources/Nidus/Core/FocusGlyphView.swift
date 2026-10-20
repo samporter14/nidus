@@ -29,6 +29,7 @@ final class FocusGlyphView: NSView {
     private let ribbonLayers = (0..<5).map { _ in CAShapeLayer() }
     private let extraLayers = (0..<2).map { _ in CAShapeLayer() }
     private var generation = 0
+    private var hasAppliedState = false
 
     /// Ease in and out, close to the cubic the design mock used.
     static let ease = CAMediaTimingFunction(controlPoints: 0.65, 0, 0.35, 1)
@@ -107,6 +108,16 @@ final class FocusGlyphView: NSView {
     private func run(_ steps: ArraySlice<(GlyphState, CFTimeInterval)>, generation: Int, then: (() -> Void)?) {
         guard generation == self.generation else { return }
         guard let (target, duration) = steps.first else { then?(); return }
+        // A sequence may deliberately hold the current target, including
+        // when a new session interrupts an ending animation. No-op layer
+        // animations used to supply that delay. Keep its timing explicitly
+        // without replacing the animations already moving toward it.
+        if target == state, duration > 0 {
+            DispatchQueue.main.asyncAfter(deadline: .now() + duration) { [weak self] in
+                self?.run(steps.dropFirst(), generation: generation, then: then)
+            }
+            return
+        }
         CATransaction.begin()
         CATransaction.setCompletionBlock { [weak self] in
             MainActor.assumeIsolated {
@@ -120,28 +131,52 @@ final class FocusGlyphView: NSView {
     // MARK: Layers
 
     private func apply(_ s: GlyphState, duration: CFTimeInterval, timing: CAMediaTimingFunction = FocusGlyphView.ease) {
+        let previous = hasAppliedState ? state : nil
         state = s
-        let g = FocusGlyph.Geometry.self
-        let outline = Self.path(g.lerp(g.circle, g.brain, s.morph), closed: true)
-        set(outlineLayer, "path", outline, duration, timing)
-        set(fillLayer, "path", outline, duration, timing)
-        for (i, layer) in ribbonLayers.enumerated() {
-            set(layer, "path", Self.path(g.lerp(g.ribbons[i], g.folds[i], s.morph), closed: false), duration, timing)
-            set(layer, "lineWidth", 1.5 - 0.2 * s.morph, duration, timing)
+        hasAppliedState = true
+        // The clock changes only the fill. Leave the outline and fold paths
+        // alone: rebuilding them and replacing their animations each second
+        // does no visual work and can interrupt a morph already in flight.
+        if previous?.morph != s.morph {
+            let g = FocusGlyph.Geometry.self
+            let outline = Self.path(g.lerp(g.circle, g.brain, s.morph), closed: true)
+            set(outlineLayer, "path", outline, duration, timing)
+            set(fillLayer, "path", outline, duration, timing)
+            for (i, layer) in ribbonLayers.enumerated() {
+                set(layer, "path", Self.path(g.lerp(g.ribbons[i], g.folds[i], s.morph), closed: false), duration, timing)
+                set(layer, "lineWidth", 1.5 - 0.2 * s.morph, duration, timing)
+            }
         }
-        for layer in extraLayers {
-            set(layer, "strokeEnd", s.detail, duration, timing)
-            // A zero-length stroke still draws its round cap: hide it outright.
-            set(layer, "opacity", s.detail > 0 ? 1 : 0, s.detail > 0 ? 0 : duration, timing)
+        if previous?.detail != s.detail {
+            for layer in extraLayers {
+                set(layer, "strokeEnd", s.detail, duration, timing)
+                // A zero-length stroke still draws its round cap: hide it outright.
+                if previous.map({ $0.detail > 0 }) != (s.detail > 0) {
+                    set(layer, "opacity", s.detail > 0 ? 1 : 0, s.detail > 0 ? 0 : duration, timing)
+                }
+            }
         }
-        // The fill rises from just above the outline's bottom to its top.
-        let top = 21.5 - min(1, max(0, s.fill)) * 19.5
-        set(fillMask, "path", CGPath(rect: CGRect(x: 0, y: top, width: FocusGlyph.unit, height: FocusGlyph.unit - top), transform: nil), duration, timing)
-        set(canvas, "opacity", s.alpha, duration, timing)
-        let k = bounds.width / FocusGlyph.unit
-        var t = CATransform3DMakeTranslation(s.offsetX * k, 0, 0)
-        t = CATransform3DScale(t, s.scale, s.scale, 1)
-        set(stage, "transform", t, duration, timing)
+        if previous?.fill != s.fill {
+            // The fill rises from just above the outline's bottom to its top.
+            let top = 21.5 - min(1, max(0, s.fill)) * 19.5
+            set(fillMask, "path", CGPath(rect: CGRect(x: 0, y: top, width: FocusGlyph.unit, height: FocusGlyph.unit - top), transform: nil), duration, timing)
+        }
+        if previous?.alpha != s.alpha {
+            set(canvas, "opacity", s.alpha, duration, timing)
+        }
+        if previous?.offsetX != s.offsetX || previous?.scale != s.scale {
+            let k = bounds.width / FocusGlyph.unit
+            var t = CATransform3DMakeTranslation(s.offsetX * k, 0, 0)
+            t = CATransform3DScale(t, s.scale, s.scale, 1)
+            set(stage, "transform", t, duration, timing)
+        }
+        if duration <= 0 {
+            // An immediate show must also settle unchanged properties that
+            // are still interpolating, including when Reduce Motion is on.
+            for layer in [stage, canvas, fillLayer, fillMask, outlineLayer] + ribbonLayers + extraLayers {
+                layer.removeAllAnimations()
+            }
+        }
     }
 
     /// Sets the model value and, when animating, animates to it from the

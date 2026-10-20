@@ -223,9 +223,11 @@ protocol SessionStore: AnyObject {
 @MainActor
 final class FileSessionStore: SessionStore {
     let url: URL
+    private let persistence: PersistenceCoordinator?
 
-    init(url: URL) {
+    init(url: URL, persistence: PersistenceCoordinator? = nil) {
         self.url = url
+        self.persistence = persistence
     }
 
     func load() -> SessionRecord? {
@@ -234,6 +236,10 @@ final class FileSessionStore: SessionStore {
     }
 
     func save(_ record: SessionRecord) {
+        if let persistence {
+            persistence.write(to: url, label: "Current session") { try JSONEncoder().encode(record) }
+            return
+        }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? JSONEncoder().encode(record).write(to: url, options: .atomic)
     }
@@ -739,6 +745,9 @@ final class SessionEngine {
     /// Saves the session with its focused time so far.
     func checkpoint() {
         guard var session, let elapsed else { return }
+        // A paused clock has no new elapsed time. Phase changes and other
+        // session mutations already save at their own transition.
+        if case .paused = session.phase, session.seenElapsed == elapsed { return }
         session.seenElapsed = elapsed
         self.session = session
         save()

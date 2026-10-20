@@ -43,10 +43,12 @@ final class ResumeNoteStore {
     static let fileName = "resume-notes.json"
 
     let url: URL
+    private let persistence: PersistenceCoordinator?
     private(set) var notes: [ResumeNote] = []
 
-    init(url: URL) {
+    init(url: URL, persistence: PersistenceCoordinator? = nil) {
         self.url = url
+        self.persistence = persistence
         guard let data = try? Data(contentsOf: url) else { return }
         if let file = try? JSONDecoder().decode(File.self, from: data) {
             notes = file.notes.filter(\.hasContent)
@@ -91,7 +93,8 @@ final class ResumeNoteStore {
 
     func clear() {
         notes.removeAll()
-        try? FileManager.default.removeItem(at: url)
+        if let persistence { persistence.remove(url, label: "Resume notes") }
+        else { try? FileManager.default.removeItem(at: url) }
     }
 
     private func prune() {
@@ -104,6 +107,11 @@ final class ResumeNoteStore {
     }
 
     private func save() {
+        if let persistence {
+            let snapshot = notes
+            persistence.write(to: url, label: "Resume notes") { try Self.encode(snapshot) }
+            return
+        }
         try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? Self.encode(notes).write(to: url, options: .atomic)
     }

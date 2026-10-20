@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusPolishRender.swift
 //  Nidus
@@ -47,3 +48,5 @@ extension RenderSurfaces {
         model.controller?.clearHistory()
     }
 }
+
+#endif

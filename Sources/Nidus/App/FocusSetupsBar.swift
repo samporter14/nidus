@@ -18,10 +18,10 @@ struct FocusSetupsBar: View {
         self.model = model
     }
 
-    /// Up to this many fill the row. Past it, the first three stay and the
-    /// rest go under More, so the row never runs out of width.
-    static let inlineLimit = 4
-    static let inlineWhenMore = 3
+    /// At most four chips, or three beside More. Narrow rows show fewer;
+    /// full names move to the menu instead of being squeezed into fragments.
+    nonisolated static let inlineLimit = 4
+    nonisolated static let inlineWhenMore = 3
 
     /// Whether the bar has anything to show. With no setups and no sequences
     /// it is nothing at all, not an empty row: the popover's own controls stay
@@ -31,19 +31,20 @@ struct FocusSetupsBar: View {
     }
 
     /// Which sit in the row and which go under More.
-    static func split(_ setups: [FocusSetup]) -> (inline: [FocusSetup], overflow: [FocusSetup]) {
-        guard setups.count > inlineLimit else { return (setups, []) }
-        return (Array(setups.prefix(inlineWhenMore)), Array(setups.dropFirst(inlineWhenMore)))
+    nonisolated static func split(_ setups: [FocusSetup], inlineCount: Int? = nil) -> (inline: [FocusSetup], overflow: [FocusSetup]) {
+        let maximum = setups.count > inlineLimit ? inlineWhenMore : setups.count
+        let count = min(maximum, max(0, inlineCount ?? maximum))
+        return (Array(setups.prefix(count)), Array(setups.dropFirst(count)))
     }
 
     /// ⌘1 to ⌘4 start the first four setups in the order they show, those
     /// in More included. A setup that can't start has none: the key does
     /// nothing rather than fail, and the button is dimmed already. Only 1 to
     /// 4, so the goal field keeps ⌘A, ⌘C, ⌘V, ⌘X and ⌘Z.
-    static let shortcutCount = 4
+    nonisolated static let shortcutCount = 4
 
     /// The number (1 to 4) of the key that starts `setup`, or nil.
-    static func shortcutNumber(for setup: FocusSetup, in setups: [FocusSetup],
+    nonisolated static func shortcutNumber(for setup: FocusSetup, in setups: [FocusSetup],
                                problem: (FocusSetup) -> FocusSetup.Problem?) -> Int? {
         guard let index = setups.prefix(shortcutCount).firstIndex(where: { $0.id == setup.id }),
               problem(setup) == nil else { return nil }
@@ -54,21 +55,29 @@ struct FocusSetupsBar: View {
         Self.shortcutNumber(for: setup, in: model.setups) { $0.problem(in: model.categories) }
     }
 
-    private var inline: [FocusSetup] { Self.split(model.setups).inline }
-    private var overflow: [FocusSetup] { Self.split(model.setups).overflow }
-
     var body: some View {
         if Self.isVisible(model: model) {
-            HStack(spacing: NidusSpacing.xsm) {
-                ForEach(inline) { setupButton($0) }
-                if !overflow.isEmpty { moreMenu }
-                Spacer(minLength: NidusSpacing.sm)
-                if !model.sequences.isEmpty { sequencesMenu }
-                saveButton
+            ViewThatFits(in: .horizontal) {
+                setupRow(inlineCount: 4)
+                setupRow(inlineCount: 3)
+                setupRow(inlineCount: 2)
+                setupRow(inlineCount: 1)
+                setupRow(inlineCount: 0)
             }
             .controlSize(.small)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background { shortcutKeys }
+        }
+    }
+
+    private func setupRow(inlineCount: Int) -> some View {
+        let parts = Self.split(model.setups, inlineCount: inlineCount)
+        return HStack(spacing: NidusSpacing.xsm) {
+            ForEach(parts.inline) { setupButton($0).fixedSize() }
+            if !parts.overflow.isEmpty { moreMenu(parts.overflow) }
+            Spacer(minLength: NidusSpacing.sm)
+            if !model.sequences.isEmpty { sequencesMenu }
+            saveButton.fixedSize()
         }
     }
 
@@ -124,7 +133,7 @@ struct FocusSetupsBar: View {
             + (shortcutNumber(for: setup).map { ". Shortcut: Command \($0)" } ?? "")
     }
 
-    private var moreMenu: some View {
+    private func moreMenu(_ overflow: [FocusSetup]) -> some View {
         Menu {
             ForEach(overflow) { setup in
                 let problem = setup.problem(in: model.categories)

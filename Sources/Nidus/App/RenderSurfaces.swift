@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  RenderSurfaces.swift
 //  Nidus
@@ -452,3 +453,5 @@ enum CaptureSurfaces {
         }
     }
 }
+
+#endif

@@ -406,10 +406,17 @@ With Xcode 27 installed:
 Scripts/build-app.sh --open
 ```
 
-That builds `build/Nidus.app`, ad-hoc signed. `swift test` runs the blocking
-engine's tests. `Nidus --render-surfaces <folder>` draws the popover, the
-cards and Settings to PNGs in both themes, off-screen, with a sample session
-that blocks nothing.
+That builds `build/Nidus.app`, signed with the local Solanum certificate when
+available, otherwise ad-hoc signed. `swift test` runs the tests.
+
+Demo and render fixtures are included only in debug builds. To draw the
+popover, cards and Settings to PNGs in both themes, off-screen, with a sample
+session that blocks nothing:
+
+```sh
+swift build
+"$(swift build --show-bin-path)/Nidus" --render-surfaces <folder>
+```
 
 ## Credits
 

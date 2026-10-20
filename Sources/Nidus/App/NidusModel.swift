@@ -16,6 +16,9 @@ final class NidusModel: NSObject, ObservableObject {
     private(set) var host: NidusHost?
     private(set) var controller: FocusController?
     private var subscriptions: Set<AnyCancellable> = []
+    let clock = FocusClock()
+    let persistence = PersistenceCoordinator()
+    private let statsCache = HistoryDayCache<FocusStats>()
     private var menuBar: FocusMenuBar?
     var menuBarItem: FocusMenuBar? { menuBar }
     /// The last focus state written, so a write happens only on a change.
@@ -103,12 +106,14 @@ final class NidusModel: NSObject, ObservableObject {
 
     func activate(host: NidusHost) {
         self.host = host
-        let controller = FocusController(directory: host.environment.containerDirectory)
+        statsCache.invalidate()
+        let controller = FocusController(directory: host.environment.containerDirectory, persistence: persistence)
         self.controller = controller
         // A demo or render draws sample sessions and breaks, some with rules
         // of their own: none of them may quit an app or ask a browser.
         controller.blocksNothing = Demo.isActive
-        resumeNotes = ResumeNoteStore(url: host.environment.containerDirectory.appendingPathComponent(ResumeNoteStore.fileName))
+        resumeNotes = ResumeNoteStore(url: host.environment.containerDirectory.appendingPathComponent(ResumeNoteStore.fileName),
+                                     persistence: persistence)
         plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
         startInbox(host: host)
@@ -117,6 +122,8 @@ final class NidusModel: NSObject, ObservableObject {
         controller.onBlocked = { [weak self] item in
             self?.presentBlockedHUD(for: item)
             self?.menuBar?.flinch()
+            // Counts change independently of the clock.
+            self?.objectWillChange.send()
         }
         controller.onSessionEvent = { [weak self] event in self?.sessionDidChange(event) }
         controller.onSnoozeEnding = { [weak self] item, end in self?.presentSnoozeEndingHUD(for: item, at: end) }
@@ -127,26 +134,52 @@ final class NidusModel: NSObject, ObservableObject {
             controller.opener = NullWorkspaceOpener()
             controller.appFinder = NullAppFinder()
         }
-        // Views observe the model; forward the controller's once-a-second
-        // clock and the preferences, so one object drives every surface.
-        controller.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &subscriptions)
+        // Time belongs to countdown leaves. History, access, preferences and
+        // session events still update the model's other surfaces explicitly.
         controller.$now
             // @Published sends before the value changes; wait a turn so
             // what the menu bar reads is the new second, as the views do.
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
+            .sink { [weak self] now in
+                self?.clock.advance(to: now)
                 self?.menuBar?.sync()
-                // Adding time moves the end without a session event; this
-                // writes only when the end or the state changed.
+                // Refresh shared status; the writers gate unchanged values
+                // and the optional display's freshness heartbeat.
                 self?.publishFocus()
             }
             .store(in: &subscriptions)
         controller.$browserAccess
+            .removeDuplicates()
             .receive(on: DispatchQueue.main)
-            .sink { [weak self] access in self?.browserAccessDidChange(access) }
+            .sink { [weak self] access in
+                self?.browserAccessDidChange(access)
+                self?.objectWillChange.send()
+            }
             .store(in: &subscriptions)
+        controller.$historyVersion
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &subscriptions)
+        persistence.$failures
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.objectWillChange.send() }
+            .store(in: &subscriptions)
+        // A page left open across midnight or travel must refresh even when
+        // no session is running (and therefore no clock is ticking).
+        for name in [Notification.Name.NSCalendarDayChanged, .NSSystemTimeZoneDidChange,
+                     .NSSystemClockDidChange, NSLocale.currentLocaleDidChangeNotification] {
+            NotificationCenter.default.publisher(for: name)
+                .receive(on: DispatchQueue.main)
+                .sink { [weak self] _ in
+                    self?.statsCache.invalidate()
+                    self?.objectWillChange.send()
+                }
+                .store(in: &subscriptions)
+        }
         host.preferences.didChange
             .sink { [weak self] _ in
                 self?.applySettings()
@@ -257,7 +290,9 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// Nothing is on: no session, no break (and so no sequence). The guard of
     /// every new start, a sequence's first block included.
-    var canStartNew: Bool { !isActive && !isOnBreak }
+    var canStartNew: Bool {
+        !isActive && !isOnBreak && !(controller?.isPreparingForTermination ?? false)
+    }
 
     /// The plan a request starts, from Settings and the popover's choices:
     /// what `startSession` commits to, and what each work block of a sequence
@@ -371,7 +406,10 @@ final class NidusModel: NSObject, ObservableObject {
 
     /// Tests only: gives a model that was never activated (activating needs a
     /// host, which writes real preferences) a controller to run a session on.
-    func adoptForTesting(controller: FocusController) { self.controller = controller }
+    func adoptForTesting(controller: FocusController) {
+        self.controller = controller
+        statsCache.invalidate()
+    }
 
     func openSettings() { host?.workspace.openSettings() }
 
@@ -386,7 +424,11 @@ final class NidusModel: NSObject, ObservableObject {
     func requestKeyboardFocus() { if !CaptureSurfaces.isActive, !RenderSurfaces.isActive { NSApp.activate() } }
 
     func runHarnessScenario(_ scenario: String) {
+        #if DEBUG
         guard let controller else { return }
+        // Fixtures mutate their throwaway history directly, outside the
+        // controller's production history revision callbacks.
+        statsCache.invalidate()
         switch scenario {
         case "idle", "stats": return controller.end()
         case "activity-filled": controller.end(); return seedActivityPreview()
@@ -505,6 +547,7 @@ final class NidusModel: NSObject, ObservableObject {
             }
         default: runCardScenario(scenario)
         }
+        #endif
     }
 
     // MARK: Session events
@@ -577,6 +620,12 @@ final class NidusModel: NSObject, ObservableObject {
             host?.hud.dismiss(id: Self.stillPausedHUDID)
             menuBar?.sync()
         case .paused, .breakEnded:
+            menuBar?.sync()
+        case .extended:
+            // The engine emits this for both running and paused sessions.
+            // Update the clock leaves and menu immediately; the common tail
+            // handles model and shared status publication.
+            clock.advance(to: Date())
             menuBar?.sync()
         default:
             break
@@ -820,9 +869,12 @@ extension NidusModel {
         controller?.breakLength = TimeInterval(breakMinutes * 60)
     }
 
-    /// The stats, worked out fresh each time the page draws.
+    /// History and the local calendar day determine these numbers; a clock
+    /// tick or an unrelated settings edit does not recompute them.
     var stats: FocusStats {
-        FocusStats(sessions: controller?.history.sessions ?? [])
+        statsCache.value(historyVersion: controller?.historyVersion ?? 0) { now, calendar in
+            FocusStats(sessions: controller?.history.sessions ?? [], now: now, calendar: calendar)
+        }
     }
 
     /// The history, the goals remembered from it, and the resume notes (which

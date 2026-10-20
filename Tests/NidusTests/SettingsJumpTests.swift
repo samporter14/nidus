@@ -214,6 +214,41 @@ struct SettingsJumpStateTests {
         #expect(opened.calls.first?.title == chosen.pageTitle)
         #expect(jump.query.isEmpty)
         #expect(!jump.isSearching)
+        #expect(jump.destination?.page == chosen.page)
+        #expect(jump.destination?.anchor == chosen.anchorID)
+    }
+
+    @Test func reopeningTheSameSettingMakesANewRevealRequest() {
+        let (jump, _) = make()
+        let plaque = SettingsJumpIndex.entries.first { $0.id == "plaque" }!
+        jump.open(plaque)
+        let first = jump.destination
+        jump.open(plaque)
+        #expect(jump.destination?.anchor == "plaque")
+        #expect(jump.destination?.page == SettingsTab.general.pageID)
+        #expect(jump.destination?.revision != first?.revision)
+        #expect(jump.destination?.matches(page: "blocking", anchor: "plaque") == false)
+    }
+
+    @Test func pageNavigationAndClosingDiscardAnOldReveal() {
+        let (jump, _) = make()
+        jump.open(SettingsJumpIndex.entries.first { $0.id == "plaque" }!)
+        jump.open(SettingsJumpIndex.entries.first { $0.id == "stats" }!)
+        #expect(jump.destination == nil, "a whole tab has no row target")
+        jump.open(SettingsJumpIndex.entries.first { $0.id == "capture-shortcut" }!)
+        #expect(jump.destination?.page == NidusModel.inboxPageID)
+        #expect(jump.destination?.anchor == "capture-shortcut")
+        jump.clearDestination()
+        #expect(jump.destination == nil)
+    }
+
+    @Test func itemSpecificSettingsLeadToTheirChooser() {
+        let exceptions = SettingsJumpIndex.entries.first { $0.id == "exceptions" }!
+        let calendar = SettingsJumpIndex.entries.first { $0.id == "calendar" }!
+        #expect(exceptions.page == SettingsTab.blocking.pageID)
+        #expect(exceptions.anchorID == "categories")
+        #expect(calendar.page == SettingsTab.schedules.pageID)
+        #expect(calendar.anchorID == "calendar")
     }
 
     @Test func returnWithNothingFoundOpensNothing() {

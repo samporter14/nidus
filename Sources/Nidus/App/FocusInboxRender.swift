@@ -1,3 +1,4 @@
+#if DEBUG
 //
 //  FocusInboxRender.swift
 //  Nidus
@@ -123,3 +124,5 @@ extension RenderSurfaces {
         model.captureShortcut = nil
     }
 }
+
+#endif

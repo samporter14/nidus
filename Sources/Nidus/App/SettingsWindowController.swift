@@ -33,10 +33,10 @@ final class SettingsWindowController {
         return router
     }
 
-    /// The tabs the window has: every one whose page exists.
+    /// All current tabs have a page. Enumerating them must not construct
+    /// each SwiftUI root (and its state) just to find that out.
     var tabs: [SettingsTab] {
-        guard let model else { return [] }
-        return SettingsTab.available { model.settingsRoot(for: $0) != nil }
+        model == nil ? [] : SettingsTab.allCases
     }
 
     /// Opens Settings: on `page`, in the tab that page belongs to, or with
@@ -77,10 +77,13 @@ final class SettingsWindowController {
         let saved: String = model.preference(NidusModel.Key.settingsTab, default: "")
         let controller = SettingsTabViewController()
         for tab in tabs {
-            let hosting = NSHostingController(rootView: SettingsRoot(model: model, tab: tab, router: router(for: tab)))
-            // The window keeps the size it is given; each page scrolls inside it.
-            hosting.sizingOptions = []
-            controller.add(tab, hosting)
+            let router = router(for: tab)
+            controller.add(tab) {
+                let hosting = NSHostingController(rootView: SettingsRoot(model: model, tab: tab, router: router))
+                // The window keeps its size; each page scrolls inside it.
+                hosting.sizingOptions = []
+                return hosting
+            }
         }
         controller.select(SettingsTab.restored(from: saved, available: tabs))
         selectedTab = controller.selectedTab ?? .general
@@ -96,6 +99,14 @@ final class SettingsWindowController {
         window.contentViewController = controller
         window.title = selectedTab.title
         window.onFind = { [weak model] in model?.settingsJump.requestFocus() }
+        window.onClose = { [weak self] in
+            // Keep the lightweight routes, not the hosting graphs and charts.
+            self?.model?.settingsJump.clearDestination()
+            self?.tabController?.releasePages()
+            self?.window?.contentViewController = nil
+            self?.window = nil
+            self?.tabController = nil
+        }
         window.setContentSize(Self.contentSize)
         window.contentMinSize = NSSize(width: 560, height: 420)
         window.isReleasedWhenClosed = false
@@ -134,6 +145,12 @@ final class SettingsWindow: NSWindow {
     var placesAnywhere = false
     /// ⌘F: focus Jump to.
     var onFind: (() -> Void)?
+    var onClose: (() -> Void)?
+
+    override func close() {
+        super.close()
+        onClose?()
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -153,6 +170,7 @@ final class SettingsWindow: NSWindow {
 /// tab's name, which the controller doesn't set on its own.
 final class SettingsTabViewController: NSTabViewController {
     var onSelect: ((SettingsTab) -> Void)?
+    private var isReady = false
 
     override init(nibName nibNameOrNil: NSNib.Name?, bundle nibBundleOrNil: Bundle?) {
         super.init(nibName: nibNameOrNil, bundle: nibBundleOrNil)
@@ -164,7 +182,8 @@ final class SettingsTabViewController: NSTabViewController {
         tabStyle = .toolbar
     }
 
-    func add(_ tab: SettingsTab, _ page: NSViewController) {
+    func add(_ tab: SettingsTab, makePage: @escaping () -> NSViewController) {
+        let page = LazySettingsTabController(makePage: makePage)
         page.title = tab.title
         let item = NSTabViewItem(viewController: page)
         item.identifier = tab.rawValue
@@ -180,18 +199,78 @@ final class SettingsTabViewController: NSTabViewController {
 
     func select(_ tab: SettingsTab) {
         guard let index = tabViewItems.firstIndex(where: { Self.tab(of: $0) == tab }) else { return }
+        isReady = true
         selectedTabViewItemIndex = index
+        materialize(tabViewItems[index])
     }
 
     override func tabView(_ tabView: NSTabView, didSelect tabViewItem: NSTabViewItem?) {
         super.tabView(tabView, didSelect: tabViewItem)
         guard let tabViewItem, let tab = Self.tab(of: tabViewItem) else { return }
+        if isReady { materialize(tabViewItem) }
         view.window?.title = tab.title
         onSelect?(tab)
     }
 
     private static func tab(of item: NSTabViewItem) -> SettingsTab? {
         (item.identifier as? String).flatMap(SettingsTab.init(rawValue:))
+    }
+
+    private func materialize(_ item: NSTabViewItem) {
+        (item.viewController as? LazySettingsTabController)?.materialize()
+    }
+
+    /// A closed NSWindow can outlive its controller in AppKit. Detach heavy
+    /// content explicitly instead of relying on the window's deallocation.
+    func releasePages() {
+        isReady = false
+        for item in tabViewItems {
+            (item.viewController as? LazySettingsTabController)?.releasePage()
+        }
+    }
+}
+
+/// NSTabViewController may ask every item for a view while building its
+/// toolbar. Those views are cheap placeholders; only selection creates the
+/// SwiftUI host. Visited tabs retain UI state until the window closes.
+final class LazySettingsTabController: NSViewController {
+    private let makePage: () -> NSViewController
+    private(set) var page: NSViewController?
+    private var pageConstraints: [NSLayoutConstraint] = []
+
+    init(makePage: @escaping () -> NSViewController) {
+        self.makePage = makePage
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { fatalError("not used") }
+
+    override func loadView() { view = NSView() }
+
+    func materialize() {
+        guard page == nil else { return }
+        let page = makePage()
+        self.page = page
+        addChild(page)
+        page.view.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(page.view)
+        pageConstraints = [
+            page.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            page.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            page.view.topAnchor.constraint(equalTo: view.topAnchor),
+            page.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+        ]
+        NSLayoutConstraint.activate(pageConstraints)
+    }
+
+    func releasePage() {
+        guard let page else { return }
+        NSLayoutConstraint.deactivate(pageConstraints)
+        pageConstraints.removeAll()
+        page.view.removeFromSuperview()
+        page.removeFromParent()
+        self.page = nil
     }
 }
 
@@ -207,6 +286,7 @@ struct SettingsRoot: View {
         let jump = model.settingsJump
         VStack(spacing: 0) {
             SettingsJumpBar(jump: jump)
+            PersistenceWarningView(persistence: model.persistence)
             Divider()
             // What the query finds covers the page; the page stays under it.
             ZStack {
@@ -216,14 +296,20 @@ struct SettingsRoot: View {
                         Divider()
                         (model.makeSettingsPage(id: page.id) ?? AnyView(missing))
                             .id(page)
+                            .environment(\.settingsPageID, page.id)
                     } else {
                         (model.settingsRoot(for: tab) ?? AnyView(missing))
+                            .environment(\.settingsPageID, tab.pageID)
                     }
                 }
+                .disabled(jump.isSearching)
+                .allowsHitTesting(!jump.isSearching)
+                .accessibilityHidden(jump.isSearching)
                 if jump.isSearching { SettingsJumpResults(jump: jump) }
             }
         }
         .environment(router)
+        .environment(\.settingsJump, jump)
     }
 
     /// Back and the page's title, where System Settings puts them.

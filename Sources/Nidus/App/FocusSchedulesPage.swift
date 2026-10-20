@@ -49,6 +49,15 @@ struct FocusSchedulesPage: View {
             } footer: {
                 Text("Schedules only run while Nidus is running and your Mac is awake. If it wakes or opens inside a window, a session starts then, unless less than 5 minutes are left. A schedule that starts during a session or a break is skipped.")
             }
+            NidusSettingsSection {
+                settingsSectionHeader("Calendar")
+            } content: {
+                Text("Calendar checks are set for each schedule. Open a schedule above, then turn on Check my calendar first to choose the gap around meetings and allow calendar access.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .settingsJumpAnchor("calendar")
+            }
         }
     }
 }
@@ -369,6 +378,7 @@ private struct DayToggleStyle: ToggleStyle {
 
 // MARK: - Renders
 
+#if DEBUG
 extension RenderSurfaces {
     /// The Schedules tab with two sample schedules, one schedule's page, and
     /// the two cards. Nothing here fires: the
@@ -499,3 +509,4 @@ extension RenderSurfaces {
         await shoot(view, width: 352, name: "calendar-menu-item", in: directory)
     }
 }
+#endif
