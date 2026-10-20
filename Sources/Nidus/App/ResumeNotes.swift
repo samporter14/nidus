@@ -184,6 +184,18 @@ final class NextStepSession {
         }
     }
 
+    /// The session this follows was brought back (Undo): nothing is kept.
+    func discard() {
+        settleTask?.cancel()
+        settleTask = nil
+        if let id = noteID { store.remove(id) }
+        noteID = nil
+        text = ""
+        resource = nil
+        onChange = {}
+        onSettled = { _ in }
+    }
+
     var isSaved: Bool { noteID.flatMap { store.note($0) } != nil }
 
     func setText(_ raw: String) {

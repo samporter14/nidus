@@ -191,7 +191,7 @@ final class NidusModel: NSObject, ObservableObject {
         stopInbox()
         stopOpenShortcut()
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID,
-                   Self.workspaceHUDID] { host?.hud.dismiss(id: id) }
+                   Self.workspaceHUDID, Self.stillPausedHUDID] { host?.hud.dismiss(id: id) }
         // Quitting puts blocked tabs back; demos and renders never touch
         // real browsers.
         controller?.stop(restoringTabs: !Demo.isActive)
@@ -318,14 +318,30 @@ final class NidusModel: NSObject, ObservableObject {
         isPaused ? controller?.resume() : controller?.pause()
     }
 
-    /// +5, from the popover and the menu: the same add as Shortcuts and the
-    /// JSON command. The button is only there when there's an end to move.
-    func addTime() { _ = addTimeFromOutside(minutes: 5) }
+    /// +5 (or 15, or 30), from the popover and the menu: the same add as
+    /// Shortcuts and the JSON command, so the 24-hour limit holds. The button
+    /// is only there when there's an end to move.
+    func addTime(minutes: Int = 5) { _ = addTimeFromOutside(minutes: minutes) }
+
+    /// The popover's +5 button: 5 minutes, 15 with Option held. Right-click
+    /// offers all of `addTimeSteps`.
+    static let addTimeSteps = [5, 15, 30]
+    nonisolated static func addTimeMinutes(optionHeld: Bool) -> Int { optionHeld ? 15 : 5 }
 
     /// Answers to recent JSON commands, so a retried one isn't done twice.
     var commandLedger: FocusCommandLedger { Self.ledger }
     private static let ledger = FocusCommandLedger()
     func endSession() { controller?.end() }
+
+    /// Undo on the ended card: the same session again, if it is still allowed
+    /// (the engine decides: within 5 seconds, nothing started since, not
+    /// strict, not a completed end). The history entry its end wrote goes.
+    @discardableResult
+    func undoEnd() -> Bool {
+        let undone = controller?.undoEnd() ?? false
+        if !undone { cards.endUndoOffer() }
+        return undone
+    }
 
     func snooze(_ key: String) {
         controller?.snooze(key)
@@ -395,6 +411,13 @@ final class NidusModel: NSObject, ObservableObject {
         }
         switch scenario {
         case "paused": controller.pause()
+        case "ended-undo":
+            // An early end, as it reads for the few seconds Undo is offered.
+            controller.engine.recordBlock("youtube.com", name: "youtube.com")
+            controller.end()
+        case "still-paused":
+            controller.pause()
+            presentStillPausedHUD()
         case "blocked": presentBlockedHUD(for: .app(bundleID: "com.tinyspeck.slackmacgap", name: "Slack", quit: true))
         case "finish", "finish-yes", "finish-notyet", "finish-break", "finish-break-yes":
             // The card asking, then as it reads after Yes or Not yet; and the
@@ -465,7 +488,7 @@ final class NidusModel: NSObject, ObservableObject {
 
     // MARK: Session events
 
-    private func sessionDidChange(_ event: SessionEvent) {
+    func sessionDidChange(_ event: SessionEvent) {
         defer { publishFocus() }
         if isActive || isOnBreak { dismissBrickOffer() }
         dropSnoozeWaitIfMoot()
@@ -483,6 +506,8 @@ final class NidusModel: NSObject, ObservableObject {
                 host?.hud.dismiss(id: Self.completedHUDID)
             }
             resumeNotice = nil
+            cards.endUndoOffer()
+            host?.hud.dismiss(id: Self.stillPausedHUDID)
             // A one-off belongs to the Start it was set for, however it came.
             untilTarget = nil
             customLengthDraft = nil
@@ -495,6 +520,11 @@ final class NidusModel: NSObject, ObservableObject {
             endBreakAfterFixedEnd(final)
             notePlaqueSessionEnded(reason, final)
             host?.hud.dismiss(id: Self.snoozeHUDID)
+            host?.hud.dismiss(id: Self.stillPausedHUDID)
+            // The card can offer Undo only for an early end the engine will
+            // still take back; it takes the offer away when the time is up.
+            cards.endUndoOffer()
+            if reason == .endedEarly, engine?.canUndoEnd == true { cards.offerUndo(for: SessionEngine.undoWindow) }
             if reason != .expiredWhileAway {
                 // Ask only about a goal that was set and a session that was
                 // recorded: the answer is kept with it.
@@ -507,7 +537,25 @@ final class NidusModel: NSObject, ObservableObject {
             // The next block is already running: the glyph stays a brain.
             nextBlockFollowedEnd = engine?.session != nil
             if !nextBlockFollowedEnd { menuBar?.sessionDidEnd(completed: reason == .completed) }
-        case .paused, .resumed, .breakEnded:
+        case .undone:
+            // The same session is running again: its card, question and next
+            // step are void (the entry they belong to is gone), and the menu
+            // bar shows it running as at a start.
+            cards.endUndoOffer()
+            pendingFinish = nil
+            cards.nextStep?.discard()
+            cards.nextStep = nil
+            nextBlockFollowedEnd = false
+            goalDraft = ""
+            host?.hud.dismiss(id: Self.completedHUDID)
+            menuBar?.sessionDidStart()
+            host?.feedback.play(.success)
+        case .pauseLingering:
+            presentStillPausedHUD()
+        case .resumed:
+            host?.hud.dismiss(id: Self.stillPausedHUDID)
+            menuBar?.sync()
+        case .paused, .breakEnded:
             menuBar?.sync()
         default:
             break

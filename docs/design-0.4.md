@@ -314,6 +314,33 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
   and duration and explicitly starts through the existing shared start path.
   Real phone/Brick detection and delivery require separate device validation.
 
+## Quality-of-life behaviours
+
+- **Undo after End.** `SessionEngine.end()` of a non-strict session that is
+  not part of a sequence keeps an in-memory `UndoableEnd` (the final
+  `SessionState` and when) for `undoWindow` (5 s). `undoEnd()` refuses unless
+  nothing else has started (no session, no break), the window has not passed,
+  the plan is not strict, and the original deadline is still ahead; completed
+  and `expiredWhileAway` ends, `start` over a running session, and a relaunch
+  never offer it. It restores the same state: plan, absolute deadline (the
+  seconds spent ended therefore count as focus; a session ended while paused
+  returns paused with the same time left), snoozes, counts, enforcement. It
+  emits `.undone`, not `.started`: nothing is launched or opened again, only
+  the start Shortcut runs (the end Shortcut turned Apple Focus off). The
+  controller removes the history entry the end wrote, so history records the
+  session once, at its real end. Ending early never makes a break, so undo
+  makes none; the real completion later still earns it. A sequence block is
+  not offered Undo (ending it ends the run, which is not put back). Strict end
+  gate is unchanged.
+- **Forgotten pause.** A pause the user chose (not sleep or lock) that lasts
+  10 minutes emits `.pauseLingering` once per pause (`pausedAt` and
+  `pauseReminded` on the saved session, both decoded tolerantly). It waits
+  while the screen is locked. The card says "Still paused" with Resume and
+  End; nothing resumes or ends by itself.
+- **+5 variants.** Option-click on +5 adds 15 minutes; right-click offers 5,
+  15 and 30; the status menu shows "Add 15 minutes" with Option held. All go
+  through `addTimeFromOutside`, so the 24-hour limit holds.
+
 ## Who owns what (agents)
 
 | Feature | Files it creates or owns | Shared files it edits |

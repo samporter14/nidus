@@ -465,14 +465,24 @@ struct FocusWidget: View {
             HStack(spacing: NidusSpacing.sm) {
                 if !model.isStrict { pauseButton }
                 if !model.isOpenEnded {
-                    Button(action: model.addTime) {
+                    Button {
+                        model.addTime(minutes: NidusModel.addTimeMinutes(optionHeld: NSEvent.modifierFlags.contains(.option)))
+                    } label: {
                         Text("+5")
                             .font(.system(size: 13, weight: .semibold))
                             .monospacedDigit()
                     }
                     .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
-                    .help("Add 5 minutes")
+                    // The same add as +5, so the 24-hour limit holds for all.
+                    .contextMenu {
+                        ForEach(NidusModel.addTimeSteps, id: \.self) { minutes in
+                            Button("Add \(minutes) minutes") { model.addTime(minutes: minutes) }
+                        }
+                    }
+                    .help("Add 5 minutes. Option-click adds 15; right-click for 5, 15 or 30. A session stops at 24 hours.")
                     .accessibilityLabel("Add 5 minutes")
+                    .accessibilityAction(named: "Add 15 minutes") { model.addTime(minutes: 15) }
+                    .accessibilityAction(named: "Add 30 minutes") { model.addTime(minutes: 30) }
                 }
                 Button {
                     if model.isStrict { confirmingEnd = true } else { model.endSession() }
