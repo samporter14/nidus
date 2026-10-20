@@ -21,7 +21,7 @@ enum SampleHistory {
         }
     }
 
-    static let goals = ["Write the launch post", "Chapter three", "Fix the sync bug", "Review the budget",
+    static let goals = ["Update Specific Aims", "Chapter three", "Revise Figure 3", "Review the budget",
                         "Plan the offsite", "Reply to the backlog", "Read the spec"]
     static let names = ["com.tinyspeck.slackmacgap": "Slack", "com.apple.mail": "Mail", "youtube.com": "youtube.com",
                         "x.com": "x.com", "com.apple.dt.Xcode": "Xcode", "com.apple.Safari": "Safari",

@@ -394,7 +394,7 @@ final class NidusModel: NSObject, ObservableObject {
         case "recap": controller.end(); return presentSampleRecap()
         case "break":
             controller.end()
-            let next = SessionPlan(goal: "Write the launch post", duration: 25 * 60, mode: .block, apps: [], websites: [])
+            let next = SessionPlan(goal: "Update Specific Aims", duration: 25 * 60, mode: .block, apps: [], websites: [])
             controller.engine.startBreak(plan: next, length: 5 * 60)
             presentBreakEndingHUD(at: Date().addingTimeInterval(12), next: next)
             return
@@ -417,7 +417,7 @@ final class NidusModel: NSObject, ObservableObject {
         case "goals":
             controller.end()
             if recentGoals.isEmpty {
-                recentGoals = ["Write the launch post", "Chapter three", "Fix the sync bug"]
+                recentGoals = ["Update Specific Aims", "Chapter three", "Revise Figure 3"]
             }
             return
         default: break
@@ -425,7 +425,7 @@ final class NidusModel: NSObject, ObservableObject {
         // The cards reuse a session the harness restored, so they can be
         // shown partway through one; everything else starts afresh.
         if controller.engine.session == nil || !["blocked", "wrapup"].contains(scenario) {
-            controller.start(SessionPlan(goal: "Write the launch post",
+            controller.start(SessionPlan(goal: "Update Specific Aims",
                                          duration: scenario == "open-ended" ? nil : 25 * 60,
                                          mode: .block, apps: [], websites: [],
                                          strict: scenario.hasPrefix("strict")))
