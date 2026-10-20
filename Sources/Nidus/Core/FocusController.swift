@@ -174,6 +174,7 @@ final class FocusController: ObservableObject {
         isStarted = true
         try? blockPage.install()
         engine.onEvent = { [weak self] event in self?.handle(event) }
+        engine.isAway = { [weak self] in self?.isScreenLocked ?? false }
         now = Date()
         engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
                        allowTitles: activityDocumentTitlesEnabled,
@@ -340,6 +341,13 @@ final class FocusController: ObservableObject {
     func pause() { engine.pause() }
     func resume() { engine.resume() }
     func end() { engine.end() }
+    /// Takes back the last early end, if the engine still allows it (see
+    /// `SessionEngine.canUndoEnd`). The handler for `.undone` does the rest.
+    @discardableResult
+    func undoEnd() -> Bool {
+        now = Date()
+        return engine.undoEnd()
+    }
     func extend(by seconds: TimeInterval) { engine.extend(by: seconds) }
 
     func snooze(_ item: String) {
@@ -437,7 +445,7 @@ final class FocusController: ObservableObject {
 
     private func handle(_ event: SessionEvent) {
         switch event {
-        case .started, .ended, .paused, .resumed: invalidateActivityProbe()
+        case .started, .ended, .paused, .resumed, .undone: invalidateActivityProbe()
         default: break
         }
         var opened: (WorkspaceReport, SessionPlan)?
@@ -465,6 +473,23 @@ final class FocusController: ObservableObject {
                 historyVersion += 1
             }
             warnedSnoozes.removeAll()
+        case .undone:
+            // The session is back, so history must not hold it as ended: it
+            // is recorded once, when it really ends. The apps and documents
+            // of its start are not opened again (it never stopped being the
+            // same session); only the start Shortcut runs, because the end
+            // Shortcut just switched Apple Focus off.
+            if let session = engine.session {
+                if let entry = history.sessions.last(where: { $0.start == session.startedAt && $0.outcome == .endedEarly }),
+                   history.remove(entry.id) {
+                    historyVersion += 1
+                }
+                if let name = session.plan.startShortcut { runShortcut(name) }
+            }
+            // The end put blocked tabs back; the first sweep blocks them again.
+            // That is the same block as before, not a new one to count or show
+            // (as after a quit). Armed only when a sweep will run to clear it.
+            quietsNextSweep = engine.enforcement.map { !($0.mode == .block && $0.websites.isEmpty) } ?? false
         default:
             break
         }

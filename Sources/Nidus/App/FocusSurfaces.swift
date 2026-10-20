@@ -256,6 +256,7 @@ extension NidusModel {
                 + spokenNotes + (goal.map { " Did you finish \($0)?" } ?? "")
                 + (nextStep != nil && goal == nil ? " What\u{2019}s the next step? Optional." : "")
                 + (Self.savedForLaterText(saved).map { " \($0)." } ?? "")
+                + (cards.undoOffered ? " Undo is available for a few seconds." : "")
         ) { [weak self] in
             // The card reads the answer from `cards`, so it changes in place
             // whether the card's buttons or the menu bar gave it.
@@ -288,6 +289,10 @@ extension NidusModel {
                     chooseDocument: { self?.chooseNextStepDocument() },
                     addWebAddress: { self?.addNextStepWebAddress() },
                     finishNextStep: { self?.finishNextStep() },
+                    undo: cards.undoOffered ? { [weak self] in
+                        self?.undoEnd()
+                        self?.host?.hud.dismiss(id: Self.completedHUDID)
+                    } : nil,
                     again: {
                         if self?.isOnBreak == true { self?.skipBreak() } else { self?.startAgain() }
                         self?.host?.hud.dismiss(id: Self.completedHUDID)
@@ -338,6 +343,8 @@ struct FocusWrapUpCard: View {
     var chooseDocument: () -> Void = {}
     var addWebAddress: () -> Void = {}
     var finishNextStep: () -> Void = {}
+    /// Takes back ending early; shown in the place of Again while allowed.
+    var undo: (() -> Void)? = nil
     let again: () -> Void
 
     struct Note: Equatable {
@@ -423,7 +430,12 @@ struct FocusWrapUpCard: View {
             .truncationMode(.tail)
             .fixedSize(horizontal: !last, vertical: false)
             Spacer(minLength: NidusSpacing.sm)
-            if let button { againButton(button) }
+            if let undo {
+                Button("Undo", action: undo)
+                    .buttonStyle(.bordered)
+                    .fixedSize()
+                    .accessibilityLabel("Undo ending the session")
+            } else if let button { againButton(button) }
         }
     }
 
@@ -466,7 +478,7 @@ extension FocusWrapUpCard {
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .lineLimit(1)
             Spacer(minLength: NidusSpacing.sm)
-            if let button { againButton(button) }
+            if let button, undo == nil { againButton(button) }
         }
     }
 }
@@ -649,6 +661,27 @@ final class FocusCardState {
     /// The answer to "did you finish?" for the wrap-up card now up: set by
     /// the card's buttons or the menu bar's items, cleared by the next card.
     var finishAnswer: Bool?
+    /// The wrap-up card of an early end offers Undo, for as long as the
+    /// engine would take the end back.
+    var undoOffered = false
+    @ObservationIgnored private var undoTask: Task<Void, Never>?
+
+    func offerUndo(for seconds: TimeInterval) {
+        undoTask?.cancel()
+        undoOffered = true
+        undoTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.undoOffered = false
+        }
+    }
+
+    func endUndoOffer() {
+        undoTask?.cancel()
+        undoTask = nil
+        undoOffered = false
+    }
+
     /// Pages the workspace card has just named as blocked (their snooze
     /// keys) and until when their own block card stays quiet.
     var workspaceQuietKeys: Set<String> = []

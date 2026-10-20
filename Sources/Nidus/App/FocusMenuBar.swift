@@ -268,6 +268,11 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             }
             if !model.isOpenEnded {
                 menu.addItem(action("Add 5 minutes", #selector(addTime)))
+                // Hold Option and the item reads "Add 15 minutes".
+                let fifteen = action("Add 15 minutes", #selector(addFifteenMinutes))
+                fifteen.isAlternate = true
+                fifteen.keyEquivalentModifierMask = .option
+                menu.addItem(fifteen)
             }
             menu.addItem(.separator())
             if model.isStrict {
@@ -345,6 +350,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     @objc private func startSession() { model?.startSession() }
     @objc private func togglePause() { model?.togglePause() }
     @objc private func addTime() { model?.addTime() }
+    @objc private func addFifteenMinutes() { model?.addTime(minutes: 15) }
     @objc private func endSession() { model?.endSession() }
     @objc private func skipBreak() { model?.skipBreak() }
     @objc private func answeredYes() { model?.answerFinished(true) }

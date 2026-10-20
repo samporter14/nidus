@@ -120,6 +120,11 @@ struct SessionState: Codable, Equatable, Sendable {
     /// Set when the session ends.
     var endedAt: Date?
     var focusedTime: TimeInterval?
+    /// When the user paused it (not sleep or a locked screen, which are not
+    /// forgotten), for the "Still paused" reminder. nil while running.
+    var pausedAt: Date?
+    /// The reminder was given for this pause: once per pause.
+    var pauseReminded = false
 }
 
 /// A break after a completed session. Nothing is blocked unless it has
@@ -174,6 +179,20 @@ enum SessionEvent: Equatable, Sendable {
     case ended(SessionEndReason, SessionState)
     /// A break is over without a session starting: stopped, or too late.
     case breakEnded
+    /// Ending early was taken back (`undoEnd`): the same session is running
+    /// again. Not a start: nothing is opened, launched or run as at a start.
+    case undone
+    /// The user paused it and it has stayed paused for `pauseReminderDelay`.
+    case pauseLingering
+}
+
+/// A session the user just ended early, kept for a few seconds so ending it
+/// can be taken back. Held in memory only: a relaunch inside the window
+/// loses it, which only means no Undo.
+struct UndoableEnd: Equatable, Sendable {
+    /// The session as it stood when it ended (`endedAt` and `focusedTime` set).
+    var state: SessionState
+    var endedAt: Date
 }
 
 /// What the engine persists: the session or the break, if any, and the
@@ -237,6 +256,15 @@ final class SessionEngine {
     /// Nidus was not running, is dropped rather than starting a session
     /// nobody may be there for.
     static let breakGrace: TimeInterval = 60
+    /// How long after ending early the session can be brought back.
+    static let undoWindow: TimeInterval = 5
+    /// How long a pause the user chose may last before one gentle reminder.
+    static let pauseReminderDelay: TimeInterval = 10 * 60
+    /// The last end that can still be undone; see `canUndoEnd`.
+    private(set) var undoableEnd: UndoableEnd?
+    /// Whether the user is away (the screen is locked): a reminder waits for
+    /// them rather than showing behind the lock screen. Set by the controller.
+    var isAway: () -> Bool = { false }
     /// Called after every change, with the change.
     var onEvent: (SessionEvent) -> Void = { _ in }
 
@@ -261,6 +289,18 @@ final class SessionEngine {
     }
 
     var isOnBreak: Bool { breakState != nil }
+
+    /// Ending early can be taken back: the end was the user's, early, of a
+    /// non-strict session that was not part of a sequence, within
+    /// `undoWindow`, and nothing else has started since (no session, no break).
+    var canUndoEnd: Bool {
+        guard let undoableEnd, session == nil, breakState == nil else { return false }
+        let age = now().timeIntervalSince(undoableEnd.endedAt)
+        guard age >= 0, age <= Self.undoWindow, !undoableEnd.state.plan.strict else { return false }
+        // A deadline that has passed since would only end it again at once.
+        if case .running(let deadline) = undoableEnd.state.phase, deadline <= now() { return false }
+        return true
+    }
 
     /// Time left of the break. nil when there is none.
     var breakRemaining: TimeInterval? {
@@ -329,6 +369,7 @@ final class SessionEngine {
     /// restores what it changed.
     func restore(allowActivity: Bool = true, allowTitles: Bool = true, excludedApps: Set<String> = []) {
         guard let record = store?.load() else { return }
+        undoableEnd = nil
         lastPlan = record.lastPlan
         session = record.session
         // The interval while Nidus was closed was not observed, even when
@@ -358,6 +399,11 @@ final class SessionEngine {
             excludeCurrentActivity(appIDs: excludedApps)
         }
         guard var session else { return }
+        // A pause saved by a version without the reminder: count from now.
+        if case .paused(_, bySleep: false) = session.phase, session.pausedAt == nil {
+            session.pausedAt = now()
+            self.session = session
+        }
         switch session.phase {
         case .running(let deadline) where deadline <= now():
             finish(.expiredWhileAway)
@@ -395,6 +441,7 @@ final class SessionEngine {
     /// The one place a session is made, with no event.
     private func makeSession(_ plan: SessionPlan) {
         breakState = nil
+        undoableEnd = nil
         let start = now()
         session = SessionState(plan: plan, startedAt: start,
                                phase: .running(deadline: start.addingTimeInterval(plan.cappedDuration)),
@@ -412,13 +459,39 @@ final class SessionEngine {
         guard var session, case .paused(let remaining, _) = session.phase else { return }
         session.phase = .running(deadline: now().addingTimeInterval(remaining))
         session.activityContinuityStartedAt = now()
+        session.pausedAt = nil
+        session.pauseReminded = false
         self.session = session
         commit(.resumed)
     }
 
+    /// Ends the session early. A non-strict one that was not part of a
+    /// sequence can be brought back with `undoEnd` for `undoWindow` seconds.
     func end() {
         guard session != nil else { return }
-        finish(.endedEarly)
+        finish(.endedEarly, undoable: true)
+    }
+
+    /// Takes back ending early: the same session runs again, with its plan,
+    /// deadline, snoozes and counts as they were. Its deadline is the
+    /// original absolute one, so the seconds spent ended count as focus
+    /// (a session paused when it ended comes back paused, with the same
+    /// time left). Refuses, changing nothing, when `canUndoEnd` is false.
+    /// History and the app side are the owner's: see `.undone`.
+    @discardableResult
+    func undoEnd() -> Bool {
+        guard canUndoEnd, var restored = undoableEnd?.state else { return false }
+        restored.endedAt = nil
+        restored.focusedTime = nil
+        // The seconds ended were not observed.
+        if restored.activitySegments != nil {
+            restored.activityContinuity += 1
+            restored.activityContinuityStartedAt = now()
+        }
+        session = restored
+        undoableEnd = nil
+        commit(.undone)
+        return true
     }
 
     /// Adds time to a running or paused session, up to `maximumDuration` left.
@@ -677,6 +750,7 @@ final class SessionEngine {
     /// break keeps the plan's own rules blocked unless `rules` says otherwise.
     func startBreak(plan: SessionPlan, length: TimeInterval, rules: BreakRules? = nil) {
         guard session == nil, length > 0 else { return }
+        undoableEnd = nil
         breakState = BreakState(plan: plan, endsAt: now().addingTimeInterval(length), length: length,
                                 rules: rules ?? plan.breakRules)
         save()
@@ -731,13 +805,28 @@ final class SessionEngine {
             finish(.completed)
             return
         }
-        let due = session.snoozes.filter { $0.value <= now() }.keys.sorted()
+        remindOfForgottenPause()
+        guard let current = self.session else { return }
+        let due = current.snoozes.filter { $0.value <= now() }.keys.sorted()
         guard !due.isEmpty else { return }
-        var updated = session
+        var updated = current
         due.forEach { updated.snoozes[$0] = nil }
         self.session = updated
         save()
         due.forEach { onEvent(.snoozeEnded($0)) }
+    }
+
+    /// A pause the user chose that has lasted `pauseReminderDelay` gets one
+    /// reminder (`.pauseLingering`), once per pause, never while the screen is
+    /// locked (it waits for them to come back). Nothing resumes or ends it.
+    private func remindOfForgottenPause() {
+        guard var session, case .paused(_, bySleep: false) = session.phase, !session.plan.strict,
+              !session.pauseReminded, let pausedAt = session.pausedAt,
+              now().timeIntervalSince(pausedAt) >= Self.pauseReminderDelay, !isAway() else { return }
+        session.pauseReminded = true
+        self.session = session
+        save()
+        onEvent(.pauseLingering)
     }
 
     // MARK: Sleep
@@ -757,15 +846,23 @@ final class SessionEngine {
     private func pause(bySleep: Bool) {
         guard var session, case .running(let deadline) = session.phase else { return }
         session.phase = .paused(remaining: max(0, deadline.timeIntervalSince(now())), bySleep: bySleep)
+        session.pausedAt = bySleep ? nil : now()
+        session.pauseReminded = false
         session.activityContinuity += 1
         self.session = session
         commit(.paused)
     }
 
-    private func finish(_ reason: SessionEndReason) {
+    private func finish(_ reason: SessionEndReason, undoable: Bool = false) {
         guard var ended = session else { return }
         ended.endedAt = now()
         ended.focusedTime = reason == .expiredWhileAway ? ended.seenElapsed : (elapsed ?? 0)
+        // Ending early can be taken back, except in a strict session (its end
+        // gate is unchanged) and in a sequence (ending a block ends the run,
+        // which is not put back).
+        let inSequence = sequence != nil || ended.plan.sequenceStep != nil
+        undoableEnd = undoable && reason == .endedEarly && !ended.plan.strict && !inSequence
+            ? UndoableEnd(state: ended, endedAt: now()) : nil
         session = nil
         // The next block of a sequence that starts with no break between.
         var following: SessionPlan?
@@ -929,7 +1026,7 @@ extension SessionRecord {
 extension SessionState {
     enum CodingKeys: String, CodingKey {
         case plan, startedAt, phase, budget, snoozes, quitApps, blocks, quitCounts, foreground, activity, activitySegments, activityTimelineTruncated, activityContinuity, activityContinuityStartedAt, names
-        case seenElapsed, endedAt, focusedTime
+        case seenElapsed, endedAt, focusedTime, pausedAt, pauseReminded
     }
 
     init(from decoder: Decoder) throws {
@@ -952,5 +1049,7 @@ extension SessionState {
         seenElapsed = try c.decodeIfPresent(TimeInterval.self, forKey: .seenElapsed) ?? 0
         endedAt = try c.decodeIfPresent(Date.self, forKey: .endedAt)
         focusedTime = try c.decodeIfPresent(TimeInterval.self, forKey: .focusedTime)
+        pausedAt = c.decodeTolerant(Date.self, forKey: .pausedAt)
+        pauseReminded = c.decodeTolerant(Bool.self, forKey: .pauseReminded) ?? false
     }
 }

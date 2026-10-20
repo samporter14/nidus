@@ -191,6 +191,16 @@ final class FocusHistory {
         save()
     }
 
+    /// Takes one entry out: an early end that was taken back, so the session
+    /// is recorded once, when it really ends. False when there is no such entry.
+    @discardableResult
+    func remove(_ id: SessionEntry.ID) -> Bool {
+        guard let index = sessions.firstIndex(where: { $0.id == id }) else { return false }
+        sessions.remove(at: index)
+        save()
+        return true
+    }
+
     /// Takes document and conversation names out of every finished session,
     /// keeping the time, apps, sites and timeline boundaries. Returns how many
     /// sessions had names. Nothing is written when none did.
