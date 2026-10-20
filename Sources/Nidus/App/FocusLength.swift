@@ -49,6 +49,37 @@ enum FocusLength {
     }
 }
 
+/// What the popover's Start button says: "Start focus", and when a break
+/// will follow the session, how long both are.
+struct StartTitle: Equatable {
+    var text: String
+    /// For VoiceOver, where "+" and "·" read badly.
+    var spoken: String
+
+    static let plain = StartTitle(text: "Start focus", spoken: "Start focus")
+
+    /// "Start focus \u{00B7} 25 + 5 min break". `length` is the minutes of a
+    /// timed session; `until` is its end time instead, already formatted
+    /// ("3:30 PM"), for one that is set by the clock. Plain when there is no
+    /// break to say: open-ended (`length` 0 and no `until`), no break chosen,
+    /// or a fixed end, which earns none (SessionResolution.swift).
+    static func make(length: Int, until: String? = nil, breakMinutes: Int, fixedEnd: Bool = false) -> StartTitle {
+        guard breakMinutes > 0, !fixedEnd, until != nil || length > 0 else { return .plain }
+        let lengthText: String
+        let lengthSpoken: String
+        if let until {
+            (lengthText, lengthSpoken) = ("until \(until)", "until \(until)")
+        } else if length < 100 {
+            // "25 + 5 min break" reads as 25 and 5 minutes.
+            (lengthText, lengthSpoken) = ("\(length)", "\(length) \(length == 1 ? "minute" : "minutes")")
+        } else {
+            (lengthText, lengthSpoken) = (FocusFormat.duration(minutes: length), FocusFormat.duration(minutes: length))
+        }
+        return StartTitle(text: "Start focus \u{00B7} \(lengthText) + \(breakMinutes) min break",
+                          spoken: "Start focus, \(lengthSpoken), then a \(breakMinutes) minute break")
+    }
+}
+
 extension FocusFormat {
     /// The time of day in the reader's own style: "3:40 PM", or "15:40".
     static func clockTime(_ date: Date, locale: Locale = .autoupdatingCurrent,
@@ -134,6 +165,24 @@ extension NidusModel {
     /// is not among them.
     var durationChoicesIncludingCurrent: [Int] {
         FocusLength.choices(standard: Self.durationChoices, including: durationMinutes)
+    }
+
+    /// The Start button's words: what the next Start will do with the goal
+    /// as typed, the Length choice and Settings' break.
+    func startTitle(now: Date = Date()) -> StartTitle {
+        if let clause = GoalLengthClause.split(goalDraft, now: now) {
+            switch clause.length {
+            case .minutes(let minutes):
+                return .make(length: minutes, breakMinutes: breakMinutes)
+            case .until(let target):
+                return .make(length: 0, until: FocusFormat.clockTime(target), breakMinutes: breakMinutes)
+            }
+        }
+        if let target = pendingUntil(now: now) {
+            return .make(length: 0, until: FocusFormat.clockTime(target), breakMinutes: breakMinutes)
+        }
+        // A session that ends where the next meeting starts has no break.
+        return .make(length: durationMinutes, breakMinutes: breakMinutes, fixedEnd: endsAtNextMeeting)
     }
 
     func openCustomLength() {

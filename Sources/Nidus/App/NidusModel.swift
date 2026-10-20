@@ -202,8 +202,29 @@ final class NidusModel: NSObject, ObservableObject {
     var isPaused: Bool { engine?.isPaused ?? false }
 
     /// Starts a session from the popover: its goal, length and categories.
+    /// Return in the goal field, the Start button and the menu bar's Start
+    /// all come here, and so all go through the guarded `startSession`.
     func startSession() {
-        startSession(SessionRequest(goal: goalDraft, projectID: selectedProjectID))
+        let now = Date()
+        let clause = GoalLengthClause.split(goalDraft, now: now)
+        // An end time that is not the saved plan's (this start's "until", the
+        // next meeting) is no plan to remember.
+        var oneOff = clause == nil && (pendingUntil(now: now) != nil || endsAtNextMeeting)
+        if case .until? = clause?.length { oneOff = true }
+        // The popover's own categories and mode are what this Start uses.
+        let plan = PlanSignature(minutes: clause?.minutes(now: now) ?? durationMinutes,
+                                 categoryIDs: selectedCategories.map(\.id), mode: mode)
+        if startSession(popoverRequest(now: now)), !oneOff { notePlanStarted(plan, now: now) }
+    }
+
+    /// The request a Start from the popover makes. A length typed at the end
+    /// of the goal ("Aims for 45m", "Aims until 3:30pm") is this Start's
+    /// length, and the goal kept is without it (GoalLengthClause.swift). The
+    /// saved length is not changed.
+    func popoverRequest(now: Date = Date()) -> SessionRequest {
+        let clause = GoalLengthClause.split(goalDraft, now: now)
+        return SessionRequest(goal: clause?.goal ?? goalDraft, minutes: clause?.minutes(now: now),
+                              projectID: selectedProjectID)
     }
 
     /// Starts a session from anywhere: the popover, a nidus:// link, a
@@ -755,6 +776,7 @@ extension NidusModel {
     func clearHistory() {
         controller?.clearHistory()
         recentGoals = []
+        clearPlanStarts()
         resumeNotes?.clear()
         cards.nextStep = nil
         resumeNotice = nil
