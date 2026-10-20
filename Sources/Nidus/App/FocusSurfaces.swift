@@ -163,19 +163,20 @@ extension NidusModel {
         let detail = goal.isEmpty || onBreak ? time : "\(goal) · \(time)"
         let spokenTime = onBreak ? breakUntil.lowercased() : (isOpenEnded ? "open-ended session" : FocusFormat.spoken(remaining))
         let snoozeTitle: String? = isStrict || onBreak ? nil : "Snooze \(snoozeMinutes) min"
-        let verb: String
+        // "Slack quit" read like a crash; say why the app went.
+        let title: String
         switch item {
-        case .app(_, _, let quit): verb = quit ? "quit" : "hidden"
-        case .website: verb = "blocked"
+        case .app(_, _, let quit): title = quit ? "\(name) closed for focus" : "\(name) hidden for focus"
+        case .website: title = "\(name) blocked"
         }
 
         let request = HUDRequest(
             id: Self.blockedHUDID,
             duration: 5,
-            accessibilityLabel: "\(name) \(verb). \(goal.isEmpty ? "" : goal + ", ")\(spokenTime)."
+            accessibilityLabel: "\(title). \(goal.isEmpty ? "" : goal + ", ")\(spokenTime)."
         ) { [weak self] in
             FocusBlockedCard(
-                title: "\(name) \(verb)",
+                title: title,
                 detail: detail,
                 shortDetail: time,
                 snoozeTitle: snoozeTitle,
@@ -427,9 +428,10 @@ struct FocusWrapUpCard: View {
         }
     }
 
-    private func againButton(_ title: String) -> some View {
+    private func againButton(_ title: String, size: ControlSize = .regular) -> some View {
         Button(title, action: again)
             .buttonStyle(.bordered)
+            .controlSize(size)
             .fixedSize()
             .accessibilityLabel(title == "Again" ? "Start the same session again" : skipLabel)
     }
@@ -448,11 +450,13 @@ extension FocusWrapUpCard {
             Spacer(minLength: NidusSpacing.sm)
             Button("Not yet") { answer(false) }
                 .buttonStyle(.bordered)
+                .controlSize(.small)
                 .fixedSize()
                 .accessibilityLabel("Not finished yet")
             Button("Yes") { answer(true) }
                 .buttonStyle(.borderedProminent)
                 .tint(FocusPalette.clay)
+                .controlSize(.small)
                 .fixedSize()
                 .accessibilityLabel("Yes, finished")
         }
@@ -466,7 +470,8 @@ extension FocusWrapUpCard {
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .lineLimit(1)
             Spacer(minLength: NidusSpacing.sm)
-            if let button { againButton(button) }
+            // Small, as the answer buttons were: the card keeps one height.
+            if let button { againButton(button, size: .small) }
         }
     }
 }
