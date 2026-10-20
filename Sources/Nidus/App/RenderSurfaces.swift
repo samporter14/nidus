@@ -156,6 +156,7 @@ enum RenderSurfaces {
             await renderExceptions(model: model, settings: settings, in: directory)
             await renderSchedules(model: model, settings: settings, host: host, in: directory)
             await renderInbox(model: model, settings: settings, host: host, in: directory)
+            await renderJump(model: model, settings: settings, in: directory)
             await renderProjects(model: model, settings: settings, host: host, in: directory)
             await renderPolish(model: model, in: directory)
             model.runHarnessScenario("brick-offer")

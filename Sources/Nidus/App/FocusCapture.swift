@@ -22,9 +22,15 @@ import SwiftUI
 // MARK: - The hot key
 
 /// Registers one global hot key with Carbon. Used only by the app: tests and
-/// renders use a fake, or none.
+/// renders use a fake, or none. Each shortcut has a registrar of its own, with
+/// its own `id`; every registrar's handler hears every Nidus hot key, so each
+/// answers only to its id and passes the others on.
 @MainActor
 final class CarbonHotKeyRegistrar: HotKeyRegistrar {
+    let id: UInt32
+
+    init(id: UInt32 = 1) { self.id = id }
+
     private var hotKey: EventHotKeyRef?
     private var eventHandler: EventHandlerRef?
     private var action: (@MainActor () -> Void)?
@@ -36,9 +42,15 @@ final class CarbonHotKeyRegistrar: HotKeyRegistrar {
         unregister()
         action = handler
         var pressed = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
-        let installed = InstallEventHandler(GetApplicationEventTarget(), { _, _, userData in
+        let installed = InstallEventHandler(GetApplicationEventTarget(), { _, event, userData in
             guard let userData else { return OSStatus(eventNotHandledErr) }
             let registrar = Unmanaged<CarbonHotKeyRegistrar>.fromOpaque(userData).takeUnretainedValue()
+            var pressedID = EventHotKeyID()
+            let read = GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
+                                         nil, MemoryLayout<EventHotKeyID>.size, nil, &pressedID)
+            // Another shortcut's key: leave it for that registrar's handler.
+            guard read == noErr, pressedID.signature == CarbonHotKeyRegistrar.signature,
+                  pressedID.id == MainActor.assumeIsolated({ registrar.id }) else { return OSStatus(eventNotHandledErr) }
             // Application events arrive on the main thread.
             MainActor.assumeIsolated { registrar.action?() }
             return noErr
@@ -47,7 +59,7 @@ final class CarbonHotKeyRegistrar: HotKeyRegistrar {
             unregister()
             return false
         }
-        let id = EventHotKeyID(signature: Self.signature, id: 1)
+        let id = EventHotKeyID(signature: Self.signature, id: self.id)
         let registered = RegisterEventHotKey(UInt32(shortcut.keyCode), Self.carbonModifiers(shortcut.modifiers), id,
                                              GetApplicationEventTarget(), 0, &hotKey)
         guard registered == noErr else {
@@ -333,29 +345,43 @@ struct FocusCaptureView: View {
 /// take that key from every app.
 struct ShortcutRecorder: View {
     @Binding var shortcut: KeyShortcut?
+    /// What the shortcut is called to VoiceOver: "Capture shortcut".
+    var name = "Capture shortcut"
+    /// nil when a recorded combination may be used, else why not. A refused
+    /// combination is not taken: the recorder says why and keeps listening.
+    var conflict: ((KeyShortcut) -> String?)?
     @State private var recorder = ShortcutRecording()
 
     var body: some View {
-        HStack(spacing: NidusSpacing.sm) {
-            Button {
-                recorder.isRecording ? recorder.stop() : recorder.start { shortcut = $0 }
-            } label: {
-                Text(verbatim: label)
-                    .frame(minWidth: 130)
-            }
-            .buttonStyle(.bordered)
-            .accessibilityLabel(recorder.isRecording ? "Recording. Press the shortcut you want."
-                                : "Capture shortcut: \(shortcut?.spoken ?? "none")")
-            .accessibilityHint(recorder.isRecording ? "Press Escape to cancel." : "Press to record a new shortcut.")
-            if shortcut != nil, !recorder.isRecording {
+        VStack(alignment: .trailing, spacing: NidusSpacing.xs) {
+            HStack(spacing: NidusSpacing.sm) {
                 Button {
-                    shortcut = nil
+                    recorder.isRecording ? recorder.stop() : recorder.start(conflict: conflict) { shortcut = $0 }
                 } label: {
-                    Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    Text(verbatim: label)
+                        .frame(minWidth: 130)
                 }
-                .buttonStyle(.borderless)
-                .help("Turn the shortcut off")
-                .accessibilityLabel("Turn the capture shortcut off")
+                .buttonStyle(.bordered)
+                .accessibilityLabel(recorder.isRecording ? "Recording. Press the shortcut you want."
+                                    : "\(name): \(shortcut?.spoken ?? "none")")
+                .accessibilityHint(recorder.isRecording ? "Press Escape to cancel." : "Press to record a new shortcut.")
+                if shortcut != nil, !recorder.isRecording {
+                    Button {
+                        shortcut = nil
+                    } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.borderless)
+                    .help("Turn the shortcut off")
+                    .accessibilityLabel("Turn the \(name.lowercased()) off")
+                }
+            }
+            if let note = recorder.note {
+                Label(note, systemImage: "exclamationmark.circle")
+                    .font(.callout)
+                    .foregroundStyle(.orange)
+                    .multilineTextAlignment(.trailing)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .onDisappear { recorder.stop() }
@@ -372,10 +398,15 @@ final class ShortcutRecording {
     private(set) var isRecording = false
     /// Said on the button when the last key was not usable.
     private(set) var hint: String?
+    /// Said under the button when the last combination was refused as taken.
+    private(set) var note: String?
     @ObservationIgnored private var monitor: Any?
+    @ObservationIgnored private var conflict: ((KeyShortcut) -> String?)?
 
-    func start(_ chosen: @escaping (KeyShortcut?) -> Void) {
+    func start(conflict: ((KeyShortcut) -> String?)? = nil, _ chosen: @escaping (KeyShortcut?) -> Void) {
         stop()
+        note = nil
+        self.conflict = conflict
         isRecording = true
         hint = nil
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -392,9 +423,12 @@ final class ShortcutRecording {
         monitor = nil
         isRecording = false
         hint = nil
+        note = nil
+        conflict = nil
     }
 
-    private func read(_ event: NSEvent, _ chosen: (KeyShortcut?) -> Void) {
+    /// The key the monitor heard. Not private so a test can hand it one.
+    func read(_ event: NSEvent, _ chosen: (KeyShortcut?) -> Void) {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         var modifiers: KeyShortcut.Modifiers = []
         if flags.contains(.command) { modifiers.insert(.command) }
@@ -409,6 +443,11 @@ final class ShortcutRecording {
         guard let name = KeyShortcut.name(forKeyCode: event.keyCode, characters: event.charactersIgnoringModifiers),
               let shortcut = KeyShortcut(keyCode: event.keyCode, modifiers: modifiers, key: name) else {
             hint = "Hold \u{2318}, \u{2303} or \u{2325}"
+            return
+        }
+        // Taken by the other Nidus shortcut: say so, and keep listening.
+        if let message = conflict?(shortcut) {
+            note = message
             return
         }
         chosen(shortcut)

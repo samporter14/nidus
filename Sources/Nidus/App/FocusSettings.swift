@@ -205,6 +205,7 @@ struct FocusGeneralPage: View {
                                  subtitle: "A session left running carries on after a restart.",
                                  isOn: Binding(get: { opensAtLogin },
                                                set: { LoginItem.set($0); opensAtLogin = LoginItem.isOn }))
+                OpenNidusShortcutRows(model: model)
             }
         }
     }

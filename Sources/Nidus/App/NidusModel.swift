@@ -84,6 +84,12 @@ final class NidusModel: NSObject, ObservableObject {
     var inbox: FocusInbox?
     /// The capture panel and its global shortcut (FocusCapture.swift).
     let capture = CaptureCoordinator()
+    /// The Open Nidus shortcut (OpenShortcut.swift): a hot key of its own.
+    lazy var openHotKey = OpenShortcutCoordinator { [weak self] in self?.togglePopoverFromShortcut() }
+    /// The Jump to field in Settings (SettingsJump.swift).
+    lazy var settingsJump = SettingsJump { [weak self] page, title in
+        self?.host?.workspace.openSettingsPage(page, title: title)
+    }
     /// Opens an inbox item's address. Used only by that item's Open button;
     /// a test replaces it to see that nothing else opens anything.
     var inboxURLOpener: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
@@ -106,6 +112,7 @@ final class NidusModel: NSObject, ObservableObject {
         plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
         startInbox(host: host)
+        startOpenShortcut()
 
         controller.onBlocked = { [weak self] item in
             self?.presentBlockedHUD(for: item)
@@ -182,6 +189,7 @@ final class NidusModel: NSObject, ObservableObject {
         welcomeTask = nil
         stopWeeklyRecap()
         stopInbox()
+        stopOpenShortcut()
         for id in [Self.welcomeHUDID, Self.browserHUDID, Self.snoozeHUDID, Self.snoozeWaitHUDID, Self.breakHUDID,
                    Self.workspaceHUDID] { host?.hud.dismiss(id: id) }
         // Quitting puts blocked tabs back; demos and renders never touch
