@@ -304,8 +304,11 @@ struct FocusWidget: View {
                 Text(verbatim: title.text)
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
-                Image(systemName: "arrow.right")
-                    .font(.system(size: 12, weight: .semibold))
+                // The arrow only when there is no Return hint: one mark, not two.
+                if !(startsOnReturn && !blocksNothing) {
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 12, weight: .semibold))
+                }
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 27)
