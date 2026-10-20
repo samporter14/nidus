@@ -47,6 +47,8 @@ extension NidusModel {
     var captureShortcut: KeyShortcut? {
         get { preference(Key.captureShortcut, default: KeyShortcut?.none) }
         set {
+            // The Open Nidus shortcut's keys are not taken.
+            if let newValue, shortcutConflict(newValue, for: .capture) != nil { return }
             setPreference(newValue, Key.captureShortcut)
             capture.apply(newValue)
             objectWillChange.send()
@@ -268,7 +270,8 @@ struct FocusInboxPage: View {
                 NidusSettingsCard {
                     NidusControlRow(title: "Shortcut",
                                       infoTip: "Opens a small box to save a thought or a link, from any app, without leaving what you're doing. Off until you set one.") {
-                        ShortcutRecorder(shortcut: model.binding(\.captureShortcut))
+                        ShortcutRecorder(shortcut: model.binding(\.captureShortcut), name: "Capture shortcut",
+                                         conflict: { model.shortcutConflict($0, for: .capture) })
                     }
                     if model.captureShortcut != nil, model.capture.shortcutIsRefused {
                         Label("Another app is using that combination. Choose a different one.",

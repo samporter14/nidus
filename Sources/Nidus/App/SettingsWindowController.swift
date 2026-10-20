@@ -95,6 +95,7 @@ final class SettingsWindowController {
         window.toolbarStyle = .preference
         window.contentViewController = controller
         window.title = selectedTab.title
+        window.onFind = { [weak model] in model?.settingsJump.requestFocus() }
         window.setContentSize(Self.contentSize)
         window.contentMinSize = NSSize(width: 560, height: 420)
         window.isReleasedWhenClosed = false
@@ -131,6 +132,17 @@ final class SettingsWindowController {
 /// otherwise pulls a titled window back onto one.
 final class SettingsWindow: NSWindow {
     var placesAnywhere = false
+    /// ⌘F: focus Jump to.
+    var onFind: (() -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "f", let onFind {
+            onFind()
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 
     override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
         placesAnywhere ? frameRect : super.constrainFrameRect(frameRect, to: screen)
@@ -192,14 +204,23 @@ struct SettingsRoot: View {
     let router: SettingsRouter
 
     var body: some View {
+        let jump = model.settingsJump
         VStack(spacing: 0) {
-            if let page = router.path.last {
-                pageHeader(page)
-                Divider()
-                (model.makeSettingsPage(id: page.id) ?? AnyView(missing))
-                    .id(page)
-            } else {
-                (model.settingsRoot(for: tab) ?? AnyView(missing))
+            SettingsJumpBar(jump: jump)
+            Divider()
+            // What the query finds covers the page; the page stays under it.
+            ZStack {
+                VStack(spacing: 0) {
+                    if let page = router.path.last {
+                        pageHeader(page)
+                        Divider()
+                        (model.makeSettingsPage(id: page.id) ?? AnyView(missing))
+                            .id(page)
+                    } else {
+                        (model.settingsRoot(for: tab) ?? AnyView(missing))
+                    }
+                }
+                if jump.isSearching { SettingsJumpResults(jump: jump) }
             }
         }
         .environment(router)

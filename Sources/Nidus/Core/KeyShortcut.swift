@@ -116,11 +116,12 @@ protocol HotKeyRegistrar: AnyObject {
     func unregister()
 }
 
-/// The capture shortcut: off until the person sets one. Setting registers it,
-/// clearing or replacing it first lets go of the old one, and stopping (Nidus
-/// quitting) lets go of it too.
+/// One global shortcut (the capture shortcut, the Open Nidus shortcut): off
+/// until the person sets one. Setting registers it, clearing or replacing it
+/// first lets go of the old one, and stopping (Nidus quitting) lets go of it
+/// too. Each shortcut has a registrar of its own.
 @MainActor
-final class CaptureShortcut {
+final class GlobalShortcut {
     private let registrar: HotKeyRegistrar
     private let onPress: @MainActor () -> Void
     /// The shortcut asked for, whether or not the system accepted it.
@@ -148,5 +149,34 @@ final class CaptureShortcut {
         registrar.unregister()
         current = nil
         isRefused = false
+    }
+}
+
+typealias CaptureShortcut = GlobalShortcut
+
+// MARK: - Two shortcuts, never the same keys
+
+/// What a global shortcut is for. Nidus has two, and they must differ: the
+/// system would hand the keys to only one of them.
+enum ShortcutPurpose: Sendable {
+    case capture, openNidus
+
+    /// How the other one is called in a message.
+    var otherName: String {
+        switch self {
+        case .capture: "Open Nidus"
+        case .openNidus: "capture"
+        }
+    }
+}
+
+enum ShortcutConflict {
+    /// nil when `shortcut` may be used for `purpose`; otherwise the sentence
+    /// that says why not, for the recorder to show.
+    static func message(for shortcut: KeyShortcut, purpose: ShortcutPurpose,
+                        capture: KeyShortcut?, openNidus: KeyShortcut?) -> String? {
+        let other = purpose == .capture ? openNidus : capture
+        guard other == shortcut else { return nil }
+        return "\(shortcut.display) is already the \(purpose.otherName) shortcut. Choose a different one."
     }
 }
