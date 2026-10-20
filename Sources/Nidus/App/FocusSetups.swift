@@ -348,8 +348,14 @@ extension NidusModel {
     func start(_ setup: FocusSetup) -> Bool {
         let current = categories
         guard setup.problem(in: current) == nil else { return false }
-        return startSession(setup.startRequest(categories: current, goalDraft: goalDraft,
-                                               popoverProject: selectedProjectID, projects: projects))
+        // A length typed at the end of the goal is this start's, over the
+        // setup's own, as the chip under the goal says.
+        let now = Date()
+        let clause = GoalLengthClause.split(goalDraft, now: now)
+        var request = setup.startRequest(categories: current, goalDraft: clause?.goal ?? goalDraft,
+                                         popoverProject: selectedProjectID, projects: projects)
+        if let clause { request.minutes = clause.minutes(now: now) }
+        return startSession(request)
     }
 
     func updateSetup(_ id: FocusSetup.ID, _ change: (inout FocusSetup) -> Void) {

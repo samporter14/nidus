@@ -42,9 +42,11 @@ struct FocusWidget: View {
 
     // MARK: Header
 
+    /// One header for every state: the menu bar's brain on its tile and a
+    /// sans title, so nothing changes shape when a session starts or ends.
     private var header: some View {
         HStack(spacing: 11) {
-            Image(nsImage: FocusGlyph.image(model.isActive ? .brain : .particle, pointSize: 17))
+            Image(nsImage: FocusGlyph.image(.brain, pointSize: 17))
                 .renderingMode(.template)
                 .foregroundStyle(model.isPaused || model.isOnBreak ? Solanum.inkMuted : Solanum.clayText)
                 .frame(width: 35, height: 35)
@@ -52,9 +54,7 @@ struct FocusWidget: View {
                 .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Solanum.clay.opacity(0.22)))
                 .accessibilityHidden(true)
             Text(stateWord)
-                .font(model.isActive || model.isOnBreak
-                      ? .system(size: 17, weight: .semibold)
-                      : Solanum.serif(22).weight(.semibold))
+                .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Solanum.ink)
             if model.isStrict || (model.strictMode && !model.isActive && !model.isOnBreak) {
                 Image(systemName: "lock.fill")
@@ -129,6 +129,7 @@ struct FocusWidget: View {
                         }
                     }
                     .frame(minHeight: 33)
+                    if let clause = GoalLengthClause.split(model.goalDraft) { goalLengthChip(clause) }
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 15)
@@ -182,7 +183,7 @@ struct FocusWidget: View {
                 if isOpen { focusCustomLengthField() } else { goalFocused = true }
             }
 
-            if todayCache.line(for: model) != nil || nudge == .inbox {
+            if todayCache.line(for: model) != nil || nudge == .inbox || nudge == .saveSetup {
                 HStack(spacing: NidusSpacing.sm) {
                     if let line = todayCache.line(for: model) {
                         Text(verbatim: line)
@@ -192,6 +193,7 @@ struct FocusWidget: View {
                     }
                     Spacer(minLength: 0)
                     if nudge == .inbox { FocusInboxRow(model: model) }
+                    if nudge == .saveSetup { saveSetupSuggestion }
                 }
                 .padding(.horizontal, 2)
             }
@@ -202,7 +204,45 @@ struct FocusWidget: View {
     private var nudge: IdleNudge? {
         IdleNudge.top(brickOffer: model.currentBrickOffer != nil,
                       resumeNote: model.newestResumeNote != nil,
-                      inbox: model.inboxOpenCount > 0)
+                      inbox: model.inboxOpenCount > 0,
+                      saveSetup: model.offersSetupSuggestion())
+    }
+
+    /// Under the goal: the length read from its end, and the goal that will
+    /// be kept, so a Start is never a surprise.
+    private func goalLengthChip(_ clause: GoalLengthClause) -> some View {
+        let length = clause.lengthLabel()
+        return HStack(spacing: NidusSpacing.xs) {
+            Image(systemName: "timer")
+            Text(verbatim: "\(length) \u{00B7} goal saved as \u{201C}\(clause.goal)\u{201D}")
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .font(.system(size: 12))
+        .foregroundStyle(Solanum.clayText)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Length from the goal: \(length). The goal is saved as \(clause.goal).")
+    }
+
+    /// The quietest nudge: one line, offered when the same plan has been
+    /// started by hand a few times. The cross ends the offer for that plan.
+    private var saveSetupSuggestion: some View {
+        HStack(spacing: NidusSpacing.xs) {
+            Button(action: model.acceptSetupSuggestion) {
+                Label("Save this as a setup", systemImage: "plus.square.on.square")
+            }
+            .help("Save this length and these categories as a setup")
+            Button(action: model.dismissSetupSuggestion) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .semibold))
+            }
+            .help("Don\u{2019}t suggest this again")
+            .accessibilityLabel("Don\u{2019}t suggest saving this setup again")
+        }
+        .buttonStyle(.borderless)
+        .controlSize(.small)
+        .font(.system(size: 12))
+        .foregroundStyle(.secondary)
     }
 
     /// Start, with any length still being typed taken first, as Return in
@@ -255,21 +295,40 @@ struct FocusWidget: View {
     }
 
     private var startButton: some View {
-        Button(action: start) {
+        let title = model.startTitle()
+        let startsOnReturn = model.customLengthDraft == nil
+        let blocksNothing = model.selectedCategories.allSatisfy(\.isEmpty) && model.mode == .block
+        return Button(action: start) {
             HStack {
                 Spacer(minLength: 0)
-                Text("Start focus")
+                Text(verbatim: title.text)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.85)
                 Image(systemName: "arrow.right")
                     .font(.system(size: 12, weight: .semibold))
                 Spacer(minLength: 0)
             }
             .frame(minHeight: 27)
+            // The words keep clear of the Return hint, on both sides to
+            // stay centred.
+            .padding(.horizontal, 22)
+            // Return starts, from the goal field too. Hidden while a length
+            // is being typed, when Return belongs to that field.
+            .overlay(alignment: .trailing) {
+                if startsOnReturn && !blocksNothing {
+                    Image(systemName: "return")
+                        .font(.system(size: 11, weight: .medium))
+                        .opacity(0.55)
+                        .accessibilityHidden(true)
+                }
+            }
         }
             .buttonStyle(SolanumPrimaryButtonStyle(fontSize: 14))
             // While a length is being typed Return belongs to the field.
-            .keyboardShortcut(model.customLengthDraft == nil ? .defaultAction : nil)
-            .disabled(model.selectedCategories.allSatisfy(\.isEmpty) && model.mode == .block)
-            .help("Start a focus session")
+            .keyboardShortcut(startsOnReturn ? .defaultAction : nil)
+            .disabled(blocksNothing)
+            .help(startsOnReturn ? "Start a focus session (Return)" : "Start a focus session")
+            .accessibilityLabel(title.spoken)
     }
 
     private var durationMenu: some View {
@@ -652,18 +711,20 @@ struct FocusWidget: View {
     }
 }
 
-/// What the idle popover can nudge about. Three things may be waiting at
+/// What the idle popover can nudge about. Several things may be waiting at
 /// once and the popover shows one, so it stays a place to start.
 enum IdleNudge: Equatable, CaseIterable {
-    case brick, resume, inbox
+    case brick, resume, inbox, saveSetup
 
     /// The most urgent of those waiting, in this order: a phone's request to
-    /// focus (it goes stale), a note to pick up, the inbox. The project
+    /// focus (it goes stale), a note to pick up, the inbox, and last the
+    /// offer to save the plan started by hand again and again. The project
     /// picker is not a nudge and is not asked about here.
-    static func top(brickOffer: Bool, resumeNote: Bool, inbox: Bool) -> IdleNudge? {
+    static func top(brickOffer: Bool, resumeNote: Bool, inbox: Bool, saveSetup: Bool = false) -> IdleNudge? {
         if brickOffer { return .brick }
         if resumeNote { return .resume }
         if inbox { return .inbox }
+        if saveSetup { return .saveSetup }
         return nil
     }
 }
