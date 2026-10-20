@@ -427,17 +427,26 @@ struct BrowserAccessRow: View {
         }
     }
 
+    /// Asks macOS off the main thread: even without a prompt the answer can
+    /// wait on a busy browser, and Settings (or a render) must not freeze for it.
     private func refresh() {
         guard let target = AppleEventTarget(runningBundleID: browser.bundleID) else {
             status = .notRunning
             return
         }
-        switch target.automationPermission(ask: false) {
-        case nil: status = .allowed
-        case .needsConsent: status = .notAsked
-        case .notPermitted: status = .denied
-        case .notRunning: status = .notRunning
-        default: status = .unknown
+        Task.detached(priority: .utility) {
+            let answer = target.automationPermission(ask: false)
+            await MainActor.run { status = Self.status(for: answer) }
+        }
+    }
+
+    nonisolated static func status(for answer: AppleEventError?) -> Status {
+        switch answer {
+        case nil: return .allowed
+        case .needsConsent: return .notAsked
+        case .notPermitted: return .denied
+        case .notRunning: return .notRunning
+        default: return .unknown
         }
     }
 
