@@ -545,7 +545,7 @@ struct FocusWidget: View {
                 }
                 Spacer(minLength: NidusSpacing.md)
                 HStack(spacing: NidusSpacing.sm) {
-                    skipBreakButton(size: 30)
+                    skipBreakButton
                     Button(action: model.endBreak) {
                         Image(systemName: "stop.fill")
                     }
@@ -607,13 +607,13 @@ struct FocusWidget: View {
             .accessibilityLabel("Break, \(FocusFormat.spoken(model.breakRemaining))")
     }
 
-    private func skipBreakButton(size: CGFloat) -> some View {
+    /// Labeled, so a play mark is not read as "resume" or "pause".
+    private var skipBreakButton: some View {
         Button(action: model.skipBreak) {
-            Image(systemName: "play.fill")
+            Label("Start now", systemImage: "play.fill")
         }
-        .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
+        .buttonStyle(.bordered).controlSize(.small)
         .help(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
-        .accessibilityLabel(model.runningSequence == nil ? "Start the next session now" : "Start the next block now")
     }
 
     private func clock(size: CGFloat) -> some View {
@@ -682,16 +682,25 @@ final class TodayLineCache {
     }
 }
 
-/// A session's progress: the system's bar, in clay.
+/// A session's progress, drawn here. The system's linear ProgressView kept
+/// its fill gray with `.tint` set (see the running popover's render), so the
+/// clay fill is drawn directly.
 struct ProgressTrack: View {
     let progress: Double
     let tint: Color
 
     var body: some View {
-        ProgressView(value: min(1, max(0, progress)))
-            .progressViewStyle(.linear)
-            .tint(tint)
-            .accessibilityHidden(true)
+        GeometryReader { geometry in
+            let fraction = min(1, max(0, progress))
+            ZStack(alignment: .leading) {
+                Capsule().fill(Color.primary.opacity(0.1))
+                if fraction > 0 {
+                    Capsule().fill(tint).frame(width: geometry.size.width * fraction)
+                }
+            }
+        }
+        .frame(height: 6)
+        .accessibilityHidden(true)
     }
 }
 
