@@ -71,7 +71,7 @@ extension NidusModel {
     private func startFromLink(_ start: NidusLink.Start) {
         // A saved setup first, then the link's own parameters over it; the
         // same rules as Shortcuts and the JSON command (FocusOutside.swift).
-        switch outsideRequest(start) {
+        switch outsideRequest(start, fromLink: true) {
         case .failure(.setupNotFound):
             host?.log.notice("ignored start link: no setup by that name or id")
         case .failure(.setupAmbiguous):

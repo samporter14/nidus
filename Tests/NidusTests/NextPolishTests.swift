@@ -10,7 +10,7 @@ struct ExternalWorkspaceBoundaryTests {
         let setup = FocusSetup(name: "Work", categoryIDs: ["social"], strict: true,
                                startShortcut: "Dangerous shortcut", endShortcut: "End action", resources: [resource])
         target.setups = [setup]
-        let request = try target.outsideRequest(NidusLink.Start(preset: setup.id.uuidString)).get().request
+        let request = try target.outsideRequest(NidusLink.Start(preset: setup.id.uuidString), fromLink: true).get().request
         let defaults = StartDefaults(mode: .block, selectedCategoryIDs: ["social"], categories: target.categories,
                                      startShortcut: "Settings on", endShortcut: "Settings off")
         let plan = try #require(request.resolved(with: defaults, length: { (25, false) })?.plan)
@@ -20,9 +20,24 @@ struct ExternalWorkspaceBoundaryTests {
         #expect(setup.resources == [resource], "the setup itself is untouched")
     }
 
-    @Test func aPlainOutsideStartDoesNotInheritShortcutSideEffects() throws {
-        let request = try FakeFocusTarget().outsideRequest(NidusLink.Start()).get().request
+    @Test func aPlainLinkStartDoesNotInheritShortcutSideEffects() throws {
+        let request = try FakeFocusTarget().outsideRequest(NidusLink.Start(), fromLink: true).get().request
         #expect(request.resources.isEmpty && request.startShortcut == "" && request.endShortcut == "")
+    }
+
+    @Test func aShortcutOrJSONStartKeepsTheSetupsWorkspaceAndShortcuts() throws {
+        // Only a link can come from a web page. A Shortcuts action or the JSON
+        // command is the person's own, and is how an Apple Focus gets switched on.
+        let target = FakeFocusTarget()
+        let resource = WorkspaceResource(kind: .webPage, displayName: "Example", url: "https://example.com")
+        let setup = FocusSetup(name: "Work", categoryIDs: ["social"], startShortcut: "Focus on", endShortcut: "Focus off",
+                               resources: [resource])
+        target.setups = [setup]
+        let request = try target.outsideRequest(NidusLink.Start(preset: setup.id.uuidString)).get().request
+        #expect(request.resources == [resource])
+        #expect(request.startShortcut == "Focus on" && request.endShortcut == "Focus off")
+        let plain = try target.outsideRequest(NidusLink.Start()).get().request
+        #expect(plain.startShortcut == nil && plain.endShortcut == nil, "no setup: Settings' Shortcuts apply, as before")
     }
 }
 

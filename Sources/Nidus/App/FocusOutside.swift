@@ -211,7 +211,13 @@ extension FocusCommandTarget {
     /// an assistant can't make a session weaker than the setup or Settings
     /// would. Nothing named that doesn't exist is quietly swapped for the
     /// popover's choices.
-    func outsideRequest(_ start: NidusLink.Start) -> Result<(request: SessionRequest, setup: FocusSetup?, unmatched: [String]), OutsideStartProblem> {
+    ///
+    /// `fromLink`: the start came from a `nidus://` link, which any web page
+    /// may open. Such a start can't use a saved setup as permission to open
+    /// documents and pages or to run Shortcuts. Shortcuts actions and the JSON
+    /// command are things the person set up themselves, so they keep the
+    /// setup's workspace and the Shortcuts that switch an Apple Focus on and off.
+    func outsideRequest(_ start: NidusLink.Start, fromLink: Bool = false) -> Result<(request: SessionRequest, setup: FocusSetup?, unmatched: [String]), OutsideStartProblem> {
         var setup: FocusSetup?
         if let key = start.preset {
             switch FocusSetup.find(key, in: setups) {
@@ -233,12 +239,12 @@ extension FocusCommandTarget {
         if start.categories != nil { request.categoryIDs = resolved.request.categoryIDs }
         if let mode = start.mode { request.mode = mode }
         if start.strict == true { request.strict = true }
-        // A web page can request a start link. It cannot use a saved setup
-        // as permission to open documents/pages or run arbitrary Shortcuts.
-        // Empty strings explicitly override Settings' Shortcuts as well.
-        request.resources = []
-        request.startShortcut = ""
-        request.endShortcut = ""
+        if fromLink {
+            // Empty strings explicitly override Settings' Shortcuts as well.
+            request.resources = []
+            request.startShortcut = ""
+            request.endShortcut = ""
+        }
         return .success((request, setup, resolved.unmatched))
     }
 }
