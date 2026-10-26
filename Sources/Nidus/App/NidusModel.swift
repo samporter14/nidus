@@ -108,6 +108,7 @@ final class NidusModel: NSObject, ObservableObject {
         // A demo or render draws sample sessions and breaks, some with rules
         // of their own: none of them may quit an app or ask a browser.
         controller.blocksNothing = Demo.isActive
+        applyPresetUpdates()
         resumeNotes = ResumeNoteStore(url: host.environment.containerDirectory.appendingPathComponent(ResumeNoteStore.fileName))
         plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
         applySettings()
@@ -638,6 +639,7 @@ extension NidusModel {
         static let strictMode = "strictMode"
         static let breakMinutes = "breakMinutes"
         static let hidesGettingStarted = "hidesGettingStarted"
+        static let presetUpdatesVersion = "presetUpdatesVersion"
     }
 
     /// 0 means open-ended.
@@ -810,6 +812,17 @@ extension NidusModel {
 
     func binding<Value>(_ keyPath: ReferenceWritableKeyPath<NidusModel, Value>) -> Binding<Value> {
         Binding(get: { self[keyPath: keyPath] }, set: { self[keyPath: keyPath] = $0 })
+    }
+
+    /// New sites in the preset categories reach a copy saved earlier, once
+    /// per version (see `PresetUpdates`). A fresh install already has them.
+    private func applyPresetUpdates() {
+        let saved = preference(Key.presetUpdatesVersion, default: 0)
+        guard saved < PresetUpdates.currentVersion else { return }
+        let before = categories
+        let after = PresetUpdates.applying(to: before, since: saved)
+        if after != before { categories = after }
+        setPreference(PresetUpdates.currentVersion, Key.presetUpdatesVersion)
     }
 
     private func applySettings() {

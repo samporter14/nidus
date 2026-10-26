@@ -85,7 +85,7 @@ extension FocusCategory {
             id: "news", name: "News", symbol: "newspaper",
             apps: [BlockedApp(bundleID: "com.apple.news", name: "News")],
             websites: ["news.ycombinator.com", "cnn.com", "bbc.com", "bbc.co.uk", "nytimes.com",
-                       "theguardian.com", "theverge.com"]
+                       "theguardian.com", "theverge.com"] + PresetUpdates.newsSites
         ),
         FocusCategory(
             id: "mail", name: "Mail", symbol: "envelope",
@@ -126,5 +126,46 @@ extension SessionPlan {
         self.init(goal: goal, duration: duration, mode: mode, apps: apps, websites: websites,
                   reopensQuitApps: reopensQuitApps, launchApps: launchApps,
                   startShortcut: startShortcut, endShortcut: endShortcut)
+    }
+}
+
+
+// MARK: - Better defaults reach existing installs
+
+/// Sites added to the preset categories after a person's own copy was saved.
+/// Each version's sites are added once, to a category still named by its
+/// preset id: nothing is ever removed, a site the person took out later stays
+/// out (the version is recorded), and categories they made themselves are
+/// never touched.
+enum PresetUpdates {
+    /// The sites News has had since version 1: wire services, broadcasters,
+    /// papers, magazines and the main tech and business news sites.
+    static let newsSites = [
+        "reuters.com", "apnews.com", "bloomberg.com", "npr.org", "washingtonpost.com", "wsj.com",
+        "latimes.com", "usatoday.com", "foxnews.com", "nbcnews.com", "cbsnews.com", "abcnews.go.com",
+        "msnbc.com", "news.google.com", "news.yahoo.com", "politico.com", "axios.com", "thehill.com",
+        "huffpost.com", "vox.com", "slate.com", "time.com", "newsweek.com", "nypost.com",
+        "theatlantic.com", "newyorker.com", "economist.com", "ft.com", "forbes.com", "businessinsider.com",
+        "cnbc.com", "aljazeera.com", "independent.co.uk", "telegraph.co.uk", "dailymail.co.uk", "sky.com",
+        "dw.com", "france24.com", "techcrunch.com", "wired.com", "arstechnica.com", "engadget.com",
+    ]
+
+    static let currentVersion = 1
+
+    /// Sites to add per preset id, by the version that introduced them.
+    static let additions: [(version: Int, id: String, sites: [String])] = [
+        (1, "news", newsSites),
+    ]
+
+    /// `categories` with every addition newer than `savedVersion` appended
+    /// where it is missing.
+    static func applying(to categories: [FocusCategory], since savedVersion: Int) -> [FocusCategory] {
+        var result = categories
+        for addition in additions where addition.version > savedVersion {
+            guard let index = result.firstIndex(where: { $0.id == addition.id }) else { continue }
+            let have = Set(result[index].websites.map { $0.lowercased() })
+            result[index].websites += addition.sites.filter { !have.contains($0) }
+        }
+        return result
     }
 }
