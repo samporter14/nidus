@@ -53,7 +53,11 @@ TRIPLE="$ARCH-apple-macosx$DEPLOYMENT"
 # The constant values of this build. The output file map names every file the
 # compiler wrote for the target (one per source when debugging, one for the
 # module when optimizing), so a leftover from a deleted source is never used.
-BIN_PATH="$(swift build -c "$CONFIG" --product Nidus --show-bin-path)"
+BUILD_FLAGS=()
+if [[ "${NIDUS_DISABLE_PACKAGE_SANDBOX:-0}" == 1 ]]; then
+    BUILD_FLAGS+=(--disable-sandbox)
+fi
+BIN_PATH="$(swift build "${BUILD_FLAGS[@]}" -c "$CONFIG" --product Nidus --show-bin-path)"
 INTERMEDIATES="${BIN_PATH:h:h}/Intermediates.noindex/Nidus.build/${(C)CONFIG}"
 MAP="$(find "$INTERMEDIATES" -name Nidus-OutputFileMap.json -path "*/Objects-normal/$ARCH/*" 2>/dev/null | head -1)"
 [[ -n "$MAP" ]] || fail "no build products for -c $CONFIG under $INTERMEDIATES; run swift build -c $CONFIG first."

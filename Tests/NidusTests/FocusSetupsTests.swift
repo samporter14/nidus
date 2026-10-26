@@ -220,7 +220,7 @@ struct FocusSetupTests {
     // MARK: Symbols
 
     @Test func everyCuratedSymbolExistsAndIsOnlyListedOnce() {
-        #expect(FocusSetup.symbols.count == 12)
+        #expect(FocusSetup.symbols.count == 120)
         #expect(Set(FocusSetup.symbols.map(\.symbol)).count == FocusSetup.symbols.count)
         for choice in FocusSetup.symbols {
             #expect(NSImage(systemSymbolName: choice.symbol, accessibilityDescription: nil) != nil,

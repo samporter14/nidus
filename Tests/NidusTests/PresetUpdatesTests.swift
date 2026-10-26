@@ -7,13 +7,13 @@ struct PresetUpdatesTests {
     }
 
     @Test func aSavedNewsCategoryGainsTheMissingSitesOnceAndKeepsEverythingElse() {
-        let saved = [Self.category("social", ["x.com"]), Self.category("news", ["cnn.com", "my-own-blog.example"])]
+        let saved = [Self.category("custom", ["x.com"]), Self.category("news", ["cnn.com", "my-own-blog.example"])]
         let updated = PresetUpdates.applying(to: saved, since: 0)
         let news = updated.first { $0.id == "news" }!
         #expect(news.websites.prefix(2) == ["cnn.com", "my-own-blog.example"], "what was there stays, in order")
         #expect(news.websites.contains("reuters.com") && news.websites.contains("apnews.com"))
         #expect(news.websites.filter { $0 == "cnn.com" }.count == 1, "no duplicates")
-        #expect(updated.first { $0.id == "social" } == saved[0], "other categories are untouched")
+        #expect(updated.first { $0.id == "custom" } == saved[0], "other categories are untouched")
     }
 
     @Test func aSiteTheyRemovedStaysRemovedOnceTheVersionIsRecorded() {

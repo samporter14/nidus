@@ -644,7 +644,7 @@ extension NidusModel {
             duration: 8,
             accessibilityLabel: "Focus started, from your schedule. Until \(until)."
         ) {
-            FocusNoticeCard(symbol: "calendar.badge.clock", variants: [
+            FocusNoticeCard(symbol: NidusSymbols.calendar, variants: [
                 .init(title: Text(verbatim: "Focus started"), detail: Text(verbatim: detail), button: "OK"),
                 .init(title: Text(verbatim: "Focus started"), detail: Text(verbatim: "Until \(until)"), button: "OK", showsSymbol: false),
             ]) {
@@ -707,7 +707,7 @@ struct FocusScheduleHeadsUpCard: View {
     private func row(showsSymbol: Bool, last: Bool) -> some View {
         HStack(alignment: .center, spacing: NidusSpacing.md) {
             if showsSymbol {
-                SettingsTile(symbol: "calendar.badge.clock", size: 28)
+                SettingsTile(symbol: NidusSymbols.calendar, size: 28)
             }
             texts(lines: 1)
                 .lineLimit(1)
@@ -731,7 +731,7 @@ struct FocusScheduleHeadsUpCard: View {
     private func conflictBody(_ choices: Choices) -> some View {
         VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             HStack(alignment: .center, spacing: NidusSpacing.md) {
-                SettingsTile(symbol: "calendar.badge.clock", size: 28)
+                SettingsTile(symbol: NidusSymbols.calendar, size: 28)
                 texts(lines: 2)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)

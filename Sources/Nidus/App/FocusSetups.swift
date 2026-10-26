@@ -66,7 +66,7 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
     static let breakMinutesLimit = 180
 
     static let defaultName = "New setup"
-    static let defaultSymbol = "bolt"
+    static let defaultSymbol = NidusSymbols.setup
 
     init(id: UUID = UUID(), name: String = FocusSetup.defaultName, symbol: String = FocusSetup.defaultSymbol,
          minutes: Int = 25, categoryIDs: [String] = [], mode: SessionPlan.Mode = .block,
@@ -265,22 +265,8 @@ struct FocusSetup: Codable, Identifiable, Equatable, Sendable {
 
     // MARK: Symbols
 
-    /// What a setup's symbol is picked from: enough for the usual kinds of
-    /// work, few enough to see at once.
-    static let symbols: [(symbol: String, name: String)] = [
-        ("brain.head.profile", "Brain"),
-        ("pencil", "Pencil"),
-        ("book", "Book"),
-        ("graduationcap", "Graduation cap"),
-        ("chevron.left.forwardslash.chevron.right", "Code"),
-        ("flask", "Flask"),
-        ("paintpalette", "Palette"),
-        ("envelope", "Envelope"),
-        ("bolt", "Bolt"),
-        ("flame", "Flame"),
-        ("leaf", "Leaf"),
-        ("moon", "Moon"),
-    ]
+    /// The same small, curated catalogue categories use.
+    static let symbols = NidusSymbolCatalog.choices
 
     // MARK: Order
 

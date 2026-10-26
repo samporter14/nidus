@@ -16,6 +16,16 @@ which opens the normal session editor without starting or selecting a setup.
 Its iPhone workflow uses a file provider such as iCloud Drive for delivery;
 that provider handles syncing outside Nidus.
 
+## Workspace behavior of external starts
+
+Links, Shortcuts actions and the JSON command use the saved setup's session
+choices, but do not open its documents, folders or web pages, and do not run
+its start/end Shortcuts (including inherited Settings Shortcuts). This keeps
+a link from a web page from triggering those side effects. The setup is not
+edited. Its blocking, strictness, duration and project still apply; existing
+apps-to-open behavior is retained. Start the setup inside Nidus to use its
+full workspace.
+
 ## Shortcuts actions
 
 Nidus adds six actions to the Shortcuts app. Search for "Nidus" or "Focus" in

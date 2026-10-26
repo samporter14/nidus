@@ -233,6 +233,12 @@ extension FocusCommandTarget {
         if start.categories != nil { request.categoryIDs = resolved.request.categoryIDs }
         if let mode = start.mode { request.mode = mode }
         if start.strict == true { request.strict = true }
+        // A web page can request a start link. It cannot use a saved setup
+        // as permission to open documents/pages or run arbitrary Shortcuts.
+        // Empty strings explicitly override Settings' Shortcuts as well.
+        request.resources = []
+        request.startShortcut = ""
+        request.endShortcut = ""
         return .success((request, setup, resolved.unmatched))
     }
 }

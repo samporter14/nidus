@@ -33,7 +33,7 @@ struct CrossFeatureFixesTests {
         #expect(meeting.breakLength == 0, "until the next meeting: its start is the end")
 
         let ordinary = try #require(SessionRequest(goal: "", minutes: 30).resolved(with: defaults(), length: { (30, false) })?.plan)
-        #expect(ordinary.breakLength == nil, "everything else keeps Settings' break, as before")
+        #expect(ordinary.breakLength == 0, "Settings' break is resolved into the snapshot")
     }
 
     @Test func soNoBreakWithRulesBeginsOnlyToBeCalledOff() {

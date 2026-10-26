@@ -37,12 +37,27 @@ enum NidusTransition {
 
 /// The whole of a settings page: a grouped form, as System Settings is.
 struct NidusSettingsPane<Content: View>: View {
+    var jumpPage: String? = nil
     @ViewBuilder let content: () -> Content
+    @Environment(SettingsJump.self) private var jump: SettingsJump?
 
     var body: some View {
-        Form { content() }
-            .formStyle(.grouped)
-            .tint(FocusPalette.clay)
+        ScrollViewReader { proxy in
+            Form { content() }
+                .formStyle(.grouped)
+                .tint(FocusPalette.clay)
+                .onChange(of: jump?.destination) { _, destination in
+                    scroll(to: destination, using: proxy)
+                }
+                .onAppear { scroll(to: jump?.destination, using: proxy) }
+        }
+    }
+
+    private func scroll(to destination: SettingsJump.Destination?, using proxy: ScrollViewProxy) {
+        guard let destination, destination.page == jumpPage else { return }
+        // One layout turn, not polling or an animation. The target's Form
+        // may have just been created by a cross-tab jump.
+        DispatchQueue.main.async { proxy.scrollTo(destination.anchor, anchor: .center) }
     }
 }
 
@@ -259,11 +274,12 @@ struct SettingsTile: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: size * 0.24, style: .continuous)
-            .fill(color.gradient)
+            .fill(color)
             .overlay(
                 image
                     .font(.system(size: size * 0.52, weight: .semibold))
-                    .foregroundStyle(.white)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(Solanum.onClay)
             )
             .frame(width: size, height: size)
             .accessibilityHidden(true)

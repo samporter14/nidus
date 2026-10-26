@@ -288,7 +288,8 @@ struct FocusSequence: Codable, Identifiable, Equatable, Sendable {
     /// saved choice, as it does wherever it starts; a step's own project
     /// comes after and wins.
     func request(for step: Step, setups: [FocusSetup], categories: [FocusCategory],
-                 popoverProject: UUID? = nil, projectExists: (UUID) -> Bool) -> SessionRequest {
+                 popoverProject: UUID? = nil, projects: [FocusProject]? = nil,
+                 projectExists: (UUID) -> Bool) -> SessionRequest {
         var request: SessionRequest
         if let id = step.setupID, let setup = setups.first(where: { $0.id == id }) {
             request = setup.request(categories: categories, goalDraft: step.goal, popoverProject: popoverProject)
@@ -306,6 +307,7 @@ struct FocusSequence: Codable, Identifiable, Equatable, Sendable {
         } else if let inherited = request.projectID, !projectExists(inherited) {
             request.projectID = nil
         }
+        if let projects { request.projectID = FocusProject.choosable(request.projectID, in: projects) }
         return request
     }
 
@@ -422,6 +424,7 @@ extension NidusModel {
             startedAt: Date(),
             request: {
                 sequence.request(for: $0, setups: setups, categories: categories, popoverProject: self.selectedProjectID,
+                                 projects: self.projects,
                                  projectExists: { self.project($0) != nil })
             },
             plan: { self.resolveSession($0)?.plan }
@@ -502,7 +505,7 @@ enum FocusSequencesMenu {
     /// Up to this many go straight in the menu; more go under "Start a sequence".
     static let inlineLimit = 3
     static let submenuTitle = "Start a sequence"
-    static let symbol = "list.number"
+    static let symbol = NidusSymbols.sequence
 
     @MainActor
     static func items(for sequences: [FocusSequence], context: FocusSequence.Context, setups: [FocusSetup],

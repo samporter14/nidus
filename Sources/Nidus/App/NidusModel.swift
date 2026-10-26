@@ -214,6 +214,7 @@ final class NidusModel: NSObject, ObservableObject {
     /// Return in the goal field, the Start button and the menu bar's Start
     /// all come here, and so all go through the guarded `startSession`.
     func startSession() {
+        startProblem = nil
         let now = Date()
         let clause = GoalLengthClause.split(goalDraft, now: now)
         // An end time that is not the saved plan's (this start's "until", the
@@ -223,7 +224,13 @@ final class NidusModel: NSObject, ObservableObject {
         // The popover's own categories and mode are what this Start uses.
         let plan = PlanSignature(minutes: clause?.minutes(now: now) ?? durationMinutes,
                                  categoryIDs: selectedCategories.map(\.id), mode: mode)
-        if startSession(popoverRequest(now: now)), !oneOff { notePlanStarted(plan, now: now) }
+        if startSession(popoverRequest(now: now)) {
+            if !oneOff { notePlanStarted(plan, now: now) }
+        } else if canStartNew {
+            startProblem = controller == nil ? "Nidus is still starting. Try again in a moment."
+                : "Choose a category with apps or websites in Blocking."
+            showPopover()
+        }
     }
 
     /// The request a Start from the popover makes. A length typed at the end
@@ -260,6 +267,9 @@ final class NidusModel: NSObject, ObservableObject {
     /// every new start, a sequence's first block included.
     var canStartNew: Bool { !isActive && !isOnBreak }
 
+    /// Feedback for a refused keyboard/menu start; no extra surface or timer.
+    @Published var startProblem: String?
+
     /// The plan a request starts, from Settings and the popover's choices:
     /// what `startSession` commits to, and what each work block of a sequence
     /// is resolved to when the sequence starts. Starts nothing.
@@ -275,6 +285,7 @@ final class NidusModel: NSObject, ObservableObject {
         StartDefaults(mode: mode, selectedCategoryIDs: selectedCategoryIDs, categories: categories,
                       reopensQuitApps: reopensQuitApps, launchApps: launchApps.map(\.bundleID),
                       startShortcut: startShortcut, endShortcut: endShortcut, strict: strictMode,
+                      defaultBreakLength: TimeInterval(breakMinutes * 60),
                       defaultBreakRules: defaultBreakRules, projectName: { [self] in projectNameForPlan($0) })
     }
 

@@ -498,6 +498,13 @@ struct TabRedirect: Sendable, Hashable {
     let key: String
 }
 
+/// The words/actions on a block page, captured at a rule transition.
+struct BlockPageContext: Sendable {
+    var goal: String = ""
+    var snoozeMinutes: Int = 0
+    var onBreak = false
+}
+
 /// Stateless and blocking: every call sends Apple Events and waits up to the
 /// timeout. Call it off the main thread.
 struct BrowserBlocker: Sendable {
@@ -553,6 +560,19 @@ struct BrowserBlocker: Sendable {
         }
     }
 
+    /// Pages that remain blocked still need the current goal and actions.
+    /// Only changed addresses are replaced, so ordinary sweeps never reload
+    /// a page or count this refresh as another distraction.
+    func refreshes(in tabs: [TabLocation], rule: WebsiteRule, context: BlockPageContext) -> [TabRedirect] {
+        tabs.compactMap { tab in
+            guard let original = blockPage.original(from: tab.url), rule.blocks(original) else { return nil }
+            let key = rule.snoozeKey(for: original)
+            let page = blockPage.url(blocking: original, goal: context.goal, snoozeMinutes: context.snoozeMinutes,
+                                     snoozeKey: key, onBreak: context.onBreak)
+            return page == tab.url ? nil : TabRedirect(tab: tab, page: page, key: key)
+        }
+    }
+
     /// Points each tab the rule blocks at the block page. Returns the snooze
     /// key of each tab it redirected.
     @discardableResult
@@ -571,11 +591,18 @@ struct BrowserBlocker: Sendable {
     /// Puts block-page tabs back on the URL they were showing: every one, or
     /// with `keepBlocked`, those the rule no longer blocks (after a snooze).
     @discardableResult
-    func restore(_ browser: BrowserProfile, keepBlocked rule: WebsiteRule? = nil) throws(AppleEventError) -> [String] {
+    func restore(_ browser: BrowserProfile, keepBlocked rule: WebsiteRule? = nil,
+                 context: BlockPageContext? = nil) throws(AppleEventError) -> [String] {
+        let tabs = try tabs(in: browser)
         var restored: [String] = []
-        for (tab, original) in restorations(in: try tabs(in: browser), keepBlocked: rule) {
+        for (tab, original) in restorations(in: tabs, keepBlocked: rule) {
             if try replace(tab, in: browser, with: original) {
                 restored.append(original)
+            }
+        }
+        if let rule, let context {
+            for redirect in refreshes(in: tabs, rule: rule, context: context) {
+                _ = try replace(redirect.tab, in: browser, with: redirect.page)
             }
         }
         return restored

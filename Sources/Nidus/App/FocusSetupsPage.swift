@@ -70,7 +70,7 @@ struct FocusSetupPage: View {
                             .focused($nameFocused)
                     }
                     NidusControlRow(title: "Symbol") {
-                        SetupSymbolGrid(selection: field(\.symbol))
+                        NidusSymbolPicker(selection: field(\.symbol))
                     }
                 }
 
@@ -221,37 +221,5 @@ struct FocusSetupPage: View {
         .disabled(!enabled)
         .help(label)
         .accessibilityLabel(label)
-    }
-}
-
-// MARK: - Symbols
-
-/// A setup's symbol, picked from a small grid.
-struct SetupSymbolGrid: View {
-    @Binding var selection: String
-
-    var body: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.fixed(34), spacing: 6), count: 6), spacing: 6) {
-            ForEach(FocusSetup.symbols, id: \.symbol) { choice in
-                let isSelected = selection == choice.symbol
-                Button {
-                    selection = choice.symbol
-                } label: {
-                    Image(systemName: choice.symbol)
-                        .font(.system(size: 15))
-                        .frame(width: 34, height: 28)
-                        .background(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill(isSelected ? AnyShapeStyle(.tint.opacity(0.18)) : AnyShapeStyle(.quaternary)))
-                        .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .strokeBorder(isSelected ? AnyShapeStyle(.tint) : AnyShapeStyle(.clear), lineWidth: 1.5))
-                        .contentShape(.rect)
-                }
-                .buttonStyle(.plain)
-                .help(choice.name)
-                .accessibilityLabel(choice.name)
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
-        }
-        .fixedSize()
     }
 }

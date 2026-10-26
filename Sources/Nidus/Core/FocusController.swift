@@ -553,15 +553,19 @@ final class FocusController: ObservableObject {
     /// follows a break with rules, or another block, inherits a running
     /// blocker, so it is restarted here; and tabs on the block page are
     /// judged again by the new session's own exceptions.
+    private var enforcingOnBreak = false
+
     private func applyEnforcement(sessionStarted: Bool = false) {
         var target = engine.enforcement
         // Nothing is quit and no browser asked: a demo's sample break can
         // carry rules, and a rule set that is empty blocks nothing.
         if blocksNothing, target != nil { target = Enforcement(mode: .block, apps: [], websites: []) }
         let restarting = Self.restartsBlocker(sessionStarted: sessionStarted, from: enforcing, to: target)
-        guard target != enforcing || restarting else { return }
+        let phaseChanged = target != nil && engine.isOnBreak != enforcingOnBreak
+        guard target != enforcing || restarting || phaseChanged else { return }
         let before = enforcing
         enforcing = target
+        enforcingOnBreak = engine.isOnBreak
 
         guard let target else {
             appBlocker.stop()
@@ -673,9 +677,13 @@ final class FocusController: ObservableObject {
 
     private func restoreTabs(keepBlocked rule: WebsiteRule?) {
         let browsers = self.browsers
+        let onBreak = engine.isOnBreak
+        let context = BlockPageContext(goal: engine.session?.plan.goal ?? "",
+                                       snoozeMinutes: onBreak || engine.session?.plan.strict == true
+                                           ? 0 : Int((snoozeLength / 60).rounded()), onBreak: onBreak)
         browserQueue.async {
             for browser in BrowserProfile.known {
-                _ = try? browsers.restore(browser, keepBlocked: rule)
+                _ = try? browsers.restore(browser, keepBlocked: rule, context: context)
             }
         }
     }

@@ -288,7 +288,7 @@ struct WorkspaceRequestTests {
     @Test func aSetupThatInheritsTakesSettingsAndNoneIsNotInheriting() throws {
         let inherits = try resolvedPlan(for: FocusSetup(name: "I", categoryIDs: ["social"]), defaults: defaults())
         #expect(inherits.launchApps == ["settings.app"] && inherits.startShortcut == "Settings on" && inherits.endShortcut == "Settings off")
-        #expect(inherits.breakLength == nil, "Settings' break")
+        #expect(inherits.breakLength == defaults().defaultBreakLength, "Settings' break is frozen at start")
         #expect(inherits.breakRules == BreakRules(websites: ["x.com"]), "Settings' default rules")
         #expect(inherits.projectID == nil)
 
@@ -1036,7 +1036,7 @@ struct SetupProjectAndBreakTests {
         let none = try plan(FocusSetup(name: "N", categoryIDs: ["social"], project: .noProject, breakMinutes: 0, breakRules: BreakRules()))
         #expect(none.projectID == nil && none.breakLength == 0 && none.breakRules == BreakRules())
         let inherit = try plan(FocusSetup(name: "I", categoryIDs: ["social"]))
-        #expect(inherit.breakLength == nil && inherit.breakRules == BreakRules(websites: ["x.com"]))
+        #expect(inherit.breakLength == defaults.defaultBreakLength && inherit.breakRules == BreakRules(websites: ["x.com"]))
     }
 }
 

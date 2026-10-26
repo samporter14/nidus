@@ -239,14 +239,14 @@ struct NidusStartResolutionTests {
     }
 
     @Test func namesThatMatchNothingAreReportedAndTheRestStart() throws {
-        let result = try resolved(NidusLink.Start(categories: ["social", "gaming", "Sports"]))
+        let result = try resolved(NidusLink.Start(categories: ["social", "gaming", "Missing category"]))
         #expect(result.request.categoryIDs == ["social"])
-        #expect(result.unmatched == ["gaming", "Sports"])
+        #expect(result.unmatched == ["gaming", "Missing category"])
     }
 
     @Test func ifNoneMatchNothingStarts() {
-        let result = NidusLink.Start(categories: ["gaming", "sports"]).resolve(against: available)
-        #expect(result == .failure(.init(asked: ["gaming", "sports"])))
+        let result = NidusLink.Start(categories: ["gaming", "missing-category"]).resolve(against: available)
+        #expect(result == .failure(.init(asked: ["gaming", "missing-category"])))
         // Not the default pair: a link that said "gaming" meant gaming.
         #expect(NidusLink.Start(categories: ["social"]).resolve(against: []) == .failure(.init(asked: ["social"])))
     }

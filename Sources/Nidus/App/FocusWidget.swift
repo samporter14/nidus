@@ -38,6 +38,9 @@ struct FocusWidget: View {
             // declared height does not have.
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onChange(of: model.selectedCategoryIDs) { model.startProblem = nil }
+        .onChange(of: model.categories) { model.startProblem = nil }
+        .onChange(of: model.mode) { model.startProblem = nil }
     }
 
     // MARK: Header
@@ -172,6 +175,13 @@ struct FocusWidget: View {
                 if let draft = model.customLengthDraft { customLengthCaption(draft) }
                 Rectangle().fill(Solanum.hairline).frame(height: 1)
                 startButton
+                if let problem = model.startProblem {
+                    Label(problem, systemImage: "exclamationmark.circle")
+                        .font(.system(size: 12))
+                        .foregroundStyle(Solanum.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Session did not start. " + problem)
+                }
             }
             .padding(15)
             .background(Solanum.segmentWell, in: .rect(cornerRadius: 15))
@@ -662,7 +672,7 @@ struct FocusWidget: View {
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             } icon: {
-                Image(systemName: "cup.and.saucer").frame(width: 14)
+                Image(systemName: NidusSymbols.rest).frame(width: 14)
             }
             .font(.system(size: 12))
             .foregroundStyle(.secondary)

@@ -25,6 +25,7 @@ struct StartDefaults {
     var startShortcut: String?
     var endShortcut: String?
     var strict = false
+    var defaultBreakLength: TimeInterval = 0
     /// Settings' rules for a break; nil is the unrestricted break.
     var defaultBreakRules: BreakRules?
     /// The name a plan keeps for a project, nil for one that no longer exists.
@@ -73,8 +74,9 @@ extension SessionRequest {
         let projectName = projectID.flatMap(defaults.projectName)
         plan.projectID = projectName == nil ? nil : projectID
         plan.projectName = projectName
-        // A request's own break, else Settings' (`breakLength` nil), as before.
-        plan.breakLength = breakMinutes.map { TimeInterval(max(0, $0) * 60) }
+        // Resolve Settings now too: changing it during work cannot change
+        // the break this session already committed to.
+        plan.breakLength = breakMinutes.map { TimeInterval(max(0, $0) * 60) } ?? defaults.defaultBreakLength
         plan.breakRules = breakRules ?? defaults.defaultBreakRules
         plan.websiteExceptions = mode == .block ? Self.exceptions(of: chosen, adding: websiteExceptions) : []
         plan.resources = resources

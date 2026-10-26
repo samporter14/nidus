@@ -588,7 +588,9 @@ struct ResumeResourceTests {
         let sub = folder.appendingPathComponent("Papers", isDirectory: true)
         try FileManager.default.createDirectory(at: sub, withIntermediateDirectories: true)
         #expect(ResumeResources.resource(forFile: sub)?.kind == .folder)
-        let package = folder.appendingPathComponent("Notes.pages", isDirectory: true)
+        // .app is a system-known package even on a Mac without Pages;
+        // a bare .pages folder depends on that app's LaunchServices registration.
+        let package = folder.appendingPathComponent("Example.app", isDirectory: true)
         try FileManager.default.createDirectory(at: package, withIntermediateDirectories: true)
         #expect(ResumeResources.resource(forFile: package)?.kind == .document, "Finder shows a package as one file")
     }
