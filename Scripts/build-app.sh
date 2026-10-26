@@ -16,8 +16,17 @@ fi
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
 
-swift build -c release --product Nidus --jobs "${NIDUS_BUILD_JOBS:-2}"
-BIN="$(swift build -c release --product Nidus --show-bin-path)/Nidus"
+# Managed runners can forbid SwiftPM's nested sandbox. Opt out only when
+# explicitly requested; the app still builds in the caller's own sandbox.
+BUILD_FLAGS=()
+if [[ "${NIDUS_DISABLE_PACKAGE_SANDBOX:-0}" == 1 ]]; then
+    BUILD_FLAGS+=(--disable-sandbox)
+fi
+if [[ -n "${NIDUS_BUILD_DEBUG_INFO:-}" ]]; then
+    BUILD_FLAGS+=(-debug-info-format "$NIDUS_BUILD_DEBUG_INFO")
+fi
+swift build "${BUILD_FLAGS[@]}" -c release --product Nidus --jobs "${NIDUS_BUILD_JOBS:-2}"
+BIN="$(swift build "${BUILD_FLAGS[@]}" -c release --product Nidus --show-bin-path)/Nidus"
 
 APP="$ROOT/build/Nidus.app"
 rm -rf "$APP"

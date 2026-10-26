@@ -33,7 +33,7 @@ struct FocusProjectPicker: View {
             }
             ForEach(FocusProject.active(projects)) { project in
                 Toggle(isOn: Binding(get: { selection == project.id }, set: { _ in selection = project.id })) {
-                    Label(project.displayName, systemImage: "folder")
+                    Label(project.displayName, systemImage: NidusSymbols.project)
                 }
             }
             if let edit {
@@ -42,7 +42,7 @@ struct FocusProjectPicker: View {
             }
         } label: {
             HStack(spacing: NidusSpacing.xs) {
-                Image(systemName: "folder")
+                Image(systemName: NidusSymbols.project)
                 Text(verbatim: current?.text ?? "No project").lineLimit(1)
             }
         }

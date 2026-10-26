@@ -119,7 +119,7 @@ struct FocusInboxRow: View {
                 Spacer(minLength: NidusSpacing.sm)
                 if model.inboxOpenCount > 0 {
                     Button(action: model.openInbox) {
-                        Label("Inbox \u{00B7} \(model.inboxOpenCount)", systemImage: "tray")
+                        Label("Inbox \u{00B7} \(model.inboxOpenCount)", systemImage: NidusSymbols.inbox)
                     }
                     .help("Open your inbox in Settings")
                     .accessibilityLabel("Inbox, \(model.inboxOpenCount) saved for later")
@@ -144,7 +144,7 @@ struct FocusSavedForLaterRow: View {
 
     var body: some View {
         HStack(spacing: NidusSpacing.md) {
-            Image(systemName: "tray")
+            Image(systemName: NidusSymbols.inbox)
                 .font(.system(size: 12, weight: .medium))
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .frame(width: 28)
@@ -202,7 +202,7 @@ extension FocusGeneralPage {
         } content: {
             NidusSettingsCard {
                 NidusSettingsPageLink("Inbox", subtitle: inboxSummary, page: NidusModel.inboxPageID) {
-                    CategoryTile(symbol: "tray")
+                    CategoryTile(symbol: NidusSymbols.inbox)
                 }
             }
         }

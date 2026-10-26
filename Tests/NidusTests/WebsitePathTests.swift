@@ -248,12 +248,12 @@ struct NormaliseWebsiteTests {
         #expect(WebsiteEntry(stored: once)?.text == once)
     }
 
-    @Test func everyPresetStaysAsItWas() {
+    @Test func presetRulesRoundTripAndOnlyIntentionalPathsAreNarrowed() {
         for preset in FocusCategory.presets {
             for site in preset.websites {
                 #expect(FocusCategory.domain(from: site) == site)
                 #expect(WebsiteEntry(stored: site)?.text == site)
-                #expect(WebsiteEntry(stored: site)?.segments.isEmpty == true)
+                #expect(WebsiteEntry(stored: site)?.segments.isEmpty == true || ["substack.com/notes", "icloud.com/mail"].contains(site))
             }
         }
     }

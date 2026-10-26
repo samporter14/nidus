@@ -55,8 +55,8 @@ struct SessionPlan: Codable, Equatable, Sendable {
     /// so history still says which project after a rename or a delete.
     var projectID: UUID?
     var projectName: String?
-    /// The break after it, when it runs its full length. nil: the break in
-    /// Settings (`SessionEngine.breakLength`), as before 0.4. 0: none.
+    /// The break after it, frozen at start. 0: none. nil exists only on
+    /// legacy plans and falls back to `SessionEngine.breakLength`.
     var breakLength: TimeInterval?
     /// What stays blocked during that break. nil or empty: nothing.
     var breakRules: BreakRules?

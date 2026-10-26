@@ -236,7 +236,7 @@ extension NidusModel {
         var notes: [FocusWrapUpCard.Note] = []
         if breakMinutes != nil {
             if let line = breakBlockedLine() { notes.append(.init(symbol: "nosign", text: line)) }
-            if let reminder = breakReminder { notes.append(.init(symbol: "cup.and.saucer", text: reminder)) }
+            if let reminder = breakReminder { notes.append(.init(symbol: NidusSymbols.rest, text: reminder)) }
         }
         // What was put in the inbox while it ran. The card only says so: the
         // inbox opens when its button is pressed, never by itself.

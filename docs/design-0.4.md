@@ -23,6 +23,10 @@ disagree, this file wins until it is changed on purpose.
   loosens a running strict block: not a break rule, not a sequence skip, not
   a calendar suggestion, not an exception edit, not the inbox, not Plaque.
   `SessionEngine.pause/snooze` and the strict end gate are unchanged.
+- **External starts.** Links, native actions and JSON commands keep the setup's
+  session choices but clear documents, folders, web pages and start/end
+  Shortcuts. Empty Shortcut overrides also suppress Settings' defaults.
+  In-app starts retain the workspace behavior described below.
 - **Persistence.** New fields are optional or defaulted and decode one by
   one (`decodeTolerant`, `decodeLossy` in Core/Lossy.swift). Lists the user
   made are read with `preferenceList` (element by element). A malformed new
@@ -80,6 +84,9 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
   website exceptions. Each override is three-state in the saved setup:
   inherit Settings / none / its own value. A setup saved by 0.3 inherits
   everything.
+- **Break length is resolved at start.** A new plan always contains the
+  chosen break length, including zero. Only legacy saved plans with nil use
+  the engine's Settings fallback.
 - **Launch once per intended transition.** On `.started`:
   apps and the start Shortcut run on every work start, including after a
   break (0.3 behaviour, and how Apple Focus is turned back on); documents,
@@ -352,3 +359,25 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
 | 8+5 Breaks, sequences | App/FocusSequences.swift, Tests/SequenceTests.swift, Tests/BreakRulesTests.swift | SessionEngine, FocusController, break card, popover, Settings |
 | 1 Workspaces | App/FocusWorkspace.swift, Tests/WorkspaceTests.swift | FocusSetups, FocusSetupsPage, FocusController (`.started`) |
 | 9 Bridge | App/PlaqueBridge.swift, Tests/PlaqueBridgeTests.swift, docs/plaque-focus-v1.example.json | NidusModel (publish), Settings General |
+
+
+## Settings and default lists (next polish)
+
+- General and Blocking expose stable row anchors to Jump to. A repeated
+  jump scrolls again without animation or polling. Hidden break-rule
+  settings land on the break-length row that reveals them.
+- Closing Settings releases its window, hosting controllers and view trees;
+  the small navigation stacks remain. Reopening rebuilds the views.
+- Categories and setups share a curated 120-symbol catalogue. The chooser
+  is a popover with a lazy grid; it does not scan the system catalogue or
+  cache images. Shared concept names live in `NidusSymbols`.
+- Version 2 of `PresetUpdates` adds missing sites/apps only to built-in
+  categories still present. Whole new categories are available in Suggested
+  and require Add on existing installs, including after deletion. Adding one
+  never selects it. Fresh installs have the full catalogue; the default
+  selection stays Social and Video. Work reference sites are excluded from
+  the default Forums list, and AI chat remains unselected.
+- Merge is offered for a custom category only when all its websites, apps
+  and exceptions already exist in a built-in category. Confirmation names
+  the full destination list; selected categories, setups and schedules are
+  remapped and deduplicated. Running plans and history retain their snapshots.

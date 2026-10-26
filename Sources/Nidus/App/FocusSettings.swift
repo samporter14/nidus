@@ -76,6 +76,35 @@ extension NidusModel {
         selectedCategoryIDs.removeAll { $0 == id }
         host?.workspace.goBackInSettings()
     }
+
+    func addPresetCategory(_ id: String) {
+        guard let preset = FocusCategory.suggested(in: categories).first(where: { $0.id == id }) else { return }
+        categories.append(preset)
+    }
+
+    /// The confirmation names the full built-in list. Saved choices follow
+    /// the merged category; the running session keeps its frozen plan.
+    func mergeCategory(_ id: String) {
+        guard let category = categories.first(where: { $0.id == id }),
+              let target = category.mergeTarget(in: categories) else { return }
+        func remap(_ ids: [String]) -> [String] {
+            var seen = Set<String>()
+            return ids.map { $0 == id ? target.id : $0 }.filter { seen.insert($0).inserted }
+        }
+        selectedCategoryIDs = remap(selectedCategoryIDs)
+        setups = setups.map { setup in
+            var updated = setup
+            updated.categoryIDs = remap(setup.categoryIDs)
+            return updated
+        }
+        schedules = schedules.map { schedule in
+            var updated = schedule
+            updated.categoryIDs = remap(schedule.categoryIDs)
+            return updated
+        }
+        categories.removeAll { $0.id == id }
+        host?.workspace.goBackInSettings()
+    }
 }
 
 // MARK: - General
@@ -89,16 +118,16 @@ struct FocusGeneralPage: View {
     @State private var opensAtLogin = LoginItem.isOn
 
     var body: some View {
-        NidusSettingsPane {
+        NidusSettingsPane(jumpPage: SettingsTab.general.pageID) {
             if model.showsGettingStarted { gettingStarted }
             sessions
             // Only once breaks are on: with none there is nothing to set.
             if model.breakMinutes > 0 { breakRules }
             menuBarAndLogin
-            whenASessionStarts
+            whenASessionStarts.id("focus-shortcuts")
             inboxSection
-            plaque
-            BrickSettingsSection(model: model)
+            plaque.id("plaque")
+            BrickSettingsSection(model: model).id("brick")
         }
     }
 
@@ -165,6 +194,7 @@ struct FocusGeneralPage: View {
                         }
                     }
                 }
+                .id("session-length")
                 NidusGroupedPickerRow(title: "Break after a session",
                                         subtitle: "When a session runs its full length, a break starts. When the break ends, the next session starts with the same goal.") {
                     Picker("Break after a session", selection: model.binding(\.breakMinutes)) {
@@ -173,9 +203,11 @@ struct FocusGeneralPage: View {
                         }
                     }
                 }
+                .id("break")
                 NidusToggleRow(title: "Strict mode",
                                  subtitle: "No snooze or pause during a session, and ending one early means typing \u{201C}stop early\u{201D} in the popover. Applies to sessions you start from now on.",
                                  isOn: model.binding(\.strictMode))
+                    .id("strict")
             }
         }
     }
@@ -201,11 +233,13 @@ struct FocusGeneralPage: View {
                 NidusToggleRow(title: "Time left in the menu bar",
                                  subtitle: "Shows the countdown beside the brain while a session runs.",
                                  isOn: model.binding(\.menuBarShowsTime))
+                    .id("menu-bar-time")
                 NidusToggleRow(title: "Open at login",
                                  subtitle: "A session left running carries on after a restart.",
                                  isOn: Binding(get: { opensAtLogin },
                                                set: { LoginItem.set($0); opensAtLogin = LoginItem.isOn }))
-                OpenNidusShortcutRows(model: model)
+                    .id("login")
+                OpenNidusShortcutRows(model: model).id("open-shortcut")
             }
         }
     }
@@ -244,12 +278,18 @@ struct FocusGeneralPage: View {
 /// reaches. The first group has no heading: the tab already says what it is.
 struct FocusBlockingPage: View {
     @ObservedObject var model: NidusModel
+    @State private var showsSuggested = false
+
+    init(model: NidusModel, showsSuggested: Bool = false) {
+        self.model = model
+        _showsSuggested = State(initialValue: showsSuggested)
+    }
 
     var body: some View {
-        NidusSettingsPane {
+        NidusSettingsPane(jumpPage: SettingsTab.blocking.pageID) {
             behaviour
-            categories
-            browsers
+            categories.id("categories")
+            browsers.id("browsers")
         }
     }
 
@@ -263,6 +303,7 @@ struct FocusBlockingPage: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .id("block-mode")
             NidusGroupedPickerRow(title: "When a blocked app opens",
                                     subtitle: "Quitting asks the app to close normally, so it can save your work.") {
                 Picker("When a blocked app opens", selection: model.binding(\.hidesInsteadOfQuitting)) {
@@ -271,6 +312,7 @@ struct FocusBlockingPage: View {
                 }
                 .pickerStyle(.segmented)
             }
+            .id("blocked-app")
             NidusGroupedPickerRow(title: "Snooze length",
                                     subtitle: "How long Snooze lets one app or website through.") {
                 Picker("Snooze length", selection: model.binding(\.snoozeMinutes)) {
@@ -280,6 +322,7 @@ struct FocusBlockingPage: View {
                 }
             }
             .disabled(model.strictMode)
+            .id("snooze")
             NidusGroupedPickerRow(title: "Before a snooze",
                                     subtitle: "A short wait gets you past the impulse.") {
                 Picker("Before a snooze", selection: model.binding(\.snoozeWaitSeconds)) {
@@ -292,6 +335,7 @@ struct FocusBlockingPage: View {
             NidusToggleRow(title: "Reopen quit apps",
                              subtitle: "When a session ends, opens the apps it quit, in the background.",
                              isOn: model.binding(\.reopensQuitApps))
+                .id("reopen")
         }
     }
 
@@ -303,7 +347,7 @@ struct FocusBlockingPage: View {
                 ForEach(model.categories) { category in
                     NidusSettingsPageLink(
                         category.name,
-                        subtitle: category.summary,
+                        subtitle: category.coverageSummary,
                         page: NidusModel.categoryPagePrefix + category.id
                     ) {
                         CategoryTile(symbol: category.symbol)
@@ -312,6 +356,32 @@ struct FocusBlockingPage: View {
                 NidusControlRow(title: "New category") {
                     Button("Add", action: model.addCategory)
                         .buttonStyle(.bordered)
+                }
+            }
+            if !FocusCategory.suggested(in: model.categories).isEmpty {
+                DisclosureGroup("Suggested categories", isExpanded: $showsSuggested) {
+                    if showsSuggested {
+                        ForEach(FocusCategory.suggested(in: model.categories)) { category in
+                            HStack(spacing: 10) {
+                                CategoryTile(symbol: category.symbol)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(category.name)
+                                    Text(category.coverageSummary)
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                        .lineLimit(2)
+                                }
+                                Spacer(minLength: 8)
+                                Button("Add") { model.addPresetCategory(category.id) }
+                                    .buttonStyle(.bordered)
+                                    .help("Add \(category.name). It stays unselected until you choose it for a session.")
+                                    .accessibilityLabel("Add \(category.name) category")
+                            }
+                        }
+                        Text("Added categories stay unselected. AI chat and work reference sites are never selected for you.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
@@ -467,6 +537,7 @@ struct FocusCategoryPage: View {
     @ObservedObject var model: NidusModel
     let categoryID: String
     @State private var newWebsite = ""
+    @State private var confirmsMerge = false
 
     private var category: FocusCategory? {
         model.categories.first { $0.id == categoryID }
@@ -481,6 +552,25 @@ struct FocusCategoryPage: View {
                             .textFieldStyle(.roundedBorder)
                             .frame(width: 200)
                             .labelsHidden()
+                    }
+                    NidusControlRow(title: "Symbol") {
+                        NidusSymbolPicker(selection: symbolBinding)
+                    }
+                }
+
+                if let target = category.mergeTarget(in: model.categories) {
+                    NidusSettingsCard {
+                        NidusControlRow(title: "Already covered by \(target.name)",
+                                        infoTip: "Every app, website and exception here is in the built-in category.") {
+                            Button("Merge…") { confirmsMerge = true }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                    .alert("Merge into \(target.name)?", isPresented: $confirmsMerge) {
+                        Button("Merge") { model.mergeCategory(categoryID) }
+                        Button("Cancel", role: .cancel) {}
+                    } message: {
+                        Text("Removes this duplicate. Your category choices, setups and schedules will use the full built-in \(target.name) list: \(target.summary). A running session keeps its current rules.")
                     }
                 }
 
@@ -554,6 +644,11 @@ struct FocusCategoryPage: View {
             get: { category?.name ?? "" },
             set: { name in model.updateCategory(categoryID) { $0.name = name } }
         )
+    }
+
+    private var symbolBinding: Binding<String> {
+        Binding(get: { category?.symbol ?? "square.grid.2x2" },
+                set: { symbol in model.updateCategory(categoryID) { $0.symbol = symbol } })
     }
 
     private var exceptionsBinding: Binding<[WebsiteException]> {

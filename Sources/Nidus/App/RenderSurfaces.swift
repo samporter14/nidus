@@ -18,13 +18,14 @@ enum RenderSurfaces {
     private static let arguments = ProcessInfo.processInfo.arguments
 
     static var directory: URL? {
-        guard let index = arguments.firstIndex(where: { $0 == "--render-surfaces" || $0 == "--render-brick-surfaces" || $0 == "--render-activity-surfaces" }),
+        guard let index = arguments.firstIndex(where: { $0 == "--render-surfaces" || $0 == "--render-brick-surfaces" || $0 == "--render-activity-surfaces" || $0 == "--render-polish-surfaces" }),
               index + 1 < arguments.count else { return nil }
         return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
     }
 
     nonisolated static var isActive: Bool {
         ProcessInfo.processInfo.arguments.contains("--render-surfaces") ||
+        ProcessInfo.processInfo.arguments.contains("--render-polish-surfaces") ||
         ProcessInfo.processInfo.arguments.contains("--render-brick-surfaces") ||
         ProcessInfo.processInfo.arguments.contains("--render-activity-surfaces")
     }
@@ -38,6 +39,15 @@ enum RenderSurfaces {
         model.harnessScenario = "idle"
         settings.model = model
         model.activate(host: host)
+
+        if arguments.contains("--render-polish-surfaces") {
+            Task { @MainActor in
+                await renderNextPolish(model: model, settings: settings, in: directory)
+                model.deactivate()
+                NSApp.terminate(nil)
+            }
+            return
+        }
 
         if arguments.contains("--render-activity-surfaces") {
             Task { @MainActor in

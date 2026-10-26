@@ -13,7 +13,7 @@ import AppKit
 import SwiftUI
 
 @MainActor
-final class SettingsWindowController {
+final class SettingsWindowController: NSObject, NSWindowDelegate {
     weak var model: NidusModel?
     private(set) var window: SettingsWindow?
     /// The tab showing, or the one to show when the window is next made.
@@ -22,6 +22,15 @@ final class SettingsWindowController {
     /// One stack of pages per tab. They outlive the window, so a closed
     /// Settings reopens where it was.
     private var routers: [SettingsTab: SettingsRouter] = [:]
+
+    /// Keep navigation as small value state, but release the hosting trees
+    /// and any charts/lists when Settings closes. Rebuilt on the next open.
+    func windowWillClose(_ notification: Notification) {
+        guard let closing = notification.object as? NSWindow, closing === window else { return }
+        closing.contentViewController = nil
+        tabController = nil
+        window = nil
+    }
 
     static let contentSize = NSSize(width: 640, height: 600)
     static let frameAutosaveName = "Nidus Settings"
@@ -99,6 +108,7 @@ final class SettingsWindowController {
         window.setContentSize(Self.contentSize)
         window.contentMinSize = NSSize(width: 560, height: 420)
         window.isReleasedWhenClosed = false
+        window.delegate = self
         window.tabbingMode = .disallowed
         if remembersFrame {
             // Where it was left, or the middle of the screen the first time.
@@ -224,6 +234,7 @@ struct SettingsRoot: View {
             }
         }
         .environment(router)
+        .environment(model.settingsJump)
     }
 
     /// Back and the page's title, where System Settings puts them.

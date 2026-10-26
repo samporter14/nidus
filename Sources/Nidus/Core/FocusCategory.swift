@@ -59,7 +59,7 @@ extension FocusCategory {
 }
 
 extension FocusCategory {
-    static let presets: [FocusCategory] = [
+    static let presets: [FocusCategory] = PresetUpdates.applying(to: [
         FocusCategory(
             id: "social", name: "Social", symbol: "person.2",
             apps: [],
@@ -93,7 +93,7 @@ extension FocusCategory {
                    BlockedApp(bundleID: "com.microsoft.Outlook", name: "Outlook")],
             websites: ["mail.google.com", "outlook.live.com", "outlook.office.com"]
         ),
-    ]
+    ] + PresetUpdates.suggestedCategories, since: 1)
 
     /// What a session blocks when the user has picked no category yet.
     static let defaultSelection: [String] = ["social", "video"]
@@ -150,11 +150,48 @@ enum PresetUpdates {
         "dw.com", "france24.com", "techcrunch.com", "wired.com", "arstechnica.com", "engadget.com",
     ]
 
-    static let currentVersion = 1
+    static let socialSites = ["tumblr.com", "pinterest.com", "snapchat.com", "mastodon.social", "t.co",
+                              "lnkd.in", "substack.com/notes", "bereal.com", "truthsocial.com"]
+    static let videoSites = ["youtu.be", "vimeo.com", "crunchyroll.com", "peacocktv.com", "paramountplus.com",
+                             "tv.apple.com", "dailymotion.com", "kick.com", "rumble.com", "hotstar.com"]
+    static let messagingSites = ["web.telegram.org", "app.slack.com", "teams.microsoft.com", "signal.me",
+                                 "wechat.com", "line.me", "viber.com"]
+    static let mailSites = ["mail.yahoo.com", "proton.me", "icloud.com/mail", "fastmail.com", "app.hey.com",
+                            "superhuman.com"]
+    static let messagingApps = [BlockedApp(bundleID: "org.whispersystems.signal-desktop", name: "Signal"),
+                                BlockedApp(bundleID: "com.microsoft.teams2", name: "Microsoft Teams")]
+    static let mailApps = [BlockedApp(bundleID: "com.readdle.SparkDesktop", name: "Spark"),
+                           BlockedApp(bundleID: "com.superhuman.mail", name: "Superhuman"),
+                           BlockedApp(bundleID: "it.bloop.airmail2", name: "Airmail"),
+                           BlockedApp(bundleID: "org.mozilla.thunderbird", name: "Thunderbird")]
+
+    /// Whole new categories are offered explicitly, never inserted into a
+    /// saved list. Removing one keeps it removed until Add is pressed again.
+    static let suggestedCategories: [FocusCategory] = [
+        .init(id: "shopping", name: "Shopping", symbol: "cart", apps: [], websites:
+            ["amazon.com", "amazon.co.uk", "amazon.ca", "amazon.de", "amazon.fr", "amazon.co.jp", "amzn.to",
+             "ebay.com", "ebay.co.uk", "etsy.com", "aliexpress.com", "temu.com", "shein.com", "walmart.com", "target.com"]),
+        .init(id: "games", name: "Games", symbol: "gamecontroller", apps: [], websites:
+            ["steampowered.com", "steamcommunity.com", "epicgames.com", "roblox.com", "ign.com", "gamespot.com"]),
+        .init(id: "sports", name: "Sports", symbol: "sportscourt", apps: [], websites:
+            ["espn.com", "bleacherreport.com", "theathletic.com", "nfl.com", "nba.com", "nhl.com", "mlb.com"]),
+        .init(id: "finance", name: "Finance", symbol: "chart.line.uptrend.xyaxis", apps: [], websites:
+            ["robinhood.com", "finance.yahoo.com", "coinbase.com", "tradingview.com"]),
+        .init(id: "forums", name: "Forums and Q&A", symbol: "text.bubble", apps: [], websites:
+            ["reddit.com", "quora.com", "news.ycombinator.com"]),
+        .init(id: "ai-chat", name: "AI chat", symbol: "sparkles", apps: [], websites:
+            ["chatgpt.com", "claude.ai", "gemini.google.com", "perplexity.ai"]),
+    ]
+
+    static let currentVersion = 2
 
     /// Sites to add per preset id, by the version that introduced them.
     static let additions: [(version: Int, id: String, sites: [String])] = [
         (1, "news", newsSites),
+        (2, "social", socialSites),
+        (2, "video", videoSites),
+        (2, "messaging", messagingSites),
+        (2, "mail", mailSites),
     ]
 
     /// `categories` with every addition newer than `savedVersion` appended
@@ -166,6 +203,42 @@ enum PresetUpdates {
             let have = Set(result[index].websites.map { $0.lowercased() })
             result[index].websites += addition.sites.filter { !have.contains($0) }
         }
+        if savedVersion < 2 {
+            for (id, apps) in [("messaging", messagingApps), ("mail", mailApps)] {
+                guard let index = result.firstIndex(where: { $0.id == id }) else { continue }
+                let have = Set(result[index].apps.map(\.bundleID))
+                result[index].apps += apps.filter { !have.contains($0.bundleID) }
+            }
+        }
         return result
+    }
+}
+
+
+extension FocusCategory {
+    /// Counts plus a small preview, without retaining icons or page metadata.
+    var coverageSummary: String {
+        let preview = websites.prefix(3).joined(separator: ", ")
+        return preview.isEmpty ? summary : summary + " · " + preview + (websites.count > 3 ? ", …" : "")
+    }
+
+    static func suggested(in categories: [FocusCategory]) -> [FocusCategory] {
+        let existing = Set(categories.map(\.id))
+        return presets.filter { !existing.contains($0.id) }
+    }
+
+    /// A merge is only offered when every rule is already in the built-in
+    /// category. Exceptions and app rules must also be preserved verbatim.
+    func mergeTarget(in categories: [FocusCategory]) -> FocusCategory? {
+        let presetIDs = Set(Self.presets.map(\.id))
+        guard !presetIDs.contains(id), !isEmpty else { return nil }
+        let sites = Set(websites.compactMap(Self.domain(from:)))
+        guard sites.count == websites.count else { return nil }
+        return categories.first { candidate in
+            candidate.id != id && presetIDs.contains(candidate.id)
+                && sites.isSubset(of: Set(candidate.websites.compactMap(Self.domain(from:))))
+                && Set(apps.map(\.bundleID)).isSubset(of: Set(candidate.apps.map(\.bundleID)))
+                && Set(websiteExceptions).isSubset(of: Set(candidate.websiteExceptions))
+        }
     }
 }

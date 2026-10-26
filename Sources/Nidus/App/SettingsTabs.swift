@@ -31,8 +31,8 @@ enum SettingsTab: String, CaseIterable, Sendable {
         switch self {
         case .general: "gearshape"
         case .blocking: "nosign"
-        case .setups: "square.stack"
-        case .schedules: "calendar.badge.clock"
+        case .setups: NidusSymbols.setup
+        case .schedules: NidusSymbols.calendar
         case .activity: "chart.xyaxis.line"
         case .stats: "chart.bar.xaxis"
         case .about: "info.circle"

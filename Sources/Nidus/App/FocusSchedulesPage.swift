@@ -75,7 +75,7 @@ struct FocusScheduleRow: View {
                 router.open(NidusModel.schedulePagePrefix + schedule.id, title: "Schedule")
             } label: {
                 HStack(spacing: 10) {
-                    CategoryTile(symbol: schedule.strict ? "lock.fill" : "calendar.badge.clock")
+                    CategoryTile(symbol: schedule.strict ? NidusSymbols.strict + ".fill" : NidusSymbols.calendar)
                     VStack(alignment: .leading, spacing: 1) {
                         Text(verbatim: title)
                             .foregroundStyle(.primary)

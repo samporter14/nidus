@@ -49,6 +49,20 @@ struct SettingsJumpEntry: Identifiable, Equatable, Sendable {
 
     /// "General › Sessions": where it is.
     var place: String { ([tab.title] + [section].compactMap { $0 }).joined(separator: " \u{203A} ") }
+
+    /// Stable row anchors on the long pages. Other destinations open at
+    /// their page as before. Hidden conditional sections use a visible row.
+    var anchor: String? {
+        switch id {
+        case "session-length", "break", "strict", "menu-bar-time", "login", "open-shortcut",
+             "plaque", "brick", "focus-shortcuts", "block-mode", "blocked-app", "snooze", "reopen",
+             "categories", "browsers": id
+        case "break-rules": "break"
+        case "exceptions": "categories"
+        case "get-started": "session-length"
+        default: nil
+        }
+    }
 }
 
 enum SettingsJumpIndex {
@@ -187,6 +201,13 @@ enum SettingsJumpIndex {
 /// chosen row. `open` takes the page id and the title Back shows.
 @MainActor @Observable
 final class SettingsJump {
+    struct Destination: Equatable {
+        let page: String
+        let anchor: String
+        /// Repeating a jump to the same setting should still scroll there.
+        let request = UUID()
+    }
+    private(set) var destination: Destination?
     var query = "" {
         didSet { if query != oldValue { selection = 0 } }
     }
@@ -219,6 +240,7 @@ final class SettingsJump {
     /// Clears the field and goes to the entry's page.
     func open(_ entry: SettingsJumpEntry) {
         query = ""
+        destination = entry.anchor.map { Destination(page: entry.page, anchor: $0) }
         opener(entry.page, entry.pageTitle)
     }
 

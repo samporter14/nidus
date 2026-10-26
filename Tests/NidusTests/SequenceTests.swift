@@ -590,7 +590,7 @@ struct FocusSequenceTests {
         let plan = try #require(SessionRequest(goal: "  Aims  ", minutes: 30).resolved(with: d, length: { (99, false) })?.plan)
         #expect(plan.goal == "Aims" && plan.duration == 30 * minute && plan.strict)
         #expect(plan.breakRules == BreakRules(websites: ["x.com"]))
-        #expect(plan.breakLength == nil, "Settings' break length, as before")
+        #expect(plan.breakLength == d.defaultBreakLength, "Settings' break length is frozen at start")
         // The length is asked only when none is given.
         var asked = false
         _ = SessionRequest(goal: "x", minutes: 10).resolved(with: d, length: { asked = true; return (1, false) })

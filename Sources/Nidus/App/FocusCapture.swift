@@ -147,6 +147,10 @@ final class CaptureCoordinator {
 
     func stop() {
         hide()
+        if let resignObserver { NotificationCenter.default.removeObserver(resignObserver) }
+        resignObserver = nil
+        panel?.contentView = nil
+        panel = nil
         shortcut.stop()
         model = nil
     }
