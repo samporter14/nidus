@@ -174,6 +174,11 @@ struct FocusWidget: View {
                 }
                 if let draft = model.customLengthDraft { customLengthCaption(draft) }
                 Rectangle().fill(Solanum.hairline).frame(height: 1)
+                // While a custom length is being typed it is not committed;
+                // its own caption previews it until Return sets the choice.
+                if model.customLengthDraft == nil, let preview = model.sessionPreview() {
+                    SessionPreviewRow(preview: preview)
+                }
                 startButton
                 if let problem = model.startProblem {
                     Label(problem, systemImage: "exclamationmark.circle")
@@ -311,7 +316,7 @@ struct FocusWidget: View {
         return Button(action: start) {
             HStack {
                 Spacer(minLength: 0)
-                Text(verbatim: title.text)
+                Text("Start focus")
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
                 // The arrow only when there is no Return hint: one mark, not two.
@@ -349,8 +354,8 @@ struct FocusWidget: View {
             let until = model.pendingUntil()
             ForEach(NidusModel.durationChoices, id: \.self) { minutes in
                 Toggle(FocusFormat.duration(minutes: minutes), isOn: Binding(
-                    get: { until == nil && !model.endsAtNextMeeting && model.durationMinutes == minutes },
-                    set: { if $0 { model.durationMinutes = minutes } }
+                    get: { model.isPopoverLength(minutes) },
+                    set: { if $0 { model.choosePopoverLength(minutes) } }
                 ))
             }
             // "Until 2:00 PM (Design review)", with its own divider, or

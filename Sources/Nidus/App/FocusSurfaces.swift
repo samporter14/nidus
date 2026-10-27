@@ -402,7 +402,7 @@ struct FocusWrapUpCard: View {
                         .font(.system(size: 12, weight: .medium))
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(FocusPalette.clay)
+                .foregroundStyle(Solanum.clayText)
                 .padding(.leading, 28 + NidusSpacing.md)
             } else if saved > 0 {
                 FocusSavedForLaterRow(count: saved, open: openInbox)
@@ -417,12 +417,12 @@ struct FocusWrapUpCard: View {
         HStack(alignment: .center, spacing: NidusSpacing.md) {
             // The last fitting variant saves room for the result and action.
             if !last {
-                SettingsTile(symbol: completed ? "checkmark" : "stop.fill", size: 28, color: completed ? FocusPalette.clay : .gray)
+                SolanumTile(symbol: completed ? "checkmark" : "stop.fill", size: 28, quiet: !completed)
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(AdaptiveColors.surfacePrimaryText)
+                    .font(Solanum.serif(17))
+                    .foregroundStyle(Solanum.ink)
                 Text(verbatim: detail)
                     .font(.system(size: 12))
                     .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
@@ -433,7 +433,7 @@ struct FocusWrapUpCard: View {
             Spacer(minLength: NidusSpacing.sm)
             if let undo {
                 Button("Undo", action: undo)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(SolanumButtonStyle())
                     .fixedSize()
                     .accessibilityLabel("Undo ending the session")
             } else if let button { againButton(button) }
@@ -442,7 +442,7 @@ struct FocusWrapUpCard: View {
 
     private func againButton(_ title: String, size: ControlSize = .regular) -> some View {
         Button(title, action: again)
-            .buttonStyle(.bordered)
+            .buttonStyle(SolanumButtonStyle())
             .controlSize(size)
             .fixedSize()
             .accessibilityLabel(title == "Again" ? "Start the same session again" : skipLabel)
@@ -461,13 +461,12 @@ extension FocusWrapUpCard {
                 .fixedSize(horizontal: !last, vertical: false)
             Spacer(minLength: NidusSpacing.sm)
             Button("Not yet") { answer(false) }
-                .buttonStyle(.bordered)
+                .buttonStyle(SolanumButtonStyle())
                 .controlSize(.small)
                 .fixedSize()
                 .accessibilityLabel("Not finished yet")
             Button("Yes") { answer(true) }
-                .buttonStyle(.borderedProminent)
-                .tint(FocusPalette.clay)
+                .buttonStyle(SolanumPrimaryButtonStyle())
                 .controlSize(.small)
                 .fixedSize()
                 .accessibilityLabel("Yes, finished")

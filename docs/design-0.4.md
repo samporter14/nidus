@@ -51,6 +51,11 @@ disagree, this file wins until it is changed on purpose.
   Configuration goes in Settings, revealed progressively (off until turned
   on, details under a disclosure). Keyboard access, accessibility labels and
   both appearances for everything. No renaming, no rebranding.
+- **Session preview.** The idle composer summarizes the length, categories
+  and automatic break. Its disclosure shows resolved rules and actions. It
+  uses the same request resolution as Start with the cached meeting only:
+  drawing or typing never reads Calendar, spends its one-shot choice or
+  starts anything. The real Start still refreshes Calendar at commitment.
 - **Renders.** `swift build` then `.build/debug/Nidus --render-surfaces <dir>`
   draws every surface off-screen in Ivory and Slate with demo settings and a
   throwaway folder. Add scenarios for new surfaces in `RenderSurfaces.swift`
@@ -102,6 +107,9 @@ apps, `""` shortcut, `0` break minutes, `BreakRules()` (unrestricted).
   page, added only when the person chooses it. Nothing widens silently.
 
 ### 2. Resume notes
+- Offered after any session with at least 60 seconds focused, including
+  sessions without a goal and with history off. Merely showing the field
+  writes nothing. The goal question still requires a recorded, named goal.
 - The finish card's goal question gains an optional "What's the next step?"
   field and an optional document or page. Saved as a `ResumeNote` (id, text,
   optional `WorkspaceResource`, goal, project id and name, the history entry

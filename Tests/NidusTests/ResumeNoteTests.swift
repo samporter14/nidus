@@ -353,7 +353,7 @@ struct NextStepTests {
                 == .start(SessionRequest(goal: "Next", projectID: nil)), "resumed with no project")
     }
 
-    @Test func aNoteIsOnlyOfferedForASessionWithAGoalThatWasLongEnoughToCount() {
+    @Test func aNoteNeedsANotesStore() {
         // beginNextStep needs a model with a notes file; one without has none to write to.
         let model = NidusModel()
         let plan = SessionPlan(goal: "Aims", duration: 1500, mode: .block, apps: [], websites: [])

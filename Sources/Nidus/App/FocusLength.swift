@@ -155,10 +155,32 @@ extension NidusModel {
     /// well, so a subtitle built from `durationMinutes` alone can say
     /// "25 min" for a session that will end at 3:30.)
     var lengthLabel: String {
+        if let clause = GoalLengthClause.split(goalDraft) { return clause.lengthLabel() }
         if endsAtNextMeeting, let meeting = nextMeeting {
             return "Until \(FocusFormat.clockTime(meeting.start))"
         }
         return FocusLength.label(durationMinutes: durationMinutes, until: untilTarget, now: Date())
+    }
+
+    /// The menu and the preview must agree when the goal supplies a length.
+    func isPopoverLength(_ minutes: Int) -> Bool {
+        if let clause = GoalLengthClause.split(goalDraft) {
+            if case .minutes(let chosen) = clause.length { return chosen == minutes }
+            return false
+        }
+        return pendingUntil() == nil && !endsAtNextMeeting && durationMinutes == minutes
+    }
+
+    /// Choosing a length explicitly replaces a trailing length in the goal;
+    /// otherwise that hidden override would still win at Start.
+    func choosePopoverLength(_ minutes: Int, now: Date = Date()) {
+        clearGoalLengthClause(now: now)
+        meetings.isChosen = false
+        durationMinutes = minutes
+    }
+
+    func clearGoalLengthClause(now: Date = Date()) {
+        if let clause = GoalLengthClause.split(goalDraft, now: now) { goalDraft = clause.goal }
     }
 
     /// The lengths for a picker: the standard ones, and the saved one if it
@@ -204,8 +226,10 @@ extension NidusModel {
         switch FocusDurationParser.parse(draft.text, now: now) {
         case .success(.minutes(let minutes)):
             // Choosing any saved length drops a pending "until" time.
-            durationMinutes = minutes
+            choosePopoverLength(minutes, now: now)
         case .success(.until(let target)):
+            clearGoalLengthClause(now: now)
+            meetings.isChosen = false
             untilTarget = target
         case .failure(.empty):
             break

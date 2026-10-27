@@ -245,10 +245,26 @@ struct NextStepRow: View {
     @FocusState private var fieldFocused: Bool
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("Pick up next time")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Solanum.ink)
+                Spacer(minLength: 8)
+                Text(step.isSaved ? "Saved" : "Optional")
+                    .font(.system(size: 11))
+                    .foregroundStyle(Solanum.inkMuted)
+            }
             HStack(spacing: NidusSpacing.sm) {
-                TextField("What\u{2019}s the next step?", text: Binding(get: { step.text }, set: { step.setText($0) }))
-                    .textFieldStyle(.roundedBorder)
+                TextField("Where will you pick up?", text: Binding(get: { step.text }, set: { step.setText($0) }))
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                    .foregroundStyle(Solanum.ink)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Solanum.raised, in: .rect(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(
+                        fieldFocused ? Solanum.clayText : Solanum.strong, lineWidth: fieldFocused ? 2 : 1))
                     .focused($fieldFocused)
                     .onSubmit(done)
                     .onKeyPress(.escape) {
@@ -259,7 +275,7 @@ struct NextStepRow: View {
                     .accessibilityLabel("Next step, optional")
                 linkMenu
                 Button("Done", action: done)
-                    .buttonStyle(.bordered)
+                    .buttonStyle(SolanumPrimaryButtonStyle())
                     .fixedSize()
                     .accessibilityLabel(step.isSaved ? "Done, the note is saved" : "Done")
             }
@@ -296,7 +312,7 @@ struct NextStepRow: View {
             }
         }
         .menuStyle(.button)
-        .buttonStyle(.bordered)
+        .buttonStyle(SolanumButtonStyle())
         .menuIndicator(.hidden)
         .fixedSize()
         .help(step.resource.map { "Opens \($0.displayName) when you pick this up" } ?? "Add a document, folder or web page to open with it")
@@ -318,10 +334,10 @@ extension NidusModel {
     // MARK: Writing one
 
     /// The field for the session that just ended, or nil when a note isn't
-    /// offered: no goal to follow up, or a session too short to count.
+    /// offered: no notes store, or a session too short to count. A goal is
+    /// optional: unnamed work can have a next step too.
     func beginNextStep(for final: SessionState, entry: SessionEntry?) -> NextStepSession? {
-        guard let store = resumeNotes, (final.focusedTime ?? 0) >= SessionEntry.minimumFocus,
-              !final.plan.goal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard let store = resumeNotes, (final.focusedTime ?? 0) >= SessionEntry.minimumFocus else { return nil }
         let step = NextStepSession(
             seed: .init(goal: final.plan.goal, projectID: final.plan.projectID, projectName: final.plan.projectName, entryID: entry?.id),
             historyIsOff: !recordsHistory, store: store)

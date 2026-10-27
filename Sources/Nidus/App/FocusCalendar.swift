@@ -307,6 +307,7 @@ extension NidusModel {
             // One end time at a time: the meeting replaces a typed "until".
             untilTarget = nil
             meetings.isChosen = meetings.offeredMinutes() != nil
+            if meetings.isChosen { clearGoalLengthClause() }
             objectWillChange.send()
         }
     }

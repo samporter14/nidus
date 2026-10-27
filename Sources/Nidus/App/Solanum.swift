@@ -173,9 +173,8 @@ struct SolanumButtonStyle: ButtonStyle {
             .font(.system(size: 13, weight: .medium))
             .foregroundStyle(isEnabled ? Solanum.ink : Solanum.inkFaint)
             .padding(.horizontal, 12)
-            .padding(.vertical, 5)
-            .background(configuration.isPressed ? Solanum.segmentWell : Solanum.raised, in: .rect(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isEnabled ? Solanum.strong : Solanum.hairline))
+            .padding(.vertical, 6)
+            .modifier(SolanumButtonSurface(primary: false, pressed: configuration.isPressed))
     }
 }
 
@@ -190,9 +189,39 @@ struct SolanumPrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Solanum.onClay.opacity(isEnabled ? 1 : 0.5))
             .padding(.horizontal, 14)
             .padding(.vertical, 6)
-            .background(Solanum.clay.opacity(isEnabled ? 1 : 0.4), in: .rect(cornerRadius: 8))
-            .brightness(configuration.isPressed ? -0.08 : 0)
-            .contentShape(.rect(cornerRadius: 8))
+            .modifier(SolanumButtonSurface(primary: true, pressed: configuration.isPressed))
+    }
+}
+
+/// Pointer and focus feedback is local to a mounted control. No animation,
+/// tracking loop or retained UI is needed after its window closes.
+private struct SolanumButtonSurface: ViewModifier {
+    let primary: Bool
+    let pressed: Bool
+    @Environment(\.isEnabled) private var enabled
+    @Environment(\.isFocused) private var focused
+    @Environment(\.controlSize) private var size
+    @State private var hovered = false
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        content
+            .frame(minHeight: size == .small || size == .mini ? 24 : 28)
+            .background {
+                if primary {
+                    shape.fill(Solanum.clay.opacity(enabled ? 1 : 0.4))
+                        .brightness(enabled ? (pressed ? -0.08 : hovered ? 0.04 : 0) : 0)
+                } else {
+                    shape.fill(enabled && (pressed || hovered) ? Solanum.segmentWell : Solanum.raised)
+                }
+            }
+            .overlay {
+                shape.strokeBorder(focused ? Solanum.clayText : primary ? Solanum.hairline
+                                   : enabled ? Solanum.strong : Solanum.hairline,
+                                   lineWidth: focused ? 2 : 1)
+            }
+            .contentShape(shape)
+            .onHover { hovered = $0 }
     }
 }
 
@@ -246,7 +275,8 @@ struct SolanumFieldStyle: ViewModifier {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(Solanum.raised, in: .rect(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Solanum.strong, lineWidth: focused ? 2 : 1))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(focused ? Solanum.clayText : Solanum.strong,
+                                                                   lineWidth: focused ? 2 : 1))
     }
 }
 
