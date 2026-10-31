@@ -148,6 +148,7 @@ final class FocusController: ObservableObject {
     private var warnedSnoozes: [String: Date] = [:]
     private var warnedBreakEnd: Date?
     private var lockObservers: [NSObjectProtocol] = []
+    private var clockObservers: [NSObjectProtocol] = []
     private var isScreenLocked = false
     /// The screen is locked: someone may not be there.
     var screenIsLocked: Bool { isScreenLocked }
@@ -158,11 +159,18 @@ final class FocusController: ObservableObject {
     /// cannot leave a Focus mode off.
     private var shortcutChain: Task<Void, Never>?
 
-    /// `now` is the engine's clock; tests move it by hand.
-    init(directory: URL, now: @escaping () -> Date = Date.init) {
+    /// `now` is the engine's clock; tests move it by hand, and then trust it
+    /// for the countdown. Left out, the countdown runs on the system's
+    /// monotonic clock, which setting the date cannot move.
+    init(directory: URL, now: (() -> Date)? = nil) {
         blockPage = BlockPage(directory: directory)
         browsers = BrowserBlocker(blockPage: blockPage)
-        engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")), now: now)
+        let store = FileSessionStore(url: directory.appendingPathComponent("session.json"))
+        if let now {
+            engine = SessionEngine(store: store, now: now)
+        } else {
+            engine = SessionEngine(store: store, monotonic: { SessionEngine.systemMonotonic() })
+        }
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
     }
@@ -208,6 +216,11 @@ final class FocusController: ObservableObject {
                 MainActor.assumeIsolated { self?.screenDidUnlock() }
             },
         ]
+        clockObservers = [
+            NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.engine.systemClockDidChange() }
+            },
+        ]
         applyEnforcement()
         updateClock()
     }
@@ -239,6 +252,8 @@ final class FocusController: ObservableObject {
         observers.removeAll()
         lockObservers.forEach(DistributedNotificationCenter.default().removeObserver)
         lockObservers.removeAll()
+        clockObservers.forEach(NotificationCenter.default.removeObserver)
+        clockObservers.removeAll()
         appBlocker.stop()
         enforcing = nil
         engine.checkpoint()
