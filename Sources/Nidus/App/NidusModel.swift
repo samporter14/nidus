@@ -151,6 +151,7 @@ final class NidusModel: NSObject, ObservableObject {
         host.preferences.didChange
             .sink { [weak self] _ in
                 self?.applySettings()
+                self?.publishWidget()
                 self?.menuBar?.sync()
                 self?.objectWillChange.send()
             }
@@ -982,6 +983,7 @@ extension NidusModel {
     /// breaks release them. Demos and captures publish nothing.
     func publishFocus(quitting: Bool = false) {
         publishPlaqueFocus(quitting: quitting)
+        publishWidget(quitting: quitting)
         guard !Demo.isActive, let host else { return }
         let state = FocusFile.snapshot(session: engine?.session, quitting: quitting)
         guard state != lastPublishedFocus else { return }

@@ -61,17 +61,30 @@ fi
 # SwiftPM doesn't, so this does. Before signing, which seals Resources.
 "$ROOT/Scripts/appintents-metadata.sh" "$APP"
 
+# The widget and Control Center controls (Widget/NidusWidget.swift): an app
+# extension, which SwiftPM doesn't build, so swiftc does, with the one Core
+# file it shares. Its version follows the app's.
+WIDGET="$APP/Contents/PlugIns/NidusWidget.appex"
+mkdir -p "$WIDGET/Contents/MacOS"
+xcrun swiftc -O -parse-as-library -application-extension -module-name NidusWidget \
+    -target "$(uname -m)-apple-macos27.0" -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
+    "$ROOT/Widget/NidusWidget.swift" "$ROOT/Sources/Nidus/Core/WidgetSnapshot.swift" \
+    -o "$WIDGET/Contents/MacOS/NidusWidget"
+cp "$ROOT/Widget/Info.plist" "$WIDGET/Contents/Info.plist"
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+/usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" -c "Set :CFBundleVersion $BUILD" "$WIDGET/Contents/Info.plist"
+
 # Signed with "Solanum Code Signing" when this Mac has that certificate (a
 # self-signed one in the login keychain): the signature then names the
 # certificate rather than this exact build, so macOS keeps the permissions it
 # granted (microphone, browser control) across updates. Without it, ad-hoc,
 # as anyone building from source gets.
 IDENTITY=$(security find-certificate -c "Solanum Code Signing" -Z 2>/dev/null | awk '/SHA-1/ {print $3; exit}' || true)
-if [[ -n "$IDENTITY" ]]; then
-    codesign --force --sign "$IDENTITY" "$APP" >/dev/null
-else
-    codesign --force --sign - "$APP" >/dev/null
-fi
+# The extension first, sandboxed, with the same identity: the app's
+# signature then seals it.
+SIGN_AS="${IDENTITY:--}"
+codesign --force --sign "$SIGN_AS" --entitlements "$ROOT/Widget/NidusWidget.entitlements" "$WIDGET" >/dev/null
+codesign --force --sign "$SIGN_AS" "$APP" >/dev/null
 echo "Built $APP"
 [[ "${1:-}" == "--open" ]] && open "$APP"
 exit 0
