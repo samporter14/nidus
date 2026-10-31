@@ -9,6 +9,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 extension NidusModel {
     static let uncoveredBrowserHUDID = "focus.uncovered-browser"
@@ -45,15 +46,18 @@ extension NidusModel {
         return found
     }
 
-    /// Apps that open web links, as Launch Services knows them, and the
-    /// named browsers that are installed.
+    /// Browsers as Launch Services knows them: apps that open both web links
+    /// and HTML files (a link alone also brings in chat apps and the like),
+    /// and the named browsers that are installed.
     static func webLinkHandlers() -> [String] {
         let workspace = NSWorkspace.shared
         var page = URLComponents()
         page.scheme = "https"
         page.host = "example.com"
+        let html = Set(workspace.urlsForApplications(toOpen: .html).compactMap { Bundle(url: $0)?.bundleIdentifier })
         var ids = workspace.urlsForApplications(toOpen: page.url!)
             .compactMap { Bundle(url: $0)?.bundleIdentifier }
+            .filter(html.contains)
         ids += UncoveredBrowsers.named.keys.sorted().filter { workspace.urlForApplication(withBundleIdentifier: $0) != nil }
         return ids
     }

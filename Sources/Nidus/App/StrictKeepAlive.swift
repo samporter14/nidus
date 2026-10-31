@@ -156,7 +156,8 @@ enum KeepAliveWatcher {
         return nil
     }
 
-    private static func isWatcher(_ pid: pid_t) -> Bool {
+    /// Whether this process is a watcher: started with `--keepalive`.
+    nonisolated static func isWatcher(_ pid: pid_t) -> Bool {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
         var size = 0
         guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return false }

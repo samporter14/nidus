@@ -34,13 +34,22 @@ enum UncoveredBrowsers {
         "com.kagi.kagimacOS": "Orion",
     ]
 
+    /// Link routers: they hand each link to a browser, so they show no
+    /// pages of their own and there is nothing to block in them.
+    static let linkRouters: Set<String> = [
+        "com.sindresorhus.Velja", "com.choosyosx.Choosy", "com.johnste.finicky",
+        "com.alexstrnik.Browserosaurus", "com.loshadki.OpenIn",
+    ]
+
     /// Of the apps that open web links (and the named ones), those Nidus
-    /// can't watch: not a known browser, not Nidus, not exempt.
+    /// can't watch: not a known browser, not a link router, not Nidus, not
+    /// exempt.
     static func uncovered(_ candidates: [String], ownBundleID: String? = Bundle.main.bundleIdentifier) -> [String] {
         let known = Set(BrowserProfile.known.map(\.bundleID))
         var seen = Set<String>()
         return candidates.filter { id in
-            !known.contains(id) && id != ownBundleID && !AppBlocker.exempt.contains(id) && seen.insert(id).inserted
+            !known.contains(id) && !linkRouters.contains(id) && id != ownBundleID
+                && !AppBlocker.exempt.contains(id) && seen.insert(id).inserted
         }
     }
 

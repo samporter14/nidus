@@ -42,7 +42,7 @@ struct ProtectionStatusTests {
     @Test func knownBrowsersAndNidusAreNotUncovered() {
         let found = UncoveredBrowsers.uncovered(["com.apple.Safari", "org.mozilla.firefox", "com.google.Chrome",
                                                  "local.sam.nidus", "app.zen-browser.zen", "org.mozilla.firefox",
-                                                 "com.apple.finder"],
+                                                 "com.apple.finder", "com.sindresorhus.Velja"],
                                                 ownBundleID: "local.sam.nidus")
         #expect(found == ["org.mozilla.firefox", "app.zen-browser.zen"])
     }

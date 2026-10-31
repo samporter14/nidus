@@ -141,6 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let me = NSRunningApplication.current
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             .filter { $0.processIdentifier != me.processIdentifier }
+            // The strict-session watcher is this same executable, but no copy
+            // in charge: the app it opens must not hand off to it.
+            .filter { !KeepAliveWatcher.isWatcher($0.processIdentifier) }
         guard !others.isEmpty else { return false }
         Logger(subsystem: "local.sam.nidus", category: "app").info("Another Nidus is running; quitting this one")
         NSApp.terminate(nil)
