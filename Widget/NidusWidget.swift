@@ -90,6 +90,14 @@ struct NidusWidgetView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .containerBackground(.fill.tertiary, for: .widget)
+        // A small widget is one tap target (links inside it aren't followed):
+        // the first setup when idle, else the popover.
+        .widgetURL(family == .systemSmall ? smallURL : nil)
+    }
+
+    private var smallURL: URL {
+        guard snapshot.state == .idle, let first = snapshot.setups.first else { return WidgetSnapshot.popoverURL }
+        return WidgetSnapshot.startURL(setupID: first.id)
     }
 
     private var title: String {
@@ -140,6 +148,8 @@ struct NidusWidgetView: View {
                     .font(.subheadline.weight(.medium))
             }
         } else {
+            // On a small widget only the first is started (the whole widget
+            // is its button); the second is shown for what it is.
             let shown = Array(snapshot.setups.prefix(family == .systemSmall ? 2 : WidgetSnapshot.setupLimit))
             Spacer(minLength: 0)
             ForEach(shown) { setup in

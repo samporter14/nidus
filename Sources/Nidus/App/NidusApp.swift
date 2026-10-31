@@ -76,7 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if StrictGuard.vetoesQuit(liveStrict: model.isStrictSessionLive, systemIsEnding: systemIsEnding,
                                   updatePermitted: updating) {
             Logger(subsystem: "local.sam.nidus", category: "app").notice("Refused to quit during a strict session")
-            model.presentStrictHUD()
+            model.presentStrictQuitRefusedHUD()
             return .terminateCancel
         }
         return .terminateNow

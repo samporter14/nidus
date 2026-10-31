@@ -65,6 +65,24 @@ extension NidusModel {
         host.hud.present(request)
     }
 
+    /// Something asked Nidus to quit during a strict session (StrictGuard).
+    func presentStrictQuitRefusedHUD() {
+        guard let host else { return }
+        let request = HUDRequest(
+            id: Self.strictHUDID,
+            duration: 5,
+            accessibilityLabel: "Strict session. Nidus stays open until it ends."
+        ) {
+            FocusNoticeCard(symbol: "lock.fill", variants: [
+                .init(title: Text("Strict session"),
+                      detail: Text("Nidus stays open until it ends."), button: "OK"),
+            ]) {
+                host.hud.dismiss(id: Self.strictHUDID)
+            }
+        }
+        host.hud.present(request)
+    }
+
     /// A browser refused Focus mid-session, so its tabs are not being
     /// redirected. Said once per browser per session, with the one action
     /// that fixes it: ask (the prompt comes from macOS), or open the

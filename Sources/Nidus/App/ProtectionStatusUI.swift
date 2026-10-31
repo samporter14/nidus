@@ -28,11 +28,21 @@ extension NidusModel {
         }
         let names = Dictionary(running.compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } },
                                uniquingKeysWith: { first, _ in first })
-        status.unwatched = UncoveredBrowsers.uncovered(Self.webLinkHandlers().filter(runningIDs.contains))
+        status.unwatched = UncoveredBrowsers.uncovered(Self.cachedWebLinkHandlers.filter(runningIDs.contains))
             .filter { !AppBlocker.isBlocked($0, under: enforcement.appMode) }
             .map { names[$0] ?? UncoveredBrowsers.named[$0] ?? $0 }
         status.refused = controller.refusedApps.values.sorted()
         return status
+    }
+
+    /// The handlers as of the session's start, so the popover, redrawn every
+    /// second, doesn't ask Launch Services each time.
+    @MainActor private static var handlerCache: [String]?
+    static var cachedWebLinkHandlers: [String] {
+        if let handlerCache { return handlerCache }
+        let found = webLinkHandlers()
+        handlerCache = found
+        return found
     }
 
     /// Apps that open web links, as Launch Services knows them, and the
@@ -54,7 +64,9 @@ extension NidusModel {
     func offerToBlockUncoveredBrowsers() {
         guard !Demo.isActive, let host, let enforcement = engine?.enforcement,
               !(enforcement.mode == .block && enforcement.websites.isEmpty) else { return }
-        let ids = UncoveredBrowsers.toOffer(UncoveredBrowsers.uncovered(Self.webLinkHandlers()),
+        let handlers = Self.webLinkHandlers()
+        Self.handlerCache = handlers
+        let ids = UncoveredBrowsers.toOffer(UncoveredBrowsers.uncovered(handlers),
                                             blockedAsApp: { AppBlocker.isBlocked($0, under: enforcement.appMode) })
         guard !ids.isEmpty else { return }
         let names = ids.map(Self.appName)

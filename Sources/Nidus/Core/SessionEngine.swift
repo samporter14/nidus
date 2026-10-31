@@ -368,7 +368,8 @@ final class SessionEngine {
     }
 
     /// Seconds on a clock that keeps counting while the Mac sleeps and cannot
-    /// be set (mach_continuous_time). Not `ProcessInfo.systemUptime`: that
+    /// be set: CLOCK_MONOTONIC_RAW (clock_gettime(3) says its sibling
+    /// CLOCK_UPTIME_RAW is the one that stops in sleep). Not `ProcessInfo.systemUptime`: that
     /// stops in sleep, and although a session is paused for sleep, a break is
     /// not, and a snooze or a break must still run out while the lid is down,
     /// as they do against the wall clock.
