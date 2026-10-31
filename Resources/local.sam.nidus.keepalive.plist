@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Nidus's strict-session watcher (Sources/Nidus/App/StrictKeepAlive.swift).
+     launchd runs it while the marker exists, which Nidus makes when a strict
+     session starts and the watcher takes away when it is over, so between
+     strict sessions nothing runs. Killed during one, it is started again.
+     The marker path must match StrictGuard.markerPath. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>local.sam.nidus.keepalive</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/Nidus</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>Nidus</string>
+		<string>--keepalive</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>local.sam.nidus</string>
+	</array>
+	<key>KeepAlive</key>
+	<dict>
+		<key>PathState</key>
+		<dict>
+			<key>/private/tmp/local.sam.nidus.strict-session</key>
+			<true/>
+		</dict>
+	</dict>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>ExitTimeOut</key>
+	<integer>3</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

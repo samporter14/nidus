@@ -47,8 +47,16 @@ and the categories to block, and press Start. Until the session ends:
   on. When the session ends, or you quit Nidus, every tab goes back to where
   it was. A website
   can be a whole site (`youtube.com`, subdomains included) or just part of one
-  (`youtube.com/shorts`, `reddit.com/r/all`). Firefox isn't supported: it
-  offers no way to script its tabs.
+  (`youtube.com/shorts`, `reddit.com/r/all`). Firefox and Zen offer no way
+  to script their tabs, and Edge, Arc, Vivaldi, Orion and Dia aren't
+  supported yet. When a session that blocks websites starts and one of these
+  (or any other browser Nidus can't watch) is open or installed, a card
+  offers to block it as an app until the session ends.
+- **It says what it covers.** During a session a line in the popover and the
+  right-click menu says where websites are being blocked, and what's slipping
+  through: a browser Nidus isn't allowed to control, one it can't watch, an
+  app that wouldn't quit. A blocked app that refuses to quit (an unsaved
+  document, a stuck sheet) is hidden and asked again every few seconds.
 
   <img src="docs/block-page.png" width="480" alt="The block page: Stay with it. youtube.com is blocked until your session ends. Your goal: Write the launch post. A Snooze for 3 minutes button">
 - **The menu bar glyph keeps time.** At rest it is a virus particle; when a
@@ -59,7 +67,9 @@ and the categories to block, and press Start. Until the session ends:
   or the block page.
   Settings can make Snooze wait 10 or 30 seconds first, to get you past the
   impulse. Or turn on strict mode, which takes snooze and pause away, and asks
-  you to type "stop early" to end a session before its time.
+  you to type "stop early" to end a session before its time. Nidus won't quit
+  during a strict session, and comes back if it's killed; see
+  [Strict sessions](#strict-sessions).
 
   <img src="docs/popover-running.png" width="440" alt="The popover during a session: Write the launch post, until 9:37 PM, blocked 2 times, 25:00 left, with pause, +5 and stop buttons">
 - **A card says what happened**, at the top of your screen: what was blocked,
@@ -318,6 +328,19 @@ Time, Get Focus Status, End Focus and Toggle Focus to the Shortcuts app. For a
 keyboard shortcut, make a shortcut that runs Start Focus or Toggle Focus and
 give it a key in its details.
 
+**Focus modes.** In System Settings → Focus, choose a Focus, then Focus
+Filters → Add Filter → Nidus, and pick a setup. Turning that Focus on starts
+the setup (unless a session or break is already on); turning it off ends the
+session it started, unless it's strict. A session you started yourself is
+never ended by a Focus.
+
+**Widgets and Control Center.** Add the Nidus widget to the desktop or
+Notification Center: it shows your goal and the time left, the break, or your
+first setups to start. In Control Center, Start Nidus starts your first setup
+(or opens the popover when you have none) and End Nidus Session ends one that
+isn't strict. They read one file, `widget.json` in Nidus's folder, and their
+buttons are `nidus://` links, so the same rules apply.
+
 **Links.** Any app, script or launcher can open these:
 
 | Link | Does |
@@ -338,6 +361,33 @@ Launch Link for a link that starts just that setup.
 an assistant on your Mac start a setup, add time or say how long is left,
 through a one-step shortcut. [docs/automation.md](docs/automation.md) has the
 details, including Alfred and BetterTouchTool.
+
+## Strict sessions
+
+A strict session holds until its time is up:
+
+- Nidus refuses to quit: the menu has no Quit, and ⌘Q from Activity Monitor,
+  `kill` or `killall Nidus` are turned down with a card. Logging out,
+  restarting and shutting down still go through, and so does an update from
+  `install.sh`, which leaves a note for Nidus first; the new copy picks the
+  session up where it was.
+- If Nidus is killed outright (`kill -9`, Force Quit) or crashes, it opens
+  again within a few seconds. A small watcher does that: Nidus itself, run by
+  launchd (`local.sam.nidus.keepalive`), only while a strict session is on
+  (Nidus marks that with `/private/tmp/local.sam.nidus.strict-session`); it
+  quits as soon as there's none. The first strict session registers it,
+  and macOS says a background item was added (Login Items lists it under
+  Nidus). Turning it off there leaves only the refusal to quit.
+- If Nidus wasn't running when the Mac's clock changed, the session is
+  judged by the clock when it opens again. While it runs, changing the clock
+  doesn't move the end.
+
+To stop the watcher by hand, in Terminal:
+
+```sh
+launchctl bootout gui/$(id -u)/local.sam.nidus.keepalive
+rm -f /private/tmp/local.sam.nidus.strict-session
+```
 
 ## Works with Bench
 
@@ -406,7 +456,9 @@ With Xcode 27 installed:
 Scripts/build-app.sh --open
 ```
 
-That builds `build/Nidus.app`, ad-hoc signed. `swift test` runs the blocking
+That builds `build/Nidus.app`, ad-hoc signed, with its widget extension
+(compiled by the script with `swiftc`, since SwiftPM doesn't build
+extensions) in `Contents/PlugIns`. `swift test` runs the blocking
 engine's tests. `Nidus --render-surfaces <folder>` draws the popover, the
 cards and Settings to PNGs in both themes, off-screen, with a sample session
 that blocks nothing.

@@ -65,6 +65,24 @@ extension NidusModel {
         host.hud.present(request)
     }
 
+    /// Something asked Nidus to quit during a strict session (StrictGuard).
+    func presentStrictQuitRefusedHUD() {
+        guard let host else { return }
+        let request = HUDRequest(
+            id: Self.strictHUDID,
+            duration: 5,
+            accessibilityLabel: "Strict session. Nidus stays open until it ends."
+        ) {
+            FocusNoticeCard(symbol: "lock.fill", variants: [
+                .init(title: Text("Strict session"),
+                      detail: Text("Nidus stays open until it ends."), button: "OK"),
+            ]) {
+                host.hud.dismiss(id: Self.strictHUDID)
+            }
+        }
+        host.hud.present(request)
+    }
+
     /// A browser refused Focus mid-session, so its tabs are not being
     /// redirected. Said once per browser per session, with the one action
     /// that fixes it: ask (the prompt comes from macOS), or open the
@@ -884,5 +902,38 @@ struct FocusCountdownRing: View {
         .frame(width: 28, height: 28)
         // The sentence beside it says the same in words.
         .accessibilityHidden(true)
+    }
+}
+
+// MARK: - An unreadable session file
+
+extension NidusModel {
+    static let sessionFileHUDID = "focus.session-file"
+
+    /// `session.json` couldn't be read at launch (SessionLoadProblem): say so
+    /// once, and where the file was put, rather than carrying on as if no
+    /// session had been running.
+    func presentSessionFileProblemIfAny() {
+        guard !Demo.isActive, let host, let problem = engine?.loadProblem else { return }
+        let title: String
+        let detail: String
+        switch problem {
+        case .recoveredFromBackup:
+            title = "Session restored from a backup"
+            detail = "Its file couldn\u{2019}t be read, so the last good copy was used."
+        case .unreadable:
+            title = "Couldn\u{2019}t read the last session"
+            detail = "Its file was set aside in Nidus\u{2019}s folder; nothing is running."
+        }
+        let request = HUDRequest(id: Self.sessionFileHUDID, duration: 10,
+                                 accessibilityLabel: "\(title). \(detail)") {
+            FocusNoticeCard(symbol: "exclamationmark.triangle.fill", variants: [
+                .init(title: Text(verbatim: title), detail: Text(verbatim: detail), button: "OK"),
+            ]) {
+                host.hud.dismiss(id: Self.sessionFileHUDID)
+            }
+        }
+        host.hud.present(request)
+        host.log.error("session.json: \(String(describing: problem), privacy: .public)")
     }
 }
