@@ -537,6 +537,23 @@ final class SessionEngine {
             .sorted { $0.end != $1.end ? $0.end < $1.end : $0.item < $1.item }
     }
 
+    /// Blocks these apps too, for the rest of this session only: a browser
+    /// whose tabs Nidus can't reach, blocked whole instead. In an allow list
+    /// that means taking them off it. Settings and the setup are untouched.
+    func blockAppsForSession(_ bundleIDs: [String]) {
+        guard var session, !bundleIDs.isEmpty else { return }
+        switch session.plan.mode {
+        case .block:
+            for id in bundleIDs where !session.plan.apps.contains(id) { session.plan.apps.append(id) }
+        case .allow:
+            session.plan.apps.removeAll { bundleIDs.contains($0) }
+        }
+        session.plan.launchApps.removeAll { bundleIDs.contains($0) }
+        guard session != self.session else { return }
+        self.session = session
+        commit(.extended)
+    }
+
     /// Notes an app the session quit, for `reopensQuitApps` and the stats.
     func recordQuit(_ bundleID: String, name: String? = nil) {
         guard var session else { return }

@@ -532,6 +532,12 @@ final class NidusModel: NSObject, ObservableObject {
         switch event {
         case .started:
             keepStrictSessionAlive()
+            // After the start's own cards, so this one isn't swept away.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard self?.isActive == true else { return }
+                self?.offerToBlockUncoveredBrowsers()
+            }
             warnedBrowsers.removeAll()
             // A sequence's next block that began the moment the last one
             // ended leaves that block's card, question and next step up.

@@ -510,6 +510,11 @@ struct FocusWidget: View {
             if !model.isOpenEnded {
                 progressBar
             }
+            // What is covered right now; a gap (a browser Nidus may not
+            // control, an app that wouldn't quit) stays here all session.
+            if let protection = model.protectionStatus {
+                ProtectionStatusLine(status: protection)
+            }
             // "Save a thought" while it runs, and "Inbox · 3" when items wait.
             FocusInboxRow(model: model)
         }
