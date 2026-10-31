@@ -39,7 +39,10 @@ extension NidusModel {
     /// named browsers that are installed.
     static func webLinkHandlers() -> [String] {
         let workspace = NSWorkspace.shared
-        var ids = workspace.urlsForApplications(toOpen: URL(string: "https://example.com")!)
+        var page = URLComponents()
+        page.scheme = "https"
+        page.host = "example.com"
+        var ids = workspace.urlsForApplications(toOpen: page.url!)
             .compactMap { Bundle(url: $0)?.bundleIdentifier }
         ids += UncoveredBrowsers.named.keys.sorted().filter { workspace.urlForApplication(withBundleIdentifier: $0) != nil }
         return ids

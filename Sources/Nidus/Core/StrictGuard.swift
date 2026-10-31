@@ -22,6 +22,12 @@ enum StrictGuard {
     /// The launchd job's label, and its plist in Contents/Library/LaunchAgents.
     static let agentLabel = "local.sam.nidus.keepalive"
     static var agentPlistName: String { agentLabel + ".plist" }
+    /// While this file exists launchd keeps the watcher running (the job's
+    /// KeepAlive PathState), so the app starts the watcher by making it and
+    /// nothing has to run a command. A launchd plist can't name a home
+    /// folder, so it is in /private/tmp, which a restart empties (Nidus,
+    /// a login item, makes it again for a strict session it picks up).
+    static let markerPath = "/private/tmp/local.sam.nidus.strict-session"
     /// The argument launchd starts the watcher with.
     static let watcherFlag = "--keepalive"
     /// Written by install.sh just before it quits Nidus for an update.

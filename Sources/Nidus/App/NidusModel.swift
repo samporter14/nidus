@@ -162,6 +162,7 @@ final class NidusModel: NSObject, ObservableObject {
         // carried on is watched again.
         if !Demo.isActive { UpdatePermit.clear(in: host.environment.containerDirectory) }
         keepStrictSessionAlive()
+        presentSessionFileProblemIfAny()
         brickCompanion.activate(self)
         publishFocus()
         startWeeklyRecap()
@@ -527,12 +528,14 @@ final class NidusModel: NSObject, ObservableObject {
     // MARK: Session events
 
     func sessionDidChange(_ event: SessionEvent) {
-        defer { publishFocus() }
+        defer {
+            publishFocus()
+            keepStrictSessionAlive()
+        }
         if isActive || isOnBreak { dismissBrickOffer() }
         dropSnoozeWaitIfMoot()
         switch event {
         case .started:
-            keepStrictSessionAlive()
             // After the start's own cards, so this one isn't swept away.
             Task { @MainActor [weak self] in
                 try? await Task.sleep(for: .seconds(2))

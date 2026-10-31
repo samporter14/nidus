@@ -10,14 +10,15 @@
 //  `Nidus --keepalive` from Contents/Library/LaunchAgents (registered with
 //  SMAppService the first time a strict session starts, which is when macOS
 //  says a background item was added). It has no menu bar item and no
-//  window. It runs only while `session.json` holds a live strict session:
-//  launchd starts it at login and when a strict session starts, and it quits
-//  as soon as there is none, so between strict sessions nothing runs.
+//  window. launchd keeps it running while a marker file exists
+//  (StrictGuard.markerPath), which the app makes when a strict session
+//  starts; the watcher takes it away, and quits, as soon as `session.json`
+//  holds no live strict session. Between strict sessions nothing runs.
 //
 //  While it runs it waits on the menu bar app's exit (no polling): when the
 //  app goes and the strict session is still live, it opens Nidus again, at
 //  once the first time and backing off after that. Killed itself, launchd
-//  starts it again (KeepAlive on an unsuccessful exit).
+//  starts it again while the marker is there.
 //
 //  To stop all of it from Terminal (README, "Strict sessions"):
 //  launchctl bootout gui/$(id -u)/local.sam.nidus.keepalive
@@ -35,11 +36,10 @@ enum KeepAliveAgent {
     private static let log = Logger(subsystem: "local.sam.nidus", category: "keepalive")
     private static var service: SMAppService { SMAppService.agent(plistName: StrictGuard.agentPlistName) }
 
-    /// Called when a strict session starts or resumes after a relaunch:
-    /// makes sure the watcher is registered and running. Registering happens
-    /// once (macOS then lists Nidus under Login Items, Allow in the
-    /// Background); after that this only starts the job, which does nothing
-    /// if it is running already.
+    /// Called when a strict session starts or is picked up after a
+    /// relaunch: makes sure the watcher is registered, and makes the marker
+    /// that has launchd run it. Registering happens once (macOS then lists
+    /// Nidus under Login Items, Allow in the Background).
     static func ensureWatching() {
         guard !Demo.isActive else { return }
         let service = service
@@ -48,27 +48,25 @@ enum KeepAliveAgent {
                 log.error("Couldn't register the strict-session watcher: \(error.localizedDescription, privacy: .public)")
             }
         }
-        guard service.status == .enabled else {
+        if service.status != .enabled {
             log.notice("Strict-session watcher not enabled (\(String(describing: service.status), privacy: .public))")
-            return
         }
-        kickstart()
+        FileManager.default.createFile(atPath: StrictGuard.markerPath, contents: Data())
+    }
+
+    /// No strict session: the marker goes, if it is this user's, and launchd
+    /// stops keeping the watcher up.
+    static func stopWatching() {
+        removeMarkerIfMine()
     }
 
     /// Whether the watcher can run: registered and allowed in Login Items.
     static var isAvailable: Bool { !Demo.isActive && service.status == .enabled }
 
-    /// `launchctl kickstart` starts a loaded job that isn't running; one that
-    /// is running is left as it is.
-    private static func kickstart() {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-        process.arguments = ["kickstart", "gui/\(getuid())/\(StrictGuard.agentLabel)"]
-        process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
-        do { try process.run() } catch {
-            log.error("Couldn't start the strict-session watcher: \(error.localizedDescription, privacy: .public)")
-        }
+    nonisolated static func removeMarkerIfMine() {
+        let attributes = try? FileManager.default.attributesOfItem(atPath: StrictGuard.markerPath)
+        guard let owner = attributes?[.ownerAccountID] as? NSNumber, owner.uint32Value == getuid() else { return }
+        try? FileManager.default.removeItem(atPath: StrictGuard.markerPath)
     }
 }
 
@@ -102,7 +100,10 @@ enum KeepAliveWatcher {
     private static var focusObserver: NSObjectProtocol?
 
     static func run() -> Never {
-        guard isLive() else { exit(0) }
+        guard isLive() else {
+            KeepAliveAgent.removeMarkerIfMine()
+            exit(0)
+        }
         // launchd's own SIGTERM (logout, or bootout) still ends this with
         // SIGKILL after ExitTimeOut; a plain `kill` doesn't.
         signal(SIGTERM, SIG_IGN)
@@ -131,6 +132,7 @@ enum KeepAliveWatcher {
     private static func exitIfDone() {
         guard !isLive() else { return }
         log.info("Strict session over; watcher done")
+        KeepAliveAgent.removeMarkerIfMine()
         exit(0)
     }
 
@@ -233,11 +235,10 @@ extension NidusModel {
     /// A strict session is on (StrictGuard.isLiveStrict).
     var isStrictSessionLive: Bool { StrictGuard.isLiveStrict(engine?.session, now: Date()) }
 
-    /// Starts the watcher for a strict session, at its start and when one is
-    /// picked up after a relaunch. Anything else leaves it alone: it quits by
-    /// itself when the strict session is over.
+    /// Starts the watcher for a live strict session, and stops it for
+    /// anything else: at launch and at every session change.
     func keepStrictSessionAlive() {
-        guard !Demo.isActive, isStrictSessionLive else { return }
-        KeepAliveAgent.ensureWatching()
+        guard !Demo.isActive else { return }
+        if isStrictSessionLive { KeepAliveAgent.ensureWatching() } else { KeepAliveAgent.stopWatching() }
     }
 }

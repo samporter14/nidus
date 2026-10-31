@@ -85,7 +85,10 @@ struct StrictGuardTests {
         let plist = try #require(NSDictionary(contentsOf: url))
         #expect(plist["Label"] as? String == StrictGuard.agentLabel)
         #expect((plist["ProgramArguments"] as? [String])?.contains(StrictGuard.watcherFlag) == true)
-        #expect((plist["KeepAlive"] as? [String: Bool])?["SuccessfulExit"] == false, "restarted only when killed")
+        let keepAlive = plist["KeepAlive"] as? [String: Any]
+        #expect((keepAlive?["PathState"] as? [String: Bool])?[StrictGuard.markerPath] == true,
+                "kept up only while the strict-session marker exists")
+        #expect(plist["RunAtLoad"] == nil, "not started at login for nothing")
     }
 }
 

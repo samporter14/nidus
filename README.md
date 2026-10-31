@@ -373,8 +373,9 @@ A strict session holds until its time is up:
   session up where it was.
 - If Nidus is killed outright (`kill -9`, Force Quit) or crashes, it opens
   again within a few seconds. A small watcher does that: Nidus itself, run by
-  launchd (`local.sam.nidus.keepalive`), only while a strict session is on;
-  it quits as soon as there's none. The first strict session registers it,
+  launchd (`local.sam.nidus.keepalive`), only while a strict session is on
+  (Nidus marks that with `/private/tmp/local.sam.nidus.strict-session`); it
+  quits as soon as there's none. The first strict session registers it,
   and macOS says a background item was added (Login Items lists it under
   Nidus). Turning it off there leaves only the refusal to quit.
 - If Nidus wasn't running when the Mac's clock changed, the session is
@@ -385,6 +386,7 @@ To stop the watcher by hand, in Terminal:
 
 ```sh
 launchctl bootout gui/$(id -u)/local.sam.nidus.keepalive
+rm -f /private/tmp/local.sam.nidus.strict-session
 ```
 
 ## Works with Bench
