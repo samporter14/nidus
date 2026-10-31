@@ -8,6 +8,12 @@
 //  calls tick() (the browser sweep already runs once a second), and the tests
 //  drive it with a fake clock.
 //
+//  The deadline is a wall-clock Date (that is what is saved), but the engine
+//  never trusts the wall clock to measure time passing: it reads it once, when
+//  a deadline is made, and measures from there with a monotonic clock. Setting
+//  the Mac's clock forward or back moves neither the countdown nor a snooze;
+//  see `clockNow()` and `systemClockDidChange()`.
+//
 //  Shared by the app and its tests.
 //
 
@@ -217,25 +223,95 @@ struct SessionRecord: Codable, Equatable, Sendable {
 protocol SessionStore: AnyObject {
     func load() -> SessionRecord?
     func save(_ record: SessionRecord)
+    /// What went wrong in the last `load()`, if anything. A store that cannot
+    /// go wrong need not say so.
+    var loadProblem: SessionLoadProblem? { get }
 }
 
-/// A JSON file, written atomically, in ~/Library/Application Support/Nidus.
+extension SessionStore {
+    var loadProblem: SessionLoadProblem? { nil }
+}
+
+/// A saved session file that could not be read, and what became of it. The
+/// file is never overwritten unread: it is renamed aside first, and the URL
+/// says where (nil if even that failed).
+enum SessionLoadProblem: Equatable, Sendable {
+    /// `session.json` was unreadable, but the backup of the write before it
+    /// was good and the session carries on from that. The seconds since that
+    /// write are lost, and the countdown follows its saved deadline.
+    case recoveredFromBackup(URL?)
+    /// Neither the file nor its backup could be read: the session is gone.
+    case unreadable(URL?)
+}
+
+/// A JSON file, written atomically, in ~/Library/Application Support/Nidus,
+/// with `session.json.bak` beside it: the file as it was before the latest
+/// save. A file that will not decode is renamed to `session.unreadable-<time>.json`
+/// (as `FocusHistory` does), never written over, and the backup is tried.
 @MainActor
 final class FileSessionStore: SessionStore {
     let url: URL
+    private let now: () -> Date
+    /// Set by `load()`; nil when the file was fine or there was none.
+    private(set) var loadProblem: SessionLoadProblem?
 
-    init(url: URL) {
+    init(url: URL, now: @escaping () -> Date = Date.init) {
         self.url = url
+        self.now = now
     }
 
+    var backupURL: URL { url.appendingPathExtension("bak") }
+
     func load() -> SessionRecord? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        return try? JSONDecoder().decode(SessionRecord.self, from: data)
+        loadProblem = nil
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        if let data = try? Data(contentsOf: url), let record = Self.decode(data) { return record }
+        // Present but unreadable. Keep the evidence, then try the backup.
+        let aside = setAside()
+        if let data = try? Data(contentsOf: backupURL), let record = Self.decode(data) {
+            loadProblem = .recoveredFromBackup(aside)
+            // Put the good copy back as the file, so a crash before the next
+            // save finds it there.
+            try? data.write(to: url, options: .atomic)
+            return record
+        }
+        loadProblem = .unreadable(aside)
+        return nil
     }
 
     func save(_ record: SessionRecord) {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? JSONEncoder().encode(record).write(to: url, options: .atomic)
+        let fm = FileManager.default
+        try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let data = try? JSONEncoder().encode(record) else { return }
+        // The file about to be replaced becomes the backup (atomically, so a
+        // crash leaves the old backup or the new, never half of one). With no
+        // file yet, the backup starts as this write.
+        let previous = try? Data(contentsOf: url)
+        try? (previous ?? data).write(to: backupURL, options: .atomic)
+        try? data.write(to: url, options: .atomic)
+    }
+
+    /// The record in `data`, or nil when it is not one. A file whose session
+    /// is there but did not decode is not one either: reading it as "no
+    /// session" would lose a running session and let the next save erase it.
+    private static func decode(_ data: Data) -> SessionRecord? {
+        guard let record = try? JSONDecoder().decode(SessionRecord.self, from: data) else { return nil }
+        if record.session == nil,
+           let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+           let saved = object["session"], !(saved is NSNull) {
+            return nil
+        }
+        return record
+    }
+
+    /// Renames the file to `session.unreadable-<time>.json` beside it, like
+    /// `FocusHistory`. The new name, or nil if it could not be moved.
+    private func setAside() -> URL? {
+        let stamp = Int(now().timeIntervalSince1970)
+        let aside = url.deletingLastPathComponent()
+            .appendingPathComponent(url.deletingPathExtension().lastPathComponent + ".unreadable-\(stamp)." + url.pathExtension)
+        FocusHistory.setAside(url, now: now())
+        return FileManager.default.fileExists(atPath: aside.path) ? aside : nil
     }
 }
 
@@ -268,12 +344,53 @@ final class SessionEngine {
     /// Called after every change, with the change.
     var onEvent: (SessionEvent) -> Void = { _ in }
 
-    private let store: SessionStore?
-    private let now: () -> Date
+    /// Set by `restore()`: the saved session file was damaged, and what was
+    /// done about it. nil when it was fine or there was none. The owner shows
+    /// it; the engine only reports.
+    private(set) var loadProblem: SessionLoadProblem?
 
-    init(store: SessionStore?, now: @escaping () -> Date = Date.init) {
+    private let store: SessionStore?
+    /// The wall clock. Read when a deadline is made and to stamp history, and
+    /// to notice a jump; never to measure time passing (see `clockNow()`).
+    private let now: () -> Date
+    /// A monotonic clock in seconds, unaffected by anyone setting the date. nil
+    /// (the default, and what the tests that move `now` by hand get) means the
+    /// wall clock is trusted. The app passes `systemMonotonic`.
+    private let monotonic: (() -> TimeInterval)?
+    /// A moment on both clocks, taken whenever a deadline is made.
+    private var anchor: (wall: Date, mono: TimeInterval)?
+
+    init(store: SessionStore?, now: @escaping () -> Date = Date.init,
+         monotonic: (() -> TimeInterval)? = nil) {
         self.store = store
         self.now = now
+        self.monotonic = monotonic
+    }
+
+    /// Seconds on a clock that keeps counting while the Mac sleeps and cannot
+    /// be set (mach_continuous_time). Not `ProcessInfo.systemUptime`: that
+    /// stops in sleep, and although a session is paused for sleep, a break is
+    /// not, and a snooze or a break must still run out while the lid is down,
+    /// as they do against the wall clock.
+    nonisolated static func systemMonotonic() -> TimeInterval {
+        TimeInterval(clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW)) / 1_000_000_000
+    }
+
+    /// The time, as the countdown sees it: the wall clock at the last anchor
+    /// plus the monotonic seconds since. Every deadline, snooze and break end
+    /// here is a wall-clock Date made from this, so they all compare on one
+    /// timeline that a changed system clock cannot move. Without an anchor or
+    /// a monotonic clock it is just the wall clock.
+    private func clockNow() -> Date {
+        guard let monotonic, let anchor else { return now() }
+        return anchor.wall.addingTimeInterval(monotonic() - anchor.mono)
+    }
+
+    /// Starts the countdown timeline afresh from the wall clock as it reads
+    /// now. Done whenever a running phase, a snooze base or a break is made.
+    private func reanchor() {
+        guard let monotonic else { return }
+        anchor = (now(), monotonic())
     }
 
     // MARK: Reading
@@ -295,21 +412,22 @@ final class SessionEngine {
     /// `undoWindow`, and nothing else has started since (no session, no break).
     var canUndoEnd: Bool {
         guard let undoableEnd, session == nil, breakState == nil else { return false }
-        let age = now().timeIntervalSince(undoableEnd.endedAt)
+        let age = clockNow().timeIntervalSince(undoableEnd.endedAt)
         guard age >= 0, age <= Self.undoWindow, !undoableEnd.state.plan.strict else { return false }
         // A deadline that has passed since would only end it again at once.
-        if case .running(let deadline) = undoableEnd.state.phase, deadline <= now() { return false }
+        if case .running(let deadline) = undoableEnd.state.phase, deadline <= clockNow() { return false }
         return true
     }
 
     /// Time left of the break. nil when there is none.
     var breakRemaining: TimeInterval? {
-        breakState.map { max(0, $0.endsAt.timeIntervalSince(now())) }
+        breakState.map { max(0, $0.endsAt.timeIntervalSince(clockNow())) }
     }
 
     /// When the break ends, if that is within `lead` seconds from now.
     func breakEnding(within lead: TimeInterval) -> Date? {
-        guard let breakState, breakState.endsAt > now(), breakState.endsAt <= now().addingTimeInterval(lead) else { return nil }
+        let now = clockNow()
+        guard let breakState, breakState.endsAt > now, breakState.endsAt <= now.addingTimeInterval(lead) else { return nil }
         return breakState.endsAt
     }
 
@@ -317,7 +435,7 @@ final class SessionEngine {
     var remaining: TimeInterval? {
         guard let session else { return nil }
         switch session.phase {
-        case .running(let deadline): return max(0, deadline.timeIntervalSince(now()))
+        case .running(let deadline): return max(0, deadline.timeIntervalSince(clockNow()))
         case .paused(let remaining, _): return remaining
         }
     }
@@ -368,7 +486,13 @@ final class SessionEngine {
     /// not running ends now, with `.expiredWhileAway`, so the owner still
     /// restores what it changed.
     func restore(allowActivity: Bool = true, allowTitles: Bool = true, excludedApps: Set<String> = []) {
-        guard let record = store?.load() else { return }
+        let loaded = store?.load()
+        loadProblem = store?.loadProblem
+        guard let record = loaded else { return }
+        // Nidus was not running, so the saved deadline can only be compared
+        // with the wall clock as it is now. If the clock was set while Nidus
+        // was closed, that is wrong by the jump and nothing here can know.
+        reanchor()
         undoableEnd = nil
         lastPlan = record.lastPlan
         session = record.session
@@ -405,7 +529,7 @@ final class SessionEngine {
             self.session = session
         }
         switch session.phase {
-        case .running(let deadline) where deadline <= now():
+        case .running(let deadline) where deadline <= clockNow():
             finish(.expiredWhileAway)
         case .paused(let remaining, bySleep: true):
             // The wake that would have resumed it was missed.
@@ -442,6 +566,7 @@ final class SessionEngine {
     private func makeSession(_ plan: SessionPlan) {
         breakState = nil
         undoableEnd = nil
+        reanchor()
         let start = now()
         session = SessionState(plan: plan, startedAt: start,
                                phase: .running(deadline: start.addingTimeInterval(plan.cappedDuration)),
@@ -457,6 +582,7 @@ final class SessionEngine {
 
     func resume() {
         guard var session, case .paused(let remaining, _) = session.phase else { return }
+        reanchor()
         session.phase = .running(deadline: now().addingTimeInterval(remaining))
         session.activityContinuityStartedAt = now()
         session.pausedAt = nil
@@ -501,7 +627,7 @@ final class SessionEngine {
         guard after > before else { return }
         switch session.phase {
         case .running:
-            session.phase = .running(deadline: now().addingTimeInterval(after))
+            session.phase = .running(deadline: clockNow().addingTimeInterval(after))
         case .paused(_, let bySleep):
             session.phase = .paused(remaining: after, bySleep: bySleep)
         }
@@ -514,7 +640,7 @@ final class SessionEngine {
     /// never in a strict session.
     func snooze(_ item: String, for seconds: TimeInterval = defaultSnooze) {
         guard var session, case .running = session.phase, seconds > 0, !session.plan.strict else { return }
-        session.snoozes[item] = now().addingTimeInterval(seconds)
+        session.snoozes[item] = clockNow().addingTimeInterval(seconds)
         self.session = session
         commit(.snoozed(item))
     }
@@ -530,7 +656,7 @@ final class SessionEngine {
     /// Snoozes that run out within `lead` seconds, soonest first.
     func snoozesEnding(within lead: TimeInterval) -> [(item: String, end: Date)] {
         guard let session else { return [] }
-        let now = now(), limit = now.addingTimeInterval(lead)
+        let now = clockNow(), limit = now.addingTimeInterval(lead)
         return session.snoozes
             .filter { $0.value > now && $0.value <= limit }
             .map { (item: $0.key, end: $0.value) }
@@ -768,6 +894,7 @@ final class SessionEngine {
     func startBreak(plan: SessionPlan, length: TimeInterval, rules: BreakRules? = nil) {
         guard session == nil, length > 0 else { return }
         undoableEnd = nil
+        reanchor()
         breakState = BreakState(plan: plan, endsAt: now().addingTimeInterval(length), length: length,
                                 rules: rules ?? plan.breakRules)
         save()
@@ -809,8 +936,9 @@ final class SessionEngine {
     /// that is over. Call often; it is cheap when nothing is due.
     func tick() {
         if let pending = breakState {
-            guard pending.endsAt <= now() else { return }
-            if now().timeIntervalSince(pending.endsAt) <= Self.breakGrace {
+            let now = clockNow()
+            guard pending.endsAt <= now else { return }
+            if now.timeIntervalSince(pending.endsAt) <= Self.breakGrace {
                 startAfterBreak(pending)
             } else {
                 endBreak()
@@ -818,13 +946,14 @@ final class SessionEngine {
             return
         }
         guard let session else { return }
-        if case .running(let deadline) = session.phase, deadline <= now() {
+        if case .running(let deadline) = session.phase, deadline <= clockNow() {
             finish(.completed)
             return
         }
         remindOfForgottenPause()
         guard let current = self.session else { return }
-        let due = current.snoozes.filter { $0.value <= now() }.keys.sorted()
+        let now = clockNow()
+        let due = current.snoozes.filter { $0.value <= now }.keys.sorted()
         guard !due.isEmpty else { return }
         var updated = current
         due.forEach { updated.snoozes[$0] = nil }
@@ -846,6 +975,52 @@ final class SessionEngine {
         onEvent(.pauseLingering)
     }
 
+    // MARK: Clock changes
+
+    /// The system clock was set (the date changed by hand, by a time zone
+    /// fix-up, or by a network sync that stepped it). The countdown has not
+    /// moved, because it measures on the monotonic clock; what has moved is
+    /// the wall clock the saved dates are read against. So every date ahead of
+    /// us is shifted by the jump, the timeline is anchored again, and the file
+    /// is saved: `remaining` is unchanged, and so is what a relaunch finds.
+    ///
+    /// Known limit: a clock set while Nidus is not running cannot be seen.
+    /// `restore()` then has only the saved deadline and the wall clock to
+    /// compare, and a clock moved forward ends the session early, back
+    /// lengthens it.
+    func systemClockDidChange() {
+        guard monotonic != nil else { return }
+        let jump = now().timeIntervalSince(clockNow())
+        let counted = clockNow()
+        guard session != nil || breakState != nil || undoableEnd != nil else {
+            reanchor()
+            return
+        }
+        // Only dates still ahead are carried over; one that has passed is
+        // simply due, and the next tick deals with it.
+        func shifted(_ date: Date) -> Date { date > counted ? date.addingTimeInterval(jump) : date }
+        if var session {
+            if case .running(let deadline) = session.phase { session.phase = .running(deadline: shifted(deadline)) }
+            session.snoozes = session.snoozes.mapValues(shifted)
+            // How long it has been paused is a span, not a moment.
+            session.pausedAt = session.pausedAt.map { $0.addingTimeInterval(jump) }
+            self.session = session
+        }
+        if var pending = breakState {
+            pending.endsAt = shifted(pending.endsAt)
+            breakState = pending
+        }
+        if var undoable = undoableEnd {
+            if case .running(let deadline) = undoable.state.phase {
+                undoable.state.phase = .running(deadline: shifted(deadline))
+            }
+            undoable.endedAt = undoable.endedAt.addingTimeInterval(jump)
+            undoableEnd = undoable
+        }
+        reanchor()
+        if session != nil || breakState != nil { save() }
+    }
+
     // MARK: Sleep
 
     /// A sleeping Mac is not focusing: the countdown stops until wake.
@@ -862,7 +1037,7 @@ final class SessionEngine {
 
     private func pause(bySleep: Bool) {
         guard var session, case .running(let deadline) = session.phase else { return }
-        session.phase = .paused(remaining: max(0, deadline.timeIntervalSince(now())), bySleep: bySleep)
+        session.phase = .paused(remaining: max(0, deadline.timeIntervalSince(clockNow())), bySleep: bySleep)
         session.pausedAt = bySleep ? nil : now()
         session.pauseReminded = false
         session.activityContinuity += 1
@@ -879,7 +1054,7 @@ final class SessionEngine {
         // which is not put back).
         let inSequence = sequence != nil || ended.plan.sequenceStep != nil
         undoableEnd = undoable && reason == .endedEarly && !ended.plan.strict && !inSequence
-            ? UndoableEnd(state: ended, endedAt: now()) : nil
+            ? UndoableEnd(state: ended, endedAt: clockNow()) : nil
         session = nil
         // The next block of a sequence that starts with no break between.
         var following: SessionPlan?
@@ -890,6 +1065,7 @@ final class SessionEngine {
             // open-ended, does not. The plan's own length, else Settings'.
             let length = ended.plan.breakLength ?? breakLength
             if length > 0 {
+                reanchor()
                 breakState = BreakState(plan: ended.plan, endsAt: now().addingTimeInterval(length), length: length,
                                         rules: ended.plan.breakRules)
             }
@@ -949,6 +1125,7 @@ final class SessionEngine {
         if let rest = next.rest {
             run.index = rest.index
             sequence = run
+            reanchor()
             breakState = BreakState(plan: plan, endsAt: now().addingTimeInterval(rest.length), length: rest.length,
                                     rules: rest.rules)
             return nil
@@ -991,14 +1168,14 @@ extension SessionPlan {
         self.init(
             goal: try c.decodeIfPresent(String.self, forKey: .goal) ?? "",
             duration: try c.decodeIfPresent(TimeInterval.self, forKey: .duration),
-            mode: try c.decodeIfPresent(Mode.self, forKey: .mode) ?? .block,
+            mode: c.decodeTolerant(Mode.self, forKey: .mode) ?? .block,
             apps: try c.decodeIfPresent([String].self, forKey: .apps) ?? [],
             websites: try c.decodeIfPresent([String].self, forKey: .websites) ?? [],
             reopensQuitApps: try c.decodeIfPresent(Bool.self, forKey: .reopensQuitApps) ?? false,
             launchApps: try c.decodeIfPresent([String].self, forKey: .launchApps) ?? [],
             startShortcut: try c.decodeIfPresent(String.self, forKey: .startShortcut),
             endShortcut: try c.decodeIfPresent(String.self, forKey: .endShortcut),
-            strict: try c.decodeIfPresent(Bool.self, forKey: .strict) ?? false
+            strict: c.decodeTolerant(Bool.self, forKey: .strict) ?? false
         )
         // 0.4's fields, each on its own: one written wrongly is dropped, and
         // the session keeps its blocking rules.
@@ -1052,20 +1229,22 @@ extension SessionState {
         startedAt = try c.decode(Date.self, forKey: .startedAt)
         phase = try c.decode(Phase.self, forKey: .phase)
         budget = try c.decode(TimeInterval.self, forKey: .budget)
-        snoozes = try c.decodeIfPresent([String: Date].self, forKey: .snoozes) ?? [:]
-        quitApps = try c.decodeIfPresent([String].self, forKey: .quitApps) ?? []
-        blocks = try c.decodeIfPresent([String: Int].self, forKey: .blocks) ?? [:]
-        quitCounts = try c.decodeIfPresent([String: Int].self, forKey: .quitCounts) ?? [:]
-        foreground = try c.decodeIfPresent([String: TimeInterval].self, forKey: .foreground) ?? [:]
+        // Everything below is bookkeeping: one field written wrongly loses
+        // itself, not the running session.
+        snoozes = c.decodeTolerant([String: Date].self, forKey: .snoozes) ?? [:]
+        quitApps = c.decodeTolerant([String].self, forKey: .quitApps) ?? []
+        blocks = c.decodeTolerant([String: Int].self, forKey: .blocks) ?? [:]
+        quitCounts = c.decodeTolerant([String: Int].self, forKey: .quitCounts) ?? [:]
+        foreground = c.decodeTolerant([String: TimeInterval].self, forKey: .foreground) ?? [:]
         activity = c.decodeTolerant([FocusActivity].self, forKey: .activity)
         activitySegments = c.decodeTolerant([FocusActivitySegment].self, forKey: .activitySegments)
         activityTimelineTruncated = c.decodeTolerant(Bool.self, forKey: .activityTimelineTruncated)
         activityContinuity = c.decodeTolerant(Int.self, forKey: .activityContinuity) ?? 0
         activityContinuityStartedAt = c.decodeTolerant(Date.self, forKey: .activityContinuityStartedAt)
-        names = try c.decodeIfPresent([String: String].self, forKey: .names) ?? [:]
-        seenElapsed = try c.decodeIfPresent(TimeInterval.self, forKey: .seenElapsed) ?? 0
-        endedAt = try c.decodeIfPresent(Date.self, forKey: .endedAt)
-        focusedTime = try c.decodeIfPresent(TimeInterval.self, forKey: .focusedTime)
+        names = c.decodeTolerant([String: String].self, forKey: .names) ?? [:]
+        seenElapsed = c.decodeTolerant(TimeInterval.self, forKey: .seenElapsed) ?? 0
+        endedAt = c.decodeTolerant(Date.self, forKey: .endedAt)
+        focusedTime = c.decodeTolerant(TimeInterval.self, forKey: .focusedTime)
         pausedAt = c.decodeTolerant(Date.self, forKey: .pausedAt)
         pauseReminded = c.decodeTolerant(Bool.self, forKey: .pauseReminded) ?? false
     }
