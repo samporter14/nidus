@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Nidus's strict-session watcher (Sources/Nidus/App/StrictKeepAlive.swift).
+     It quits at once unless a strict session is on, so between strict
+     sessions nothing runs. Killed during one, launchd starts it again. -->
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>local.sam.nidus.keepalive</string>
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/Nidus</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>Nidus</string>
+		<string>--keepalive</string>
+	</array>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>local.sam.nidus</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<dict>
+		<key>SuccessfulExit</key>
+		<false/>
+	</dict>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<key>ExitTimeOut</key>
+	<integer>3</integer>
+	<key>ProcessType</key>
+	<string>Background</string>
+</dict>
+</plist>

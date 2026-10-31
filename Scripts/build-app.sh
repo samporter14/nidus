@@ -33,6 +33,10 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Nidus"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
+# The strict-session watcher's launchd job (StrictKeepAlive.swift), where
+# SMAppService.agent looks for it.
+mkdir -p "$APP/Contents/Library/LaunchAgents"
+cp "$ROOT/Resources/local.sam.nidus.keepalive.plist" "$APP/Contents/Library/LaunchAgents/"
 # The build number is the commit count: it only goes up, so every build
 # installed reads differently in Finder and About, and it names its commit.
 BUILD=$(git -C "$ROOT" rev-list --count HEAD 2>/dev/null || echo 0)

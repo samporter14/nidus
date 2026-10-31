@@ -157,6 +157,10 @@ final class NidusModel: NSObject, ObservableObject {
             .store(in: &subscriptions)
 
         controller.start()
+        // The update this copy came from is done; a strict session it
+        // carried on is watched again.
+        if !Demo.isActive { UpdatePermit.clear(in: host.environment.containerDirectory) }
+        keepStrictSessionAlive()
         brickCompanion.activate(self)
         publishFocus()
         startWeeklyRecap()
@@ -527,6 +531,7 @@ final class NidusModel: NSObject, ObservableObject {
         dropSnoozeWaitIfMoot()
         switch event {
         case .started:
+            keepStrictSessionAlive()
             warnedBrowsers.removeAll()
             // A sequence's next block that began the moment the last one
             // ended leaves that block's card, question and next step up.
