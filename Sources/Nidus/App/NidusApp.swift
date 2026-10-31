@@ -15,6 +15,11 @@ import SwiftUI
 @main
 enum NidusMain {
     static func main() {
+        // launchd's strict-session watcher (StrictKeepAlive.swift): no menu
+        // bar item, no window, and never in charge of a session.
+        if CommandLine.arguments.contains(StrictGuard.watcherFlag) {
+            MainActor.assumeIsolated { KeepAliveWatcher.run() }
+        }
         let app = NSApplication.shared
         let delegate = AppDelegate()
         app.delegate = delegate
@@ -28,7 +33,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var settings: SettingsWindowController?
     private var host: NidusHost?
     private(set) var model: NidusModel?
-    private var sigterm: DispatchSourceSignal?
+    private var signalSources: [DispatchSourceSignal] = []
+    /// Logging out, restarting or shutting down: a strict session doesn't
+    /// hold that up.
+    private var systemIsEnding = false
+    private var powerOffObserver: NSObjectProtocol?
     /// Links that arrived before the model was ready.
     private var pendingURLs: [URL] = []
 
@@ -55,6 +64,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pendingURLs.forEach(model.handle)
         pendingURLs = []
         Demo.openRequestedSurfaces(model: model, settings: settings)
+    }
+
+    /// A live strict session refuses to quit, however the quit was asked
+    /// for, except as the Mac logs out or shuts down, or for an update
+    /// (StrictGuard). A copy with no model yet (one handing off to another,
+    /// a render, a demo) always quits.
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let model, !Demo.isActive, let directory = model.containerDirectory else { return .terminateNow }
+        let updating = UpdatePermit.isFresh(in: directory)
+        if StrictGuard.vetoesQuit(liveStrict: model.isStrictSessionLive, systemIsEnding: systemIsEnding,
+                                  updatePermitted: updating) {
+            Logger(subsystem: "local.sam.nidus", category: "app").notice("Refused to quit during a strict session")
+            model.presentStrictQuitRefusedHUD()
+            return .terminateCancel
+        }
+        return .terminateNow
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -116,6 +141,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let me = NSRunningApplication.current
         let others = NSRunningApplication.runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
             .filter { $0.processIdentifier != me.processIdentifier }
+            // The strict-session watcher is this same executable, but no copy
+            // in charge: the app it opens must not hand off to it.
+            .filter { !KeepAliveWatcher.isWatcher($0.processIdentifier) }
         guard !others.isEmpty else { return false }
         Logger(subsystem: "local.sam.nidus", category: "app").info("Another Nidus is running; quitting this one")
         NSApp.terminate(nil)
@@ -123,13 +151,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// `kill` or an update's installer: quit as ⌘Q does, so the session is
-    /// saved and the menu bar item goes.
+    /// saved and the menu bar item goes, and a strict session can refuse
+    /// (applicationShouldTerminate). SIGINT and SIGHUP are taken the same
+    /// way, so none of them ends a strict session behind its back.
     private func watchForTerminate() {
-        signal(SIGTERM, SIG_IGN)
-        let source = DispatchSource.makeSignalSource(signal: SIGTERM, queue: .main)
-        source.setEventHandler { NSApp.terminate(nil) }
-        source.resume()
-        sigterm = source
+        for number in [SIGTERM, SIGINT, SIGHUP] {
+            signal(number, SIG_IGN)
+            let source = DispatchSource.makeSignalSource(signal: number, queue: .main)
+            source.setEventHandler { NSApp.terminate(nil) }
+            source.resume()
+            signalSources.append(source)
+        }
+        powerOffObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.systemIsEnding = true }
+        }
     }
 }
 

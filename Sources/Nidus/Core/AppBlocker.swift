@@ -46,6 +46,15 @@ final class AppBlocker {
     /// of them at once would put an unsaved-changes prompt in front of the
     /// user for each one. Apps launched during the session are quit.
     private var openAtStart: Set<pid_t> = []
+    /// Apps that should have quit and are still running, found by `sweep()`
+    /// (bundle ID to name). Rebuilt on every sweep, so an app leaves it when it
+    /// quits, when it is no longer blocked (snooze, rule change), and when the
+    /// blocker stops. Only the `.terminate` action fills it: a hidden app is
+    /// doing what a `.hide` rule asks.
+    private(set) var refusedToQuit: [String: String] = [:]
+    /// An app launched this recently may still be inside `retryQuit`'s 1, 3, 6
+    /// second sequence, so it is not yet called a refusal.
+    nonisolated static let refusalGrace: TimeInterval = 7
 
     init(mode: Mode, action: Action, onBlock: @escaping (NSRunningApplication) -> Void = { _ in }) {
         self.mode = mode
@@ -89,6 +98,7 @@ final class AppBlocker {
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         observers.removeAll()
         openAtStart.removeAll()
+        refusedToQuit.removeAll()
     }
 
     /// What to do with this app: the chosen action, except that allow mode
@@ -96,6 +106,61 @@ final class AppBlocker {
     func action(for app: NSRunningApplication) -> Action {
         if case .allow = mode, openAtStart.contains(app.processIdentifier) { return .hide }
         return action
+    }
+
+    /// What one sweep does to one running app.
+    enum SweepStep: Sendable, Equatable {
+        /// Hide it and ask it to quit again.
+        case askToQuit
+        /// Hide it (it is not hidden now).
+        case hide
+        case nothing
+    }
+
+    /// The sweep's decision for one app, pure so it can be tested without a
+    /// real process. Follows `enforce` and `action(for:)` exactly: exempt apps
+    /// and Nidus are never touched, allow mode only hides what was open at
+    /// start, and a hidden app under `.hide` is left alone.
+    nonisolated static func sweepStep(bundleID: String, isTerminated: Bool, isHidden: Bool,
+                                      wasOpenAtStart: Bool, mode: Mode, action: Action) -> SweepStep {
+        guard !isTerminated, isBlocked(bundleID, under: mode) else { return .nothing }
+        var effective = action
+        if case .allow = mode, wasOpenAtStart { effective = .hide }
+        switch effective {
+        case .terminate: return .askToQuit
+        case .hide: return isHidden ? .nothing : .hide
+        }
+    }
+
+    /// A low-frequency second look, driven by the controller's once-a-second
+    /// tick (no timer of its own). `retryQuit` gives up after six seconds, so
+    /// an app that refused to quit (an unsaved-changes alert, a modal sheet,
+    /// one that ignores the Apple Event) would otherwise stay usable for the
+    /// rest of the session. Every blocked regular app still running is hidden
+    /// and asked again, politely, never forceTerminate(). It does not call
+    /// `onBlock`: that reports a card and counts a block, and a sweep every few
+    /// seconds would spam both. One `runningApplications` read per sweep.
+    func sweep() {
+        guard !observers.isEmpty else { return }
+        var refused: [String: String] = [:]
+        let now = Date()
+        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+            guard let bundleID = app.bundleIdentifier else { continue }
+            let step = Self.sweepStep(bundleID: bundleID, isTerminated: app.isTerminated, isHidden: app.isHidden,
+                                      wasOpenAtStart: openAtStart.contains(app.processIdentifier),
+                                      mode: mode, action: action)
+            switch step {
+            case .nothing: break
+            case .hide: app.hide()
+            case .askToQuit:
+                app.hide()
+                app.terminate()
+                if now.timeIntervalSince(app.launchDate ?? .distantPast) > Self.refusalGrace {
+                    refused[bundleID] = app.localizedName ?? bundleID
+                }
+            }
+        }
+        if refused != refusedToQuit { refusedToQuit = refused }
     }
 
     private func retryQuit(_ app: NSRunningApplication, after delays: [TimeInterval]) {

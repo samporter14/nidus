@@ -262,6 +262,13 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             let header = NSMenuItem()
             header.view = NSHostingView(rootView: FocusMenuHeader(model: model))
             menu.addItem(header)
+            if let protection = model.protectionStatus {
+                let line = NSMenuItem(title: protection.line, action: nil, keyEquivalent: "")
+                line.image = NSImage(systemSymbolName: protection.isComplete ? "checkmark.shield" : "exclamationmark.shield",
+                                     accessibilityDescription: nil)
+                line.isEnabled = false
+                menu.addItem(line)
+            }
             menu.addItem(.separator())
             if !model.isStrict {
                 menu.addItem(action(model.isPaused ? "Resume" : "Pause", #selector(togglePause)))

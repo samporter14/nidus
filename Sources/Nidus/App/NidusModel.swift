@@ -151,12 +151,18 @@ final class NidusModel: NSObject, ObservableObject {
         host.preferences.didChange
             .sink { [weak self] _ in
                 self?.applySettings()
+                self?.publishWidget()
                 self?.menuBar?.sync()
                 self?.objectWillChange.send()
             }
             .store(in: &subscriptions)
 
         controller.start()
+        // The update this copy came from is done; a strict session it
+        // carried on is watched again.
+        if !Demo.isActive { UpdatePermit.clear(in: host.environment.containerDirectory) }
+        keepStrictSessionAlive()
+        presentSessionFileProblemIfAny()
         brickCompanion.activate(self)
         publishFocus()
         startWeeklyRecap()
@@ -522,11 +528,20 @@ final class NidusModel: NSObject, ObservableObject {
     // MARK: Session events
 
     func sessionDidChange(_ event: SessionEvent) {
-        defer { publishFocus() }
+        defer {
+            publishFocus()
+            keepStrictSessionAlive()
+        }
         if isActive || isOnBreak { dismissBrickOffer() }
         dropSnoozeWaitIfMoot()
         switch event {
         case .started:
+            // After the start's own cards, so this one isn't swept away.
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .seconds(2))
+                guard self?.isActive == true else { return }
+                self?.offerToBlockUncoveredBrowsers()
+            }
             warnedBrowsers.removeAll()
             // A sequence's next block that began the moment the last one
             // ended leaves that block's card, question and next step up.
@@ -971,6 +986,7 @@ extension NidusModel {
     /// breaks release them. Demos and captures publish nothing.
     func publishFocus(quitting: Bool = false) {
         publishPlaqueFocus(quitting: quitting)
+        publishWidget(quitting: quitting)
         guard !Demo.isActive, let host else { return }
         let state = FocusFile.snapshot(session: engine?.session, quitting: quitting)
         guard state != lastPublishedFocus else { return }

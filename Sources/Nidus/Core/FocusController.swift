@@ -46,6 +46,11 @@ final class FocusController: ObservableObject {
     /// Browsers Nidus may not script, so Settings can say so.
     @Published private(set) var browserAccess: [String: AppleEventError] = [:]
 
+    /// Blocked apps that were asked to quit and are still running (bundle ID to
+    /// name), found by the periodic sweep. Empty when nothing is enforcing.
+    /// Updated only when it changes.
+    @Published private(set) var refusedApps: [String: String] = [:]
+
     var appAction: AppBlocker.Action {
         get { appBlocker.action }
         set { appBlocker.action = newValue }
@@ -143,11 +148,14 @@ final class FocusController: ObservableObject {
     private var lastReported: [String: Date] = [:]
     /// When the frontmost app was last credited, and ticks since a save.
     private var ticksSinceCheckpoint = 0
+    /// Ticks spent enforcing since the app sweep last ran.
+    private var enforcingTicks = 0
     /// Snoozes already warned about, by the end they were warned for, so a
     /// snooze taken again is warned about again.
     private var warnedSnoozes: [String: Date] = [:]
     private var warnedBreakEnd: Date?
     private var lockObservers: [NSObjectProtocol] = []
+    private var clockObservers: [NSObjectProtocol] = []
     private var isScreenLocked = false
     /// The screen is locked: someone may not be there.
     var screenIsLocked: Bool { isScreenLocked }
@@ -158,11 +166,18 @@ final class FocusController: ObservableObject {
     /// cannot leave a Focus mode off.
     private var shortcutChain: Task<Void, Never>?
 
-    /// `now` is the engine's clock; tests move it by hand.
-    init(directory: URL, now: @escaping () -> Date = Date.init) {
+    /// `now` is the engine's clock; tests move it by hand, and then trust it
+    /// for the countdown. Left out, the countdown runs on the system's
+    /// monotonic clock, which setting the date cannot move.
+    init(directory: URL, now: (() -> Date)? = nil) {
         blockPage = BlockPage(directory: directory)
         browsers = BrowserBlocker(blockPage: blockPage)
-        engine = SessionEngine(store: FileSessionStore(url: directory.appendingPathComponent("session.json")), now: now)
+        let store = FileSessionStore(url: directory.appendingPathComponent("session.json"))
+        if let now {
+            engine = SessionEngine(store: store, now: now)
+        } else {
+            engine = SessionEngine(store: store, monotonic: { SessionEngine.systemMonotonic() })
+        }
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
     }
@@ -208,6 +223,11 @@ final class FocusController: ObservableObject {
                 MainActor.assumeIsolated { self?.screenDidUnlock() }
             },
         ]
+        clockObservers = [
+            NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.engine.systemClockDidChange() }
+            },
+        ]
         applyEnforcement()
         updateClock()
     }
@@ -219,16 +239,22 @@ final class FocusController: ObservableObject {
     /// start() blocks them again, quietly.
     func stop(restoringTabs: Bool = false) {
         if restoringTabs, let enforcing, !(enforcing.mode == .block && enforcing.websites.isEmpty) {
-            // Synchronous, after any sweep in flight: the process is about
-            // to end. Every Apple Event has a timeout, so a hung browser
-            // costs seconds, not the quit.
+            // After any sweep in flight, but bounded: each Apple Event has its
+            // own timeout, so several hung browsers could hold the quit for
+            // a long time. Past `quitRestoreTimeout` quitting goes on; a late
+            // finish only touches `browsers` and the box, never this object.
             let browsers = self.browsers
-            let restored = browserQueue.sync {
-                BrowserProfile.known.reduce(0) { count, browser in
+            let box = RestoreCount()
+            let done = DispatchSemaphore(value: 0)
+            browserQueue.async {
+                box.add(BrowserProfile.known.reduce(0) { count, browser in
                     count + ((try? browsers.restore(browser))?.count ?? 0)
-                }
+                })
+                done.signal()
             }
-            if Self.marksTabsRestored(restored: restored, hasSession: engine.session != nil, isOnBreak: engine.isOnBreak) {
+            let timedOut = done.wait(timeout: .now() + Self.quitRestoreTimeout) == .timedOut
+            if Self.marksTabsRestored(restored: box.value, timedOut: timedOut,
+                                      hasSession: engine.session != nil, isOnBreak: engine.isOnBreak) {
                 FileManager.default.createFile(atPath: tabsRestoredMarker.path, contents: Data())
             }
         }
@@ -239,7 +265,11 @@ final class FocusController: ObservableObject {
         observers.removeAll()
         lockObservers.forEach(DistributedNotificationCenter.default().removeObserver)
         lockObservers.removeAll()
+        clockObservers.forEach(NotificationCenter.default.removeObserver)
+        clockObservers.removeAll()
         appBlocker.stop()
+        enforcingTicks = 0
+        if !refusedApps.isEmpty { refusedApps = [:] }
         enforcing = nil
         engine.checkpoint()
         engine.onEvent = { _ in }
@@ -364,11 +394,36 @@ final class FocusController: ObservableObject {
         warnAboutEndingSnoozes()
         warnAboutEndingBreak()
         if enforcing != nil { sweepBrowsers() }
+        sweepApps()
         ticksSinceCheckpoint += 1
         if ticksSinceCheckpoint >= 15, engine.session != nil {
             ticksSinceCheckpoint = 0
             engine.checkpoint()
         }
+    }
+
+    /// Every few ticks, while enforcing, has the blocker take another look at
+    /// apps that refused to quit, and republishes the refusals if they changed.
+    private func sweepApps() {
+        guard enforcing != nil else {
+            enforcingTicks = 0
+            if !refusedApps.isEmpty { refusedApps = [:] }
+            return
+        }
+        enforcingTicks += 1
+        guard Self.sweepIsDue(tick: enforcingTicks, enforcing: true) else { return }
+        enforcingTicks = 0
+        appBlocker.sweep()
+        if appBlocker.refusedToQuit != refusedApps { refusedApps = appBlocker.refusedToQuit }
+    }
+
+    /// Seconds between app sweeps (the controller ticks once a second).
+    nonisolated static let sweepEvery = 5
+
+    /// Whether the app sweep runs on this tick, counted in ticks spent
+    /// enforcing: every `sweepEvery`th, and never when nothing is enforcing.
+    nonisolated static func sweepIsDue(tick: Int, enforcing: Bool) -> Bool {
+        enforcing && tick > 0 && tick % sweepEvery == 0
     }
 
     /// Credits the frontmost app with the time since the last tick. A gap
@@ -626,7 +681,25 @@ final class FocusController: ObservableObject {
     /// Quitting leaves a marker when it put tabs back from a session or a
     /// break that will resume, so the next start blocks them again quietly.
     nonisolated static func marksTabsRestored(restored: Int, hasSession: Bool, isOnBreak: Bool) -> Bool {
-        restored > 0 && (hasSession || isOnBreak)
+        marksTabsRestored(restored: restored, timedOut: false, hasSession: hasSession, isOnBreak: isOnBreak)
+    }
+
+    /// If the restore timed out the count is unknown, so the marker is written
+    /// anyway when blocking will resume: at worst one quiet first sweep.
+    nonisolated static func marksTabsRestored(restored: Int, timedOut: Bool, hasSession: Bool, isOnBreak: Bool) -> Bool {
+        (timedOut || restored > 0) && (hasSession || isOnBreak)
+    }
+
+    /// How long quitting waits for browsers to put tabs back.
+    nonisolated static let quitRestoreTimeout: TimeInterval = 3
+
+    /// The restore's running count, shared with a queue block that may finish
+    /// after quitting has stopped waiting.
+    private final class RestoreCount: @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        func add(_ n: Int) { lock.lock(); count += n; lock.unlock() }
+        var value: Int { lock.lock(); defer { lock.unlock() }; return count }
     }
 
     /// What the sweep and a restore judge tabs by. The session's snoozes and

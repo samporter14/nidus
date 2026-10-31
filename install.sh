@@ -46,13 +46,18 @@ target_pids() {
 }
 if [[ -n "$(target_pids)" ]]; then
     echo "Quitting the running Nidus…"
+    # A strict session refuses to quit, except for an update: this permit
+    # (Sources/Nidus/Core/StrictGuard.swift) lets this one quit through, and
+    # the new copy picks the session up where it was.
+    SUPPORT="$HOME/Library/Application Support/Nidus"
+    mkdir -p "$SUPPORT" && touch "$SUPPORT/update-quit"
     kill -TERM $(target_pids) 2>/dev/null || true
     for _ in {1..20}; do
         [[ -z "$(target_pids)" ]] && break
         sleep 0.5
     done
     if [[ -n "$(target_pids)" ]]; then
-        echo "Nidus is still running. Quit it with ⌘Q, then run this again." >&2
+        echo "Nidus is still running. Quit it from its menu (after a strict session ends), then run this again." >&2
         exit 1
     fi
 fi
