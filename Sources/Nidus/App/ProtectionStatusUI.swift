@@ -21,7 +21,8 @@ extension NidusModel {
         let runningIDs = Set(running.compactMap(\.bundleIdentifier))
         var status = ProtectionStatus()
         status.blocksWebsites = !(enforcement.mode == .block && enforcement.websites.isEmpty)
-        for browser in BrowserProfile.known where runningIDs.contains(browser.bundleID) {
+        for browser in BrowserProfile.known where status.blocksWebsites && runningIDs.contains(browser.bundleID)
+            && !AppBlocker.isBlocked(browser.bundleID, under: enforcement.appMode) {
             switch controller.browserAccess[browser.bundleID] {
             case .notPermitted?, .needsConsent?: status.noPermission.append(browser.shortName)
             default: status.watched.append(browser.shortName)
@@ -29,9 +30,11 @@ extension NidusModel {
         }
         let names = Dictionary(running.compactMap { app in app.bundleIdentifier.map { ($0, app.localizedName ?? $0) } },
                                uniquingKeysWith: { first, _ in first })
-        status.unwatched = UncoveredBrowsers.uncovered(Self.cachedWebLinkHandlers.filter(runningIDs.contains))
-            .filter { !AppBlocker.isBlocked($0, under: enforcement.appMode) }
-            .map { names[$0] ?? UncoveredBrowsers.named[$0] ?? $0 }
+        if status.blocksWebsites {
+            status.unwatched = UncoveredBrowsers.runningToOffer(Self.cachedWebLinkHandlers, running: runningIDs,
+                                                                blockedAsApp: { AppBlocker.isBlocked($0, under: enforcement.appMode) })
+                .map { names[$0] ?? UncoveredBrowsers.named[$0] ?? $0 }
+        }
         status.refused = controller.refusedApps.values.sorted()
         return status
     }
@@ -45,6 +48,8 @@ extension NidusModel {
         handlerCache = found
         return found
     }
+
+    static func refreshWebLinkHandlers() { handlerCache = webLinkHandlers() }
 
     /// Browsers as Launch Services knows them: apps that open both web links
     /// and HTML files (a link alone also brings in chat apps and the like),
@@ -62,43 +67,14 @@ extension NidusModel {
         return ids
     }
 
-    /// At the start of a session that blocks websites: browsers Nidus can't
-    /// watch that are open or installed, and not blocked as apps already,
-    /// get one card offering to block them as apps for this session.
+    /// Session starts and newly opened browsers share the same quiet,
+    /// acknowledged warning policy. Refresh handler discovery once per start.
     func offerToBlockUncoveredBrowsers() {
-        guard !Demo.isActive, let host, let enforcement = engine?.enforcement,
-              !(enforcement.mode == .block && enforcement.websites.isEmpty) else { return }
-        let handlers = Self.webLinkHandlers()
-        Self.handlerCache = handlers
-        let ids = UncoveredBrowsers.toOffer(UncoveredBrowsers.uncovered(handlers),
-                                            blockedAsApp: { AppBlocker.isBlocked($0, under: enforcement.appMode) })
-        guard !ids.isEmpty else { return }
-        let names = ids.map(Self.appName)
-        let list = ProtectionStatus.list(names)
-        let title = "Can\u{2019}t block sites in \(list)"
-        let detail = names.count == 1 ? "Block it as an app until this session ends?" : "Block them as apps until this session ends?"
-        let request = HUDRequest(
-            id: Self.uncoveredBrowserHUDID,
-            duration: 15,
-            accessibilityLabel: "\(title). \(detail)"
-        ) { [weak self] in
-            FocusNoticeCard(symbol: "globe", variants: [
-                .init(title: Text(verbatim: title), detail: Text(verbatim: detail), button: "Block"),
-                .init(title: Text(verbatim: title), detail: Text("For this session"), button: "Block"),
-            ]) {
-                self?.engine?.blockAppsForSession(ids)
-                self?.host?.hud.dismiss(id: Self.uncoveredBrowserHUDID)
-            }
-        }
-        host.hud.present(request)
+        guard !Demo.isActive else { return }
+        Self.refreshWebLinkHandlers()
+        protectionFeedback.refresh()
     }
 
-    private static func appName(_ bundleID: String) -> String {
-        if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID) {
-            return FileManager.default.displayName(atPath: url.path).replacingOccurrences(of: ".app", with: "")
-        }
-        return UncoveredBrowsers.named[bundleID] ?? bundleID
-    }
 }
 
 extension Enforcement {
@@ -108,21 +84,37 @@ extension Enforcement {
 
 /// The popover's protection line, under the countdown.
 struct ProtectionStatusLine: View {
+    let model: NidusModel
     let status: ProtectionStatus
+    @ObservedObject private var feedback: ProtectionFeedback
+
+    init(model: NidusModel, status: ProtectionStatus) {
+        self.model = model
+        self.status = status
+        feedback = model.protectionFeedback
+    }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 5) {
-            Image(systemName: status.isComplete ? "checkmark.shield" : "exclamationmark.shield")
-                .font(.system(size: 11, weight: .medium))
-                .foregroundStyle(status.isComplete ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Solanum.clayText))
-                .accessibilityHidden(true)
-            Text(verbatim: status.line)
-                .font(.system(size: 12))
-                .foregroundStyle(status.isComplete ? AnyShapeStyle(.secondary) : AnyShapeStyle(Solanum.ink))
-                .lineLimit(2)
-                .fixedSize(horizontal: false, vertical: true)
+        Button { feedback.showingFixes = true } label: {
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Image(systemName: status.isComplete ? "checkmark.shield" : "exclamationmark.shield")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(status.isComplete ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Solanum.clayText))
+                    .accessibilityHidden(true)
+                Text(verbatim: status.line)
+                    .font(.system(size: 12))
+                    .foregroundStyle(status.isComplete ? AnyShapeStyle(.secondary) : AnyShapeStyle(Solanum.ink))
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
+        .buttonStyle(.plain)
+        .help("Review protection and fixes")
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Protection: \(status.line)")
+        .accessibilityLabel("Protection: \(status.line). Review fixes")
+        .popover(isPresented: $feedback.showingFixes) {
+            ProtectionFixesView(model: model)
+        }
+        .onDisappear { feedback.showingFixes = false }
     }
 }

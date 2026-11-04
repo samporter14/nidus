@@ -227,6 +227,7 @@ struct UndoEndControllerTests {
         #expect(controller.history.sessions.isEmpty, "the early end is taken out")
         #expect(controller.historyVersion > version)
         #expect(controller.engine.isRunning)
+        controller.history.flush()
         let onDisk = FocusHistory(url: dir.appendingPathComponent("history.json"))
         #expect(onDisk.sessions.isEmpty, "and out of the file")
 

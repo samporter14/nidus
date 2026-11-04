@@ -58,6 +58,12 @@ enum UncoveredBrowsers {
     static func toOffer(_ uncovered: [String], blockedAsApp: (String) -> Bool) -> [String] {
         uncovered.filter { !blockedAsApp($0) }
     }
+
+    /// Installed browsers become relevant only while they are running.
+    static func runningToOffer(_ candidates: [String], running: Set<String>,
+                               blockedAsApp: (String) -> Bool) -> [String] {
+        toOffer(uncovered(candidates).filter(running.contains), blockedAsApp: blockedAsApp)
+    }
 }
 
 struct ProtectionStatus: Equatable, Sendable {
@@ -85,7 +91,7 @@ struct ProtectionStatus: Equatable, Sendable {
         if !refused.isEmpty { parts.append("\(Self.list(refused)) wouldn\u{2019}t quit") }
         if !parts.isEmpty { return parts.joined(separator: " \u{00B7} ") }
         guard blocksWebsites else { return "Blocking apps" }
-        return watched.isEmpty ? "Sites blocked in any browser you open" : "Sites blocked in \(Self.list(watched))"
+        return watched.isEmpty ? "Website rules are on" : "Sites blocked in \(Self.list(watched))"
     }
 
     static func list(_ names: [String]) -> String {

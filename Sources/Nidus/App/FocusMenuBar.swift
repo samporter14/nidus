@@ -26,7 +26,8 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     /// True while a start or end sequence is playing; clock ticks wait.
     private var isTransitioning = false
     private var frameObserver: NSObjectProtocol?
-    private var popover: NSPopover?
+    private let presentation = FocusPopoverPresentation()
+    private var popover: NSPopover? { presentation.popover }
     private let menu = NSMenu()
 
     static let glyphSize: CGFloat = 18
@@ -75,8 +76,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     }
 
     func stop() {
-        popover?.close()
-        popover = nil
+        presentation.close()
         if let frameObserver { NotificationCenter.default.removeObserver(frameObserver) }
         frameObserver = nil
         glyph = nil
@@ -222,17 +222,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
 
     func showPopover() {
         guard let model, let button = item?.button else { return }
-        let popover = popover ?? {
-            let popover = NSPopover()
-            popover.behavior = .transient
-            popover.animates = true
-            let hosting = NSHostingController(rootView: NidusPopover(model: model))
-            // Idle and running differ in height; the popover follows.
-            hosting.sizingOptions = [.preferredContentSize]
-            popover.contentViewController = hosting
-            return popover
-        }()
-        self.popover = popover
+        let popover = presentation.prepare(model: model)
         // A menu bar app is not active until it is asked to be; without this
         // the goal field shows a caret but takes no typing.
         if !CaptureSurfaces.isActive { NSApp.activate() }
@@ -263,10 +253,9 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             header.view = NSHostingView(rootView: FocusMenuHeader(model: model))
             menu.addItem(header)
             if let protection = model.protectionStatus {
-                let line = NSMenuItem(title: protection.line, action: nil, keyEquivalent: "")
+                let line = action(protection.line, #selector(showProtectionFixes))
                 line.image = NSImage(systemSymbolName: protection.isComplete ? "checkmark.shield" : "exclamationmark.shield",
                                      accessibilityDescription: nil)
-                line.isEnabled = false
                 menu.addItem(line)
             }
             menu.addItem(.separator())
@@ -364,6 +353,7 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     @objc private func answeredNo() { model?.answerFinished(false) }
     @objc private func addNextStep() { model?.focusNextStep() }
     @objc private func endBreak() { model?.endBreak() }
+    @objc private func showProtectionFixes() { model?.openProtectionFixes() }
     @objc private func openSettings() { model?.openSettings() }
     @objc private func openActivity() { model?.openActivity() }
     @objc private func openStats() { model?.openStats() }

@@ -30,6 +30,7 @@ struct FinishTests {
         history.append(entry)
         #expect(history.setFinished(entry.id, true))
         #expect(!history.setFinished(UUID(), true), "an unknown session changes nothing")
+        history.flush()
         #expect(FocusHistory(url: url).sessions.first?.finished == true, "saved to the file")
     }
 

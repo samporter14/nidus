@@ -17,9 +17,7 @@ extension NidusModel {
 
     var widgetSnapshot: WidgetSnapshot {
         var snapshot = WidgetSnapshot()
-        snapshot.setups = setups.prefix(WidgetSnapshot.setupLimit).map {
-            WidgetSnapshot.Setup(id: $0.id.uuidString, name: $0.name, symbol: $0.symbol)
-        }
+        snapshot.setups = widgetSetupCache.value(setups: setups)
         if let session = engine?.session {
             snapshot.goal = session.plan.goal
             snapshot.strict = session.plan.strict

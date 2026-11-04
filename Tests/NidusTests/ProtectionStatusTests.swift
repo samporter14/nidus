@@ -31,7 +31,7 @@ struct ProtectionStatusTests {
         #expect(status.isComplete == false, "a gap is still a gap in the data")
         #expect(status.line == "Blocking apps")
         #expect(ProtectionStatus(blocksWebsites: false).line == "Blocking apps")
-        #expect(ProtectionStatus().line == "Sites blocked in any browser you open")
+        #expect(ProtectionStatus().line == "Website rules are on")
     }
 
     @Test func listsReadAsEnglish() {

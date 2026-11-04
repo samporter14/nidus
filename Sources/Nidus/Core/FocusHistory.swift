@@ -164,9 +164,11 @@ final class FocusHistory {
 
     let url: URL
     private(set) var sessions: [SessionEntry] = []
+    private let writer: HistoryFileWriter
 
     init(url: URL) {
         self.url = url
+        writer = HistoryFileWriter(url: url)
         guard let data = try? Data(contentsOf: url) else { return }
         if let file = try? JSONDecoder().decode(File.self, from: data) {
             sessions = file.sessions
@@ -176,6 +178,8 @@ final class FocusHistory {
             Self.setAside(url)
         }
     }
+
+    deinit { writer.flush() }
 
     /// Renames an unreadable file to `history.unreadable-<time>.json` beside it.
     nonisolated static func setAside(_ url: URL, now: Date = Date()) {
@@ -233,13 +237,16 @@ final class FocusHistory {
 
     func clear() {
         sessions.removeAll()
-        try? FileManager.default.removeItem(at: url)
+        writer.enqueue(.remove)
     }
 
     private func save() {
-        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try? Self.encode(sessions).write(to: url, options: .atomic)
+        writer.enqueue(.write(sessions))
     }
+
+    /// Drain accepted edits before quitting, or before a caller needs to
+    /// inspect the file itself. Session completion never waits for this.
+    func flush() { writer.flush() }
 
     /// The file's bytes. Saving and exporting both come through here, so what
     /// "Export as JSON" writes is always what the file itself holds, and

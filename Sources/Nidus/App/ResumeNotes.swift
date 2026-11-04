@@ -328,8 +328,13 @@ extension NidusModel {
 
     var resumeNoteList: [ResumeNote] { resumeNotes?.notes ?? [] }
 
-    /// The one the idle popover offers.
-    var newestResumeNote: ResumeNote? { ResumeNote.newestUndismissed(in: resumeNoteList) }
+    /// All waiting notes remain reachable, including notes without a project.
+    var resumeChoices: [ResumeNote] { ResumeChoices.ordered(resumeNoteList, projectID: composerProjectID) }
+
+    /// An explicit choice wins; otherwise prefer the current project's work.
+    var newestResumeNote: ResumeNote? {
+        ResumeChoices.suggested(in: resumeChoices, selectedID: selectedResumeNoteID)
+    }
 
     // MARK: Writing one
 
@@ -473,6 +478,7 @@ extension NidusModel {
     /// followed is not touched.
     func dismissResumeNote(_ id: UUID) {
         resumeNotes?.dismiss(id)
+        if selectedResumeNoteID == id { selectedResumeNoteID = nil }
         if resumeNotice?.noteID == id { resumeNotice = nil }
         objectWillChange.send()
     }
@@ -488,6 +494,20 @@ extension NidusModel {
     }
 
     static let linkNoticeHUDID = "focus.resume-link"
+}
+
+/// Pure ordering used by the popover and tests. Choosing a note never dismisses
+/// another one, changes history or starts anything.
+enum ResumeChoices {
+    static func ordered(_ notes: [ResumeNote], projectID: UUID?) -> [ResumeNote] {
+        let waiting = ResumeNote.newestFirst(notes.filter { !$0.isDismissed })
+        guard let projectID else { return waiting }
+        return waiting.filter { $0.projectID == projectID } + waiting.filter { $0.projectID != projectID }
+    }
+
+    static func suggested(in notes: [ResumeNote], selectedID: UUID?) -> ResumeNote? {
+        notes.first { $0.id == selectedID } ?? notes.first
+    }
 }
 
 /// Why a Resume did nothing, shown beside the note it was pressed on.

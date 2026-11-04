@@ -319,6 +319,7 @@ struct ActivityTitleRemovalTests {
         #expect(history.hasActivityTitles)
 
         #expect(history.removeActivityTitles() == 1)
+        history.flush()
         let reread = FocusHistory(url: url)
         let entry = try #require(reread.sessions.first { $0.id == named.id })
         let rows = try #require(entry.activity)

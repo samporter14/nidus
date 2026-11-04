@@ -111,16 +111,17 @@ extension NidusModel {
 
     // MARK: Numbers
 
-    /// The sessions the numbers are worked out from. Read fresh each time a
-    /// page draws, like the stats are.
+    /// Read only when history or the calendar day invalidates a summary.
     private var recordedSessions: [SessionEntry] { controller?.history.sessions ?? [] }
 
     func projectSummary(for id: UUID) -> ProjectSummary {
-        ProjectSummary(projectID: id, sessions: recordedSessions)
+        historySummaryCache.project(id, version: controller?.historyVersion ?? 0,
+                                    sessions: recordedSessions)
     }
 
     var projectRoster: ProjectSummary.Roster {
-        ProjectSummary.roster(projects: projects, sessions: recordedSessions)
+        historySummaryCache.roster(version: controller?.historyVersion ?? 0,
+                                   projects: projects, sessions: recordedSessions)
     }
 
     // MARK: Pages

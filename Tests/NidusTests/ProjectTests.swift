@@ -127,6 +127,7 @@ struct ProjectHistoryTests {
         let grant = FocusProject(name: "Grant")
         let history = FocusHistory(url: url)
         [Self.entry(grant, finished: false), Self.entry(grant, finished: true), Self.entry(nil)].forEach(history.append)
+        history.flush()
         let before = try Data(contentsOf: url)
         let entries = history.sessions
 
