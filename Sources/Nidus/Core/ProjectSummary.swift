@@ -37,19 +37,21 @@ struct ProjectSummary: Equatable, Sendable {
     var completedCount: Int { stats.completedCount }
 
     /// The summary for `projectID` (nil: sessions with none) over `sessions`.
-    init(projectID: UUID?, sessions: [SessionEntry], recentLimit: Int = Self.recentLimit) {
-        self.init(projectID: projectID, entries: sessions.filter { $0.projectID == projectID }, recentLimit: recentLimit)
+    init(projectID: UUID?, sessions: [SessionEntry], recentLimit: Int = Self.recentLimit,
+         now: Date = Date(), calendar: Calendar = .current) {
+        self.init(projectID: projectID, entries: sessions.filter { $0.projectID == projectID },
+                  recentLimit: recentLimit, now: now, calendar: calendar)
     }
 
     /// `entries` are already this project's.
-    private init(projectID: UUID?, entries: [SessionEntry], recentLimit: Int) {
+    private init(projectID: UUID?, entries: [SessionEntry], recentLimit: Int, now: Date, calendar: Calendar) {
         self.projectID = projectID
         let newestFirst = entries.sorted { $0.start > $1.start }
         recordedName = newestFirst.lazy.compactMap { entry in
             let name = entry.projectName?.trimmingCharacters(in: .whitespacesAndNewlines)
             return (name?.isEmpty ?? true) ? nil : name
         }.first
-        stats = FocusStats(sessions: entries, weeks: 1)
+        stats = FocusStats(sessions: entries, now: now, calendar: calendar, weeks: 1)
         recent = Array(newestFirst.prefix(recentLimit))
         unfinished = Self.unfinishedGoals(in: newestFirst)
     }
@@ -89,16 +91,19 @@ struct ProjectSummary: Equatable, Sendable {
         var deleted: [ProjectSummary]
     }
 
-    static func roster(projects: [FocusProject], sessions: [SessionEntry]) -> Roster {
+    static func roster(projects: [FocusProject], sessions: [SessionEntry],
+                       now: Date = Date(), calendar: Calendar = .current) -> Roster {
         // One pass over the history, not one per project.
         let byProject = Dictionary(grouping: sessions.filter { $0.projectID != nil }, by: { $0.projectID! })
         let known = Set(projects.map(\.id))
         let live = (projects.filter { !$0.isArchived } + projects.filter(\.isArchived)).map { project in
             Row(project: project,
-                summary: ProjectSummary(projectID: project.id, entries: byProject[project.id] ?? [], recentLimit: recentLimit))
+                summary: ProjectSummary(projectID: project.id, entries: byProject[project.id] ?? [],
+                                        recentLimit: recentLimit, now: now, calendar: calendar))
         }
         let deleted = byProject.filter { !known.contains($0.key) }
-            .map { ProjectSummary(projectID: $0.key, entries: $0.value, recentLimit: recentLimit) }
+            .map { ProjectSummary(projectID: $0.key, entries: $0.value, recentLimit: recentLimit,
+                                 now: now, calendar: calendar) }
             .sorted { ($0.recent.first?.start ?? .distantPast) > ($1.recent.first?.start ?? .distantPast) }
         return Roster(live: live, deleted: deleted)
     }

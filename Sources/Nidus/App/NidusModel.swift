@@ -20,11 +20,19 @@ final class NidusModel: NSObject, ObservableObject {
     var menuBarItem: FocusMenuBar? { menuBar }
     /// The last focus state written, so a write happens only on a change.
     fileprivate var lastPublishedFocus: FocusFile?
+    /// One current result per surface, discarded when Settings closes.
+    var historySummaryCache = HistorySummaryCache()
+    /// A widget only needs a few setup labels, not decoded workspaces per tick.
+    var widgetSetupCache = WidgetSetupCache()
     /// Writes what Plaque may show, when that is turned on (PlaqueBridge.swift).
     var plaqueBridge: PlaqueBridge?
 
     /// The goal typed into the popover, kept while it closes and opens.
     @Published var goalDraft = ""
+    /// A prepared setup is held only until Start or Cancel, never in preferences.
+    @Published var setupDraft: SetupComposerDraft?
+    @Published var selectedResumeNoteID: UUID?
+    @Published var composerFocusRequest = 0
 
     /// A time of day to work until ("until 3:30"), for the next Start only.
     /// Never saved: as a number of minutes it would be wrong tomorrow. A
@@ -35,7 +43,7 @@ final class NidusModel: NSObject, ObservableObject {
         didSet { if untilTarget != nil { meetings.isChosen = false } }
     }
 
-    /// The popover's "Custom…" length field: nil while it is closed.
+    /// The popover's "Custom…" length draft: nil when not editing a custom length.
     @Published var customLengthDraft: CustomLengthDraft?
 
     /// Demo only (`--demo <scenario>`): a state to open in (`running`,
@@ -50,8 +58,8 @@ final class NidusModel: NSObject, ObservableObject {
     /// The welcome card waits a moment after activation; cancelled if Focus
     /// is switched off first.
     private var welcomeTask: Task<Void, Never>?
-    /// Browsers already warned about this session, so each is said once.
-    private var warnedBrowsers: Set<String> = []
+    /// Event-driven feedback; no presentation is retained between warnings.
+    let protectionFeedback = ProtectionFeedback()
     /// A sequence's block ended and the next began in the same moment: the
     /// `.started` that follows must not take down the card for the first.
     private var nextBlockFollowedEnd = false
@@ -102,6 +110,8 @@ final class NidusModel: NSObject, ObservableObject {
     // MARK: Lifecycle
 
     func activate(host: NidusHost) {
+        clearPresentationCaches()
+        widgetSetupCache.invalidate()
         self.host = host
         let controller = FocusController(directory: host.environment.containerDirectory)
         self.controller = controller
@@ -149,7 +159,9 @@ final class NidusModel: NSObject, ObservableObject {
             .sink { [weak self] access in self?.browserAccessDidChange(access) }
             .store(in: &subscriptions)
         host.preferences.didChange
-            .sink { [weak self] _ in
+            .sink { [weak self] key in
+                if key == Key.projects { self?.historySummaryCache.projectsDidChange() }
+                if key == Key.setups { self?.widgetSetupCache.invalidate() }
                 self?.applySettings()
                 self?.publishWidget()
                 self?.menuBar?.sync()
@@ -158,6 +170,7 @@ final class NidusModel: NSObject, ObservableObject {
             .store(in: &subscriptions)
 
         controller.start()
+        protectionFeedback.start(model: self)
         // The update this copy came from is done; a strict session it
         // carried on is watched again.
         if !Demo.isActive { UpdatePermit.clear(in: host.environment.containerDirectory) }
@@ -186,6 +199,7 @@ final class NidusModel: NSObject, ObservableObject {
     }
 
     func deactivate() {
+        protectionFeedback.stop()
         brickCompanion.deactivate()
         dismissBrickOffer()
         publishFocus(quitting: true)
@@ -208,6 +222,8 @@ final class NidusModel: NSObject, ObservableObject {
         subscriptions.removeAll()
         host?.hud.dismiss(id: Self.blockedHUDID)
         host = nil
+        clearPresentationCaches()
+        widgetSetupCache.invalidate()
     }
 
     // MARK: Session commands
@@ -225,11 +241,11 @@ final class NidusModel: NSObject, ObservableObject {
         let clause = GoalLengthClause.split(goalDraft, now: now)
         // An end time that is not the saved plan's (this start's "until", the
         // next meeting) is no plan to remember.
-        var oneOff = clause == nil && (pendingUntil(now: now) != nil || endsAtNextMeeting)
+        var oneOff = setupDraft != nil || (clause == nil && (pendingUntil(now: now) != nil || endsAtNextMeeting))
         if case .until? = clause?.length { oneOff = true }
         // The popover's own categories and mode are what this Start uses.
-        let plan = PlanSignature(minutes: clause?.minutes(now: now) ?? durationMinutes,
-                                 categoryIDs: selectedCategories.map(\.id), mode: mode)
+        let plan = PlanSignature(minutes: clause?.minutes(now: now) ?? composerMinutes,
+                                 categoryIDs: composerCategories.map(\.id), mode: composerMode)
         if startSession(popoverRequest(now: now)) {
             if !oneOff { notePlanStarted(plan, now: now) }
         } else if canStartNew {
@@ -244,9 +260,7 @@ final class NidusModel: NSObject, ObservableObject {
     /// length, and the goal kept is without it (GoalLengthClause.swift). The
     /// saved length is not changed.
     func popoverRequest(now: Date = Date()) -> SessionRequest {
-        let clause = GoalLengthClause.split(goalDraft, now: now)
-        return SessionRequest(goal: clause?.goal ?? goalDraft, minutes: clause?.minutes(now: now),
-                              projectID: selectedProjectID)
+        makeComposerRequest(now: now)
     }
 
     /// Starts a session from anywhere: the popover, a nidus:// link, a
@@ -282,7 +296,7 @@ final class NidusModel: NSObject, ObservableObject {
     func resolveSession(_ request: SessionRequest) -> ResolvedSession? {
         request.resolved(with: startDefaults) {
             let meeting = meetings.minutesToChosenMeeting()
-            return (meeting ?? minutesForNextStart(), meeting != nil)
+            return (meeting ?? fallbackMinutes(for: request), meeting != nil)
         }
     }
 
@@ -531,6 +545,7 @@ final class NidusModel: NSObject, ObservableObject {
         defer {
             publishFocus()
             keepStrictSessionAlive()
+            protectionFeedback.refresh()
         }
         if isActive || isOnBreak { dismissBrickOffer() }
         dropSnoozeWaitIfMoot()
@@ -542,7 +557,6 @@ final class NidusModel: NSObject, ObservableObject {
                 guard self?.isActive == true else { return }
                 self?.offerToBlockUncoveredBrowsers()
             }
-            warnedBrowsers.removeAll()
             // A sequence's next block that began the moment the last one
             // ended leaves that block's card, question and next step up.
             let straightAfterEnd = nextBlockFollowedEnd
@@ -559,6 +573,8 @@ final class NidusModel: NSObject, ObservableObject {
             // A one-off belongs to the Start it was set for, however it came.
             untilTarget = nil
             customLengthDraft = nil
+            setupDraft = nil
+            selectedResumeNoteID = nil
             host?.hud.dismiss(id: Self.breakHUDID)
             // Last week's recap can wait; this session is now.
             host?.hud.dismiss(id: Self.recapHUDID)
@@ -661,6 +677,7 @@ extension NidusModel {
         static let recordsHistory = "recordsHistory"
         static let welcomed = "welcomed"
         static let menuBarShowsTime = "menuBarShowsTime"
+        static let showsBotanicalStamps = "showsBotanicalStamps"
         static let recentGoals = "recentGoals"
         static let strictMode = "strictMode"
         static let breakMinutes = "breakMinutes"
@@ -777,6 +794,13 @@ extension NidusModel {
         set { setPreference(newValue, Key.menuBarShowsTime); menuBar?.sync() }
     }
 
+    /// Optional, static marks for the past seven days. Uses recorded history
+    /// only; turning history off also hides the marks.
+    var showsBotanicalStamps: Bool {
+        get { preference(Key.showsBotanicalStamps, default: false) }
+        set { setPreference(newValue, Key.showsBotanicalStamps) }
+    }
+
     /// The last few goals, newest first, offered in the goal field. Kept only
     /// while sessions are recorded, and cleared with the history.
     var recentGoals: [String] {
@@ -859,9 +883,23 @@ extension NidusModel {
         controller?.breakLength = TimeInterval(breakMinutes * 60)
     }
 
-    /// The stats, worked out fresh each time the page draws.
+    /// Recount only when history or its calendar day changes, not each tick.
     var stats: FocusStats {
-        FocusStats(sessions: controller?.history.sessions ?? [])
+        historySummaryCache.stats(version: controller?.historyVersion ?? 0,
+                                  sessions: controller?.history.sessions ?? [])
+    }
+
+    var botanicalWeek: FocusBotanicalWeek? {
+        guard showsBotanicalStamps, recordsHistory else { return nil }
+        let week = historySummaryCache.botanicalWeek(version: controller?.historyVersion ?? 0,
+                                                     sessions: controller?.history.sessions ?? [])
+        return week.isEmpty ? nil : week
+    }
+
+    /// Settings releases its view trees on close; release their aggregates
+    /// too, including any recent/unfinished session values they reference.
+    func clearPresentationCaches() {
+        historySummaryCache = HistorySummaryCache()
     }
 
     /// The history, the goals remembered from it, and the resume notes (which
@@ -888,19 +926,13 @@ extension NidusModel {
 
     // MARK: Browsers
 
-    /// Mid-session, the first time a running browser refuses Focus, say so.
+    /// Permission changes update the same acknowledged protection feedback.
     private func browserAccessDidChange(_ access: [String: AppleEventError]) {
         for browser in BrowserProfile.known {
             let state = access[browser.bundleID].map { "\($0)" } ?? "ok or not running"
             host?.log.notice("Browser \(browser.bundleID, privacy: .public): \(state, privacy: .public)")
         }
-        guard isActive else { return }
-        for browser in BrowserProfile.known where !warnedBrowsers.contains(browser.bundleID) {
-            guard let error = access[browser.bundleID], error == .notPermitted || error == .needsConsent else { continue }
-            warnedBrowsers.insert(browser.bundleID)
-            presentBrowserAccessHUD(for: browser, needsConsent: error == .needsConsent)
-            return
-        }
+        protectionFeedback.refresh()
     }
 
     /// Starting a session is a click, so it is the moment to ask macOS, once,

@@ -273,6 +273,7 @@ final class FocusController: ObservableObject {
         enforcing = nil
         engine.checkpoint()
         engine.onEvent = { _ in }
+        history.flush()
     }
 
     func endSnooze(_ item: String) { engine.endSnooze(item) }

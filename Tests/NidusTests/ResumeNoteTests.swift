@@ -265,6 +265,7 @@ struct NextStepTests {
         let notYet = Self.entry(finished: false), yes = Self.entry(finished: true, goal: "Other")
         history.append(notYet)
         history.append(yes)
+        history.flush()
         let before = try Data(contentsOf: historyURL)
 
         let step = Self.session(store: store, entry: notYet)

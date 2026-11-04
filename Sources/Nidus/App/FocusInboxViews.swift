@@ -85,6 +85,18 @@ extension NidusModel {
     func deleteInboxItem(_ id: InboxItem.ID) { inbox?.delete(id) }
     func clearInbox() { inbox?.clear() }
 
+    /// Bring the thought back to the composer. The inbox entry and any link
+    /// stay untouched; Start remains a separate, guarded action.
+    @discardableResult
+    func prepareInboxGoal(_ id: InboxItem.ID) -> Bool {
+        guard canStartNew, let item = inbox?.item(id), !item.isCompleted else { return false }
+        goalDraft = item.text
+        startProblem = nil
+        composerFocusRequest += 1
+        showPopover()
+        return true
+    }
+
     /// How many were saved since a session began, for the wrap-up card.
     func savedForLater(since start: Date) -> Int { inbox?.count(since: start) ?? 0 }
 
@@ -102,6 +114,7 @@ extension NidusModel {
 /// was. Neither button changes the session.
 struct FocusInboxRow: View {
     @ObservedObject var model: NidusModel
+    @State private var showsInbox = false
 
     static func isVisible(isActive: Bool, openCount: Int) -> Bool { isActive || openCount > 0 }
 
@@ -118,10 +131,13 @@ struct FocusInboxRow: View {
                 }
                 Spacer(minLength: NidusSpacing.sm)
                 if model.inboxOpenCount > 0 {
-                    Button(action: model.openInbox) {
+                    Button { showsInbox = true } label: {
                         Label("Inbox \u{00B7} \(model.inboxOpenCount)", systemImage: NidusSymbols.inbox)
                     }
-                    .help("Open your inbox in Settings")
+                    .popover(isPresented: $showsInbox) {
+                        QuickInboxView(model: model) { showsInbox = false }
+                    }
+                    .help("Review your latest saved thoughts")
                     .accessibilityLabel("Inbox, \(model.inboxOpenCount) saved for later")
                 }
             }
@@ -131,6 +147,58 @@ struct FocusInboxRow: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+/// A bounded, on-demand view. The complete inbox and its settings remain one
+/// click away; this surface owns no store, timer, preview or background work.
+struct QuickInboxView: View {
+    @ObservedObject var model: NidusModel
+    var dismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: NidusSpacing.md) {
+            Overline("Saved for later")
+            let items = Array((model.inbox?.openItems ?? []).prefix(5))
+            if items.isEmpty {
+                Text("Nothing waiting. A little more room to think.")
+                    .font(.system(size: 13))
+                    .foregroundStyle(Solanum.inkMuted)
+            }
+            ForEach(items) { item in
+                HStack(alignment: .top, spacing: NidusSpacing.sm) {
+                    Button { model.setInboxItem(item.id, completed: true) } label: {
+                        Image(systemName: "circle")
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Mark as done: \(item.text)")
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(verbatim: item.text).lineLimit(2)
+                        HStack(spacing: NidusSpacing.md) {
+                            Button("Use as next goal") {
+                                if model.prepareInboxGoal(item.id) { dismiss() }
+                            }
+                            .disabled(!model.canStartNew)
+                            .help(model.canStartNew ? "Prepare a goal; Start is still up to you" : "Available after this session or break")
+                            if item.url != nil {
+                                Button("Open link") { model.openInboxItem(item.id) }
+                            }
+                        }
+                        .buttonStyle(.borderless)
+                        .font(.system(size: 11))
+                    }
+                }
+                .font(.system(size: 13))
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            Divider()
+            Button("View all in inbox") { dismiss(); model.openInbox() }
+                .buttonStyle(.borderless)
+        }
+        .padding(16)
+        .frame(width: 300)
+        .foregroundStyle(Solanum.ink)
+        .background(Solanum.page)
     }
 }
 
@@ -311,7 +379,9 @@ struct FocusInboxPage: View {
         InboxItemRow(item: item,
                      toggle: { model.setInboxItem(item.id, completed: !item.isCompleted) },
                      open: { model.openInboxItem(item.id) },
-                     delete: { model.deleteInboxItem(item.id) })
+                     delete: { model.deleteInboxItem(item.id) },
+                     prepareGoal: item.isCompleted ? nil : { _ = model.prepareInboxGoal(item.id) },
+                     canPrepareGoal: model.canStartNew)
     }
 }
 
@@ -323,6 +393,8 @@ struct InboxItemRow: View {
     let toggle: () -> Void
     let open: () -> Void
     let delete: () -> Void
+    var prepareGoal: (() -> Void)? = nil
+    var canPrepareGoal = true
 
     var body: some View {
         HStack(alignment: .top, spacing: NidusSpacing.md) {
@@ -355,6 +427,14 @@ struct InboxItemRow: View {
                     .foregroundStyle(.tertiary)
             }
             Spacer(minLength: NidusSpacing.md)
+            if let prepareGoal {
+                Button("Use as goal", action: prepareGoal)
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .disabled(!canPrepareGoal)
+                    .help(canPrepareGoal ? "Prepare this thought as your next focus goal" : "Available after this session or break")
+                    .accessibilityLabel("Use as next goal: \(item.text)")
+            }
             if item.url != nil {
                 Button("Open", action: open)
                     .buttonStyle(.bordered)
@@ -371,6 +451,12 @@ struct InboxItemRow: View {
             .buttonStyle(.plain)
             .help("Delete")
             .accessibilityLabel("Delete: \(item.text)")
+        }
+        .contextMenu {
+            if let prepareGoal {
+                Button("Use as next goal", action: prepareGoal)
+                    .disabled(!canPrepareGoal)
+            }
         }
         .accessibilityElement(children: .contain)
     }

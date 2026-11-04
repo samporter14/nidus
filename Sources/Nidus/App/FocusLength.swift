@@ -159,7 +159,7 @@ extension NidusModel {
         if endsAtNextMeeting, let meeting = nextMeeting {
             return "Until \(FocusFormat.clockTime(meeting.start))"
         }
-        return FocusLength.label(durationMinutes: durationMinutes, until: untilTarget, now: Date())
+        return FocusLength.label(durationMinutes: composerMinutes, until: untilTarget, now: Date())
     }
 
     /// The menu and the preview must agree when the goal supplies a length.
@@ -168,7 +168,7 @@ extension NidusModel {
             if case .minutes(let chosen) = clause.length { return chosen == minutes }
             return false
         }
-        return pendingUntil() == nil && !endsAtNextMeeting && durationMinutes == minutes
+        return pendingUntil() == nil && !endsAtNextMeeting && composerMinutes == minutes
     }
 
     /// Choosing a length explicitly replaces a trailing length in the goal;
@@ -176,7 +176,7 @@ extension NidusModel {
     func choosePopoverLength(_ minutes: Int, now: Date = Date()) {
         clearGoalLengthClause(now: now)
         meetings.isChosen = false
-        durationMinutes = minutes
+        composerMinutes = minutes
     }
 
     func clearGoalLengthClause(now: Date = Date()) {
@@ -195,16 +195,18 @@ extension NidusModel {
         if let clause = GoalLengthClause.split(goalDraft, now: now) {
             switch clause.length {
             case .minutes(let minutes):
-                return .make(length: minutes, breakMinutes: breakMinutes)
+                return .make(length: minutes, breakMinutes: composerBreakMinutes)
             case .until(let target):
-                return .make(length: 0, until: FocusFormat.clockTime(target), breakMinutes: breakMinutes)
+                return .make(length: 0, until: FocusFormat.clockTime(target), breakMinutes: composerBreakMinutes,
+                             fixedEnd: popoverRequest(now: now).hasFixedEnd)
             }
         }
         if let target = pendingUntil(now: now) {
-            return .make(length: 0, until: FocusFormat.clockTime(target), breakMinutes: breakMinutes)
+            return .make(length: 0, until: FocusFormat.clockTime(target), breakMinutes: composerBreakMinutes,
+                         fixedEnd: popoverRequest(now: now).hasFixedEnd)
         }
         // A session that ends where the next meeting starts has no break.
-        return .make(length: durationMinutes, breakMinutes: breakMinutes, fixedEnd: endsAtNextMeeting)
+        return .make(length: composerMinutes, breakMinutes: composerBreakMinutes, fixedEnd: endsAtNextMeeting)
     }
 
     func openCustomLength() {

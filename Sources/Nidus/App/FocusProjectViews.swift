@@ -69,7 +69,7 @@ struct FocusProjectPickerRow: View {
     var body: some View {
         if model.offersProjectPicker {
             HStack(spacing: NidusSpacing.sm) {
-                FocusProjectPicker(projects: model.projects, selection: model.binding(\.selectedProjectID),
+                FocusProjectPicker(projects: model.projects, selection: model.binding(\.composerProjectID),
                                    edit: model.openProjects)
                 Spacer(minLength: 0)
             }
@@ -79,13 +79,36 @@ struct FocusProjectPickerRow: View {
 
 // MARK: - Pick up where you left off
 
-/// The newest note nobody has dismissed, as one row in the idle popover.
+/// One suggested note and an on-demand chooser for the others, without making
+/// the user dismiss today's work to reach yesterday's.
 struct ResumePopoverRow: View {
     @ObservedObject var model: NidusModel
 
     var body: some View {
-        if let note = model.newestResumeNote {
-            ResumeNoteRow(model: model, note: note, compact: true)
+        let choices = model.resumeChoices
+        if let note = ResumeChoices.suggested(in: choices, selectedID: model.selectedResumeNoteID) {
+            VStack(alignment: .leading, spacing: NidusSpacing.xs) {
+                ResumeNoteRow(model: model, note: note, compact: true)
+                if choices.count > 1 {
+                    Menu("Other next steps…") {
+                        ForEach(choices) { choice in
+                            Button {
+                                model.selectedResumeNoteID = choice.id
+                            } label: {
+                                let project = choice.projectLabel(in: model.projects)?.text ?? "No project"
+                                Text(verbatim: "\(choice.headline) · \(project) · \(choice.createdAt.formatted(.dateTime.month(.abbreviated).day()))")
+                            }
+                            .help(choice.headline)
+                        }
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .font(.system(size: 12))
+                    .foregroundStyle(Solanum.clayText)
+                    .padding(.leading, NidusSpacing.md)
+                    .accessibilityHint("Choose which note to show. No session starts until you press Resume.")
+                }
+            }
         }
     }
 }

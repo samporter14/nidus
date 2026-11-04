@@ -30,6 +30,7 @@ final class SettingsWindowController: NSObject, NSWindowDelegate {
         closing.contentViewController = nil
         tabController = nil
         window = nil
+        model?.clearPresentationCaches()
     }
 
     static let contentSize = NSSize(width: 640, height: 600)

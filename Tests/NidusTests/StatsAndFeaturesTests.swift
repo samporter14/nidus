@@ -221,8 +221,10 @@ struct HistoryFileTests {
         let history = FocusHistory(url: url)
         history.append(StatsTests.entry(-1, minutes: 25))
         history.append(StatsTests.entry(-2, minutes: 45))
+        history.flush()
         #expect(FocusHistory(url: url).sessions.count == 2)
         history.clear()
+        history.flush()
         #expect(FocusHistory(url: url).sessions.isEmpty)
     }
 }

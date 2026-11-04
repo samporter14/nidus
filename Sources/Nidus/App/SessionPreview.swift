@@ -63,9 +63,10 @@ extension NidusModel {
         // at the moment of committing, as it always has.
         let meeting = meetings.isChosen ? meetings.offeredMinutes(now: now) : nil
         guard let resolved = request.resolved(with: startDefaults, length: {
-            (meeting ?? minutesForNextStart(now: now), meeting != nil)
+            (meeting ?? fallbackMinutes(for: request, now: now), meeting != nil)
         }) else { return nil }
-        return SessionPreview(plan: resolved.plan, categoryNames: selectedCategories.filter { !$0.isEmpty }.map(\.name))
+        let ids = request.categoryIDs ?? selectedCategoryIDs
+        return SessionPreview(plan: resolved.plan, categoryNames: categories.filter { ids.contains($0.id) && !$0.isEmpty }.map(\.name))
     }
 }
 

@@ -234,6 +234,10 @@ struct FocusGeneralPage: View {
                                  subtitle: "Shows the countdown beside the brain while a session runs.",
                                  isOn: model.binding(\.menuBarShowsTime))
                     .id("menu-bar-time")
+                NidusToggleRow(title: "Botanical stamps beside Today",
+                                 subtitle: "A small leaf or flower for each of the past seven days with a recorded session. Hidden when session history is off.",
+                                 isOn: model.binding(\.showsBotanicalStamps))
+                    .id("botanical-stamps")
                 NidusToggleRow(title: "Open at login",
                                  subtitle: "A session left running carries on after a restart.",
                                  isOn: Binding(get: { opensAtLogin },

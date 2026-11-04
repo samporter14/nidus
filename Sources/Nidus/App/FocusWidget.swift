@@ -38,9 +38,10 @@ struct FocusWidget: View {
             // declared height does not have.
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .onChange(of: model.selectedCategoryIDs) { model.startProblem = nil }
+        .onChange(of: model.composerCategoryIDs) { model.startProblem = nil }
         .onChange(of: model.categories) { model.startProblem = nil }
-        .onChange(of: model.mode) { model.startProblem = nil }
+        .onChange(of: model.composerMode) { model.startProblem = nil }
+        .onChange(of: model.composerFocusRequest) { _, _ in goalFocused = true }
     }
 
     // MARK: Header
@@ -49,17 +50,11 @@ struct FocusWidget: View {
     /// sans title, so nothing changes shape when a session starts or ends.
     private var header: some View {
         HStack(spacing: 11) {
-            Image(nsImage: FocusGlyph.image(.brain, pointSize: 17))
-                .renderingMode(.template)
-                .foregroundStyle(model.isPaused || model.isOnBreak ? Solanum.inkMuted : Solanum.clayText)
-                .frame(width: 35, height: 35)
-                .background(Solanum.clay.opacity(0.12), in: .rect(cornerRadius: 11))
-                .overlay(RoundedRectangle(cornerRadius: 11).strokeBorder(Solanum.clay.opacity(0.22)))
-                .accessibilityHidden(true)
+            FocusHeaderGlyph(isOnBreak: model.isOnBreak, isPaused: model.isPaused)
             Text(stateWord)
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(Solanum.ink)
-            if model.isStrict || (model.strictMode && !model.isActive && !model.isOnBreak) {
+            if model.isStrict || (model.composerStrict && !model.isActive && !model.isOnBreak) {
                 Image(systemName: "lock.fill")
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.tertiary)
@@ -167,6 +162,7 @@ struct FocusWidget: View {
 
             VStack(alignment: .leading, spacing: 11) {
                 Overline("Session plan")
+                SetupDraftRow(model: model)
                 HStack(spacing: NidusSpacing.sm) {
                     if model.customLengthDraft == nil { durationMenu } else { customLengthField }
                     categoryMenu
@@ -198,21 +194,45 @@ struct FocusWidget: View {
                 if isOpen { focusCustomLengthField() } else { goalFocused = true }
             }
 
-            if todayCache.line(for: model) != nil || nudge == .inbox || nudge == .saveSetup {
-                HStack(spacing: NidusSpacing.sm) {
-                    if let line = todayCache.line(for: model) {
-                        Text(verbatim: line)
-                            .font(.system(size: 12))
-                            .foregroundStyle(Solanum.inkMuted)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if nudge == .inbox { FocusInboxRow(model: model) }
-                    if nudge == .saveSetup { saveSetupSuggestion }
-                }
-                .padding(.horizontal, 2)
-            }
+            todayFooter
         }
+    }
+
+    @ViewBuilder private var todayFooter: some View {
+        let line = todayCache.line(for: model)
+        let week = model.botanicalWeek
+        if line != nil || week != nil || nudge == .inbox || nudge == .saveSetup {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NidusSpacing.sm) {
+                    todaySummary(line: line, week: week)
+                    Spacer(minLength: 0)
+                    footerNudge
+                }
+                VStack(alignment: .leading, spacing: NidusSpacing.xs) {
+                    todaySummary(line: line, week: week)
+                    footerNudge
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+    }
+
+    private func todaySummary(line: String?, week: FocusBotanicalWeek?) -> some View {
+        HStack(spacing: NidusSpacing.sm) {
+            if let text = line ?? (week == nil ? nil : "Today") {
+                Text(verbatim: text)
+                    .font(.system(size: 12))
+                    .foregroundStyle(Solanum.inkMuted)
+                    .lineLimit(1)
+            }
+            if let week { FocusBotanicalStampRow(week: week) }
+        }
+        .fixedSize(horizontal: true, vertical: false)
+    }
+
+    @ViewBuilder private var footerNudge: some View {
+        if nudge == .inbox { FocusInboxRow(model: model) }
+        if nudge == .saveSetup { saveSetupSuggestion }
     }
 
     /// The one nudge the idle popover shows now.
@@ -312,7 +332,7 @@ struct FocusWidget: View {
     private var startButton: some View {
         let title = model.startTitle()
         let startsOnReturn = model.customLengthDraft == nil
-        let blocksNothing = model.selectedCategories.allSatisfy(\.isEmpty) && model.mode == .block
+        let blocksNothing = model.composerCategories.allSatisfy(\.isEmpty) && model.composerMode == .block
         return Button(action: start) {
             HStack {
                 Spacer(minLength: 0)
@@ -369,10 +389,10 @@ struct FocusWidget: View {
                     get: { true },
                     set: { if !$0 { model.untilTarget = nil } }
                 ))
-            } else if !NidusModel.durationChoices.contains(model.durationMinutes) {
+            } else if !NidusModel.durationChoices.contains(model.composerMinutes) {
                 // A saved length that is not one of the above: typed here
                 // earlier, so listed and checked.
-                Toggle(FocusFormat.duration(minutes: model.durationMinutes), isOn: .constant(!model.endsAtNextMeeting))
+                Toggle(FocusFormat.duration(minutes: model.composerMinutes), isOn: .constant(!model.endsAtNextMeeting))
             }
             Button("Custom…", action: model.openCustomLength)
         } label: {
@@ -466,8 +486,8 @@ struct FocusWidget: View {
         Menu {
             ForEach(model.categories) { category in
                 Toggle(isOn: Binding(
-                    get: { model.isSelected(category) },
-                    set: { _ in model.toggleSelection(category) }
+                    get: { model.isComposerCategorySelected(category) },
+                    set: { _ in model.toggleComposerCategory(category) }
                 )) {
                     Label(category.name, systemImage: category.symbol)
                 }
@@ -476,15 +496,15 @@ struct FocusWidget: View {
             Button("Edit categories…") { model.openSettings(.blocking) }
         } label: {
             menuLabel(
-                model.mode == .allow ? "Only \(model.selectionSummary)" : model.selectionSummary,
-                symbol: model.mode == .allow ? "checkmark.shield" : "nosign"
+                model.composerMode == .allow ? "Only \(model.composerSelectionSummary)" : model.composerSelectionSummary,
+                symbol: model.composerMode == .allow ? "checkmark.shield" : "nosign"
             )
         }
         .menuStyle(.button)
         .buttonStyle(.bordered)
         .controlSize(.large)
         .fixedSize(horizontal: false, vertical: true)
-        .accessibilityLabel(model.mode == .allow ? "Allowed categories" : "Blocked categories")
+        .accessibilityLabel(model.composerMode == .allow ? "Allowed categories" : "Blocked categories")
     }
 
     private func menuLabel(_ title: String, symbol: String) -> some View {
@@ -513,7 +533,7 @@ struct FocusWidget: View {
             // What is covered right now; a gap (a browser Nidus may not
             // control, an app that wouldn't quit) stays here all session.
             if let protection = model.protectionStatus {
-                ProtectionStatusLine(status: protection)
+                ProtectionStatusLine(model: model, status: protection)
             }
             // "Save a thought" while it runs, and "Inbox · 3" when items wait.
             FocusInboxRow(model: model)

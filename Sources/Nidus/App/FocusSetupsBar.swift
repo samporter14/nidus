@@ -106,7 +106,9 @@ struct FocusSetupsBar: View {
         .help(help(for: setup, problem: problem))
         .accessibilityLabel("Start \(setup.displayName)")
         .accessibilityHint(accessibilityHint(for: setup, problem: problem))
+        .accessibilityAction(named: "Use as starting point") { model.prepareSetup(setup) }
         .contextMenu {
+            Button("Use as starting point…") { model.prepareSetup(setup) }
             Button("Edit…") { model.openSetupPage(setup) }
             Button("Copy Launch Link") { model.copyLaunchLink(for: setup) }
         }
@@ -116,6 +118,7 @@ struct FocusSetupsBar: View {
         if let problem { return "\(problem.reason). Edit it to choose again." }
         return "\(setup.displayName): \(setup.planSummary(categories: model.categories))"
             + (shortcutNumber(for: setup).map { " (\u{2318}\($0))" } ?? "")
+            + ". Right-click to adjust it for one session."
     }
 
     private func accessibilityHint(for setup: FocusSetup, problem: FocusSetup.Problem?) -> String {
@@ -137,6 +140,11 @@ struct FocusSetupsBar: View {
                 .help(help(for: setup, problem: problem))
             }
             Divider()
+            Menu("Use as starting point…") {
+                ForEach(model.setups) { setup in
+                    Button(setup.displayName) { model.prepareSetup(setup) }
+                }
+            }
             Button("Edit setups…", action: model.openSetupsPage)
         } label: {
             Text("More")

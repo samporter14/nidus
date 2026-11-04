@@ -339,7 +339,7 @@ extension NidusModel {
         let now = Date()
         let clause = GoalLengthClause.split(goalDraft, now: now)
         var request = setup.startRequest(categories: current, goalDraft: clause?.goal ?? goalDraft,
-                                         popoverProject: selectedProjectID, projects: projects)
+                                         popoverProject: composerProjectID, projects: projects)
         if let clause { request.minutes = clause.minutes(now: now) }
         return startSession(request)
     }
@@ -365,8 +365,16 @@ extension NidusModel {
     /// the user to set, on the page this opens.
     @discardableResult
     func addSetupFromCurrentChoices() -> FocusSetup {
-        let setup = FocusSetup.saving(minutes: durationMinutes, selectedIDs: selectedCategoryIDs,
-                                      mode: mode, strict: strictMode, categories: categories)
+        var setup = setupDraft?.source ?? FocusSetup.saving(minutes: composerMinutes, selectedIDs: composerCategoryIDs,
+                                                          mode: composerMode, strict: composerStrict, categories: categories)
+        if setupDraft != nil {
+            setup.id = UUID()
+            setup.name = FocusSetup.defaultName
+            setup.minutes = composerMinutes
+            setup.categoryIDs = composerCategoryIDs
+            setup.project = composerProjectID.map(SetupProject.project) ?? .noProject
+            setup.goal = nil
+        }
         setups.append(setup)
         openSetupPage(setup)
         return setup

@@ -52,6 +52,7 @@ extension RenderSurfaces {
             model.settingsJump.open(entry)
             await shootWindow(settings, page: "general", name: "jump-to-plaque", in: directory)
         }
+        await renderPerformancePolish(model: model, in: directory)
         settings.window?.close()
         print("SETTINGS_RELEASED \(settings.window == nil)")
     }
