@@ -98,3 +98,28 @@ extension RenderSurfaces {
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
     }
 }
+
+extension RenderSurfaces {
+    /// The popover's two pieces, each state, in light and dark. Empty and off
+    /// come first: they need a day with nothing counted.
+    static func renderPopoverSurfaces(model: NidusModel, in directory: URL) async {
+        // The offscreen window has no popover material, so each theme gets
+        // its window color behind the popover.
+        func popover(moreOpen: Bool = false) -> some View {
+            NidusPopover(model: model, moreOpen: moreOpen).background(Color(nsColor: .windowBackgroundColor))
+        }
+        model.runHarnessScenario("idle")
+        model.goalDraft = ""
+        await shoot(popover(), width: 440, name: "idle-empty", in: directory)
+        model.activityTrackingEnabled = false
+        await shoot(popover(), width: 440, name: "idle-off", in: directory)
+        model.activityTrackingEnabled = true
+        model.seedActivityPreview()
+        await shoot(popover(), width: 440, name: "idle-data", in: directory)
+        await shoot(popover(moreOpen: true), width: 440, name: "idle-more-open", in: directory)
+        model.runHarnessScenario("running")
+        await shoot(popover(), width: 440, name: "running", in: directory)
+        model.runHarnessScenario("break")
+        await shoot(popover(), width: 440, name: "break", in: directory)
+    }
+}

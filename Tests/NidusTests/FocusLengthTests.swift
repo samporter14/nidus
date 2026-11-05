@@ -131,30 +131,6 @@ struct FocusRunningLineTests {
     }
 }
 
-struct FocusTodayLineTests {
-    @Test func todayAndAStreak() {
-        #expect(FocusFormat.todayLine(focused: 70 * 60, streak: 3) == "Today 1 hr 10 min · 3-day streak")
-        #expect(FocusFormat.todayLine(focused: 25 * 60, streak: 2) == "Today 25 min · 2-day streak")
-    }
-
-    @Test func aStreakOfOneIsNotNamed() {
-        #expect(FocusFormat.todayLine(focused: 25 * 60, streak: 1) == "Today 25 min")
-        #expect(FocusFormat.todayLine(focused: 25 * 60, streak: 0) == "Today 25 min")
-    }
-
-    @Test func anEmptyDayShowsOnlyAStreakWaitingToBeCarriedOn() {
-        #expect(FocusFormat.todayLine(focused: 0, streak: 3) == "No focus yet today · 3-day streak")
-        #expect(FocusFormat.todayLine(focused: 0, streak: 2) == "No focus yet today · 2-day streak")
-        #expect(FocusFormat.todayLine(focused: 0, streak: 1) == nil, "yesterday alone is not a streak")
-        #expect(FocusFormat.todayLine(focused: 0, streak: 0) == nil, "a first run is not greeted with a zero")
-    }
-
-    @Test func aMinuteIsTheLeastItSays() {
-        #expect(FocusFormat.todayLine(focused: 20, streak: 0) == "Today 1 min", "never Today 0 min, nor Today Open-ended")
-        #expect(FocusFormat.todayLine(focused: 90, streak: 0) == "Today 2 min")
-    }
-}
-
 struct FocusedTodayTests {
     typealias S = StatsTests
     func stats(_ sessions: [SessionEntry], now: Date = S.now, weeks: Int = 26) -> FocusStats {
@@ -191,13 +167,5 @@ struct FocusedTodayTests {
         let tomorrow = S.calendar.date(byAdding: .day, value: 1, to: S.now)!
         #expect(stats(sessions, now: tomorrow).focusedToday == 0)
         #expect(stats(sessions, now: tomorrow).currentStreak == 1, "yesterday's focus keeps the streak alive")
-    }
-
-    @Test func whatTheFooterSaysComesFromTheStats() {
-        let sessions = [S.entry(-2, minutes: 25), S.entry(-1, minutes: 25), S.entry(0, minutes: 45), S.entry(0, minutes: 25)]
-        let s = stats(sessions, weeks: 1)
-        #expect(FocusFormat.todayLine(focused: s.focusedToday, streak: s.currentStreak) == "Today 1 hr 10 min · 3-day streak")
-        let waiting = stats(Array(sessions.prefix(2)), weeks: 1)
-        #expect(FocusFormat.todayLine(focused: waiting.focusedToday, streak: waiting.currentStreak) == "No focus yet today · 2-day streak")
     }
 }

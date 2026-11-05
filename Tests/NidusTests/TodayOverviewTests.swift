@@ -40,6 +40,13 @@ import Testing
         #expect(today.focused == 3600)
     }
 
+    @Test func theTotalsLineNamesBothTimesAndDropsAZeroOne() {
+        let both = overview(log([stretch(9, 10)]), sessions: [session(9, 9.5)])
+        #expect(TodayPopoverPiece.totals(both) == "\(ActivityDuration.string(3600)) \u{00B7} \(ActivityDuration.string(1800)) in focus")
+        let none = overview(log([stretch(9, 10)]))
+        #expect(TodayPopoverPiece.totals(none) == ActivityDuration.string(3600))
+    }
+
     @Test func listsKeepThreeRowsLargestFirst() {
         let stretches = [stretch(8, 8.1, app: "A"), stretch(8.1, 8.5, app: "B"), stretch(8.5, 9.5, app: "C"),
                          stretch(9.5, 11.5, app: "D"), stretch(11.5, 12, app: "E")]

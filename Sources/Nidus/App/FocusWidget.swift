@@ -20,9 +20,15 @@ struct FocusWidget: View {
     @FocusState private var goalFocused: Bool
     @FocusState private var phraseFocused: Bool
     @FocusState private var customLengthFocused: Bool
-    @State private var todayCache = TodayLineCache()
-    @State private var allDayLine: String?
+    /// The idle popover's More section; closed on every open.
+    @State private var moreOpen: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     static let strictEndPhrase = "stop early"
+
+    init(model: NidusModel, moreOpen: Bool = false) {
+        self.model = model
+        _moreOpen = State(initialValue: moreOpen)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: NidusSpacing.sm) {
@@ -100,137 +106,172 @@ struct FocusWidget: View {
 
     // MARK: Idle
 
-    /// The goal, then the choices and Start, then a quiet line of today. It
-    /// has no fixed height: whatever is added below the goal moves the rest
-    /// down, and the popover follows its content.
+    /// A small starter: the goal, the length (and setups), Start, and More.
+    /// What is rarely changed waits behind More, closed each time the popover
+    /// opens. The popover follows its content; nothing here has a fixed height.
     private var idle: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // One nudge at a time: the most urgent, nothing otherwise. When
-            // it is dismissed or handled the next one comes up.
+        VStack(alignment: .leading, spacing: 10) {
+            // A phone's request answers an event, so it is never hidden.
             if nudge == .brick { BrickPopoverRow(model: model) }
-            if nudge == .resume { ResumePopoverRow(model: model) }
-
-            VStack(alignment: .leading, spacing: 0) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Overline("Your focus")
-                    HStack(spacing: NidusSpacing.sm) {
-                        TextField("What are you working on?", text: $model.goalDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 17, weight: .medium))
-                            .foregroundStyle(Solanum.ink)
-                            .focused($goalFocused)
-                            .onSubmit(start)
-                            .onKeyPress(.upArrow) { stepRecentGoal(1) }
-                            .onKeyPress(.downArrow) { stepRecentGoal(-1) }
-                            .accessibilityLabel("Goal")
-                        if !model.recentGoals.isEmpty {
-                            recentGoalsMenu
-                        }
-                    }
-                    .frame(minHeight: 33)
-                    if let clause = GoalLengthClause.split(model.goalDraft) { goalLengthChip(clause) }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 15)
-                .padding(.bottom, 14)
-
-                if model.offersProjectPicker || FocusSetupsBar.isVisible(model: model) {
-                    Rectangle().fill(Solanum.hairline).frame(height: 1)
-                    VStack(alignment: .leading, spacing: 10) {
-                        if model.offersProjectPicker { FocusProjectPickerRow(model: model) }
-                        if FocusSetupsBar.isVisible(model: model) { FocusSetupsBar(model: model) }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
+            goalField
+            // Hiding "just this time" changes would surprise: always shown.
+            SetupDraftRow(model: model)
+            lengthRow
+            if let draft = model.customLengthDraft {
+                customLengthCaption(draft).font(.system(size: 12))
             }
-            .background {
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .fill(LinearGradient(colors: [Solanum.clay.opacity(0.10), Solanum.raised],
-                                         startPoint: .topLeading, endPoint: .bottomTrailing))
-            }
-            .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .strokeBorder(goalFocused ? Solanum.clayText.opacity(0.7) : Solanum.hairline,
-                              lineWidth: goalFocused ? 1.5 : 1))
-            .onAppear {
-                model.requestKeyboardFocus()
-                // The calendar is read only when someone is about to start.
-                model.refreshNextMeeting()
-                DispatchQueue.main.async {
-                    if model.customLengthDraft == nil { goalFocused = true } else { customLengthFocused = true }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 11) {
-                Overline("Session plan")
-                SetupDraftRow(model: model)
-                HStack(spacing: NidusSpacing.sm) {
-                    if model.customLengthDraft == nil { durationMenu } else { customLengthField }
-                    categoryMenu
-                    Spacer(minLength: 0)
-                }
-                if let draft = model.customLengthDraft { customLengthCaption(draft) }
-                Rectangle().fill(Solanum.hairline).frame(height: 1)
-                // While a custom length is being typed it is not committed;
-                // its own caption previews it until Return sets the choice.
-                if model.customLengthDraft == nil, let preview = model.sessionPreview() {
-                    SessionPreviewRow(preview: preview)
-                }
-                startButton
-                if let problem = model.startProblem {
-                    Label(problem, systemImage: "exclamationmark.circle")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Solanum.inkMuted)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel("Session did not start. " + problem)
-                }
-            }
-            .padding(15)
-            .background(Solanum.segmentWell, in: .rect(cornerRadius: 15))
-            .overlay(RoundedRectangle(cornerRadius: 15).strokeBorder(Solanum.hairline))
-            // Return in the field, a choice from the Length menu or Escape
-            // moves focus on: the field takes it when it opens, the goal
-            // gets it back when it closes.
-            .onChange(of: model.customLengthDraft != nil) { _, isOpen in
-                if isOpen { focusCustomLengthField() } else { goalFocused = true }
-            }
-
-            todayFooter
-        }
-        // Read when the popover opens; it costs no timer of its own.
-        .onAppear { allDayLine = model.allDayLine }
-    }
-
-    @ViewBuilder private var todayFooter: some View {
-        let line = allDayLine ?? todayCache.line(for: model)
-        let week = model.botanicalWeek
-        if line != nil || week != nil || nudge == .inbox || nudge == .saveSetup {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NidusSpacing.sm) {
-                    todaySummary(line: line, week: week)
-                    Spacer(minLength: 0)
-                    footerNudge
-                }
-                VStack(alignment: .leading, spacing: NidusSpacing.xs) {
-                    todaySummary(line: line, week: week)
-                    footerNudge
-                }
-            }
-            .padding(.horizontal, 2)
-        }
-    }
-
-    private func todaySummary(line: String?, week: FocusBotanicalWeek?) -> some View {
-        HStack(spacing: NidusSpacing.sm) {
-            if let text = line ?? (week == nil ? nil : "Today") {
-                Text(verbatim: text)
+            startRow
+            if let problem = model.startProblem {
+                Label(problem, systemImage: "exclamationmark.circle")
                     .font(.system(size: 12))
                     .foregroundStyle(Solanum.inkMuted)
-                    .lineLimit(1)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel("Session did not start. " + problem)
             }
-            if let week { FocusBotanicalStampRow(week: week) }
+            if moreOpen {
+                moreContent
+            } else {
+                blockingSummary
+            }
         }
-        .fixedSize(horizontal: true, vertical: false)
+        .onAppear {
+            model.requestKeyboardFocus()
+            // The calendar is read only when someone is about to start.
+            model.refreshNextMeeting()
+            DispatchQueue.main.async {
+                if model.customLengthDraft == nil { goalFocused = true } else { customLengthFocused = true }
+            }
+        }
+        // Return in the field, a choice from the Length menu or Escape
+        // moves focus on: the field takes it when it opens, the goal
+        // gets it back when it closes.
+        .onChange(of: model.customLengthDraft != nil) { _, isOpen in
+            if isOpen { focusCustomLengthField() } else { goalFocused = true }
+        }
+    }
+
+    private var goalField: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: NidusSpacing.sm) {
+                TextField("What are you working on?", text: $model.goalDraft)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(Solanum.ink)
+                    .focused($goalFocused)
+                    .onSubmit(start)
+                    .onKeyPress(.upArrow) { stepRecentGoal(1) }
+                    .onKeyPress(.downArrow) { stepRecentGoal(-1) }
+                    .accessibilityLabel("Goal")
+                if !model.recentGoals.isEmpty {
+                    recentGoalsMenu
+                }
+            }
+            .frame(minHeight: 30)
+            if let clause = GoalLengthClause.split(model.goalDraft) { goalLengthChip(clause) }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 6)
+        .background(Solanum.raised, in: .rect(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(goalFocused ? Solanum.clayText.opacity(0.7) : Solanum.hairline,
+                          lineWidth: goalFocused ? 1.5 : 1))
+    }
+
+    /// Length, then setups on the same line when they fit, under it when not.
+    @ViewBuilder private var lengthRow: some View {
+        if FocusSetupsBar.isVisible(model: model) {
+            ViewThatFits(in: .horizontal) {
+                HStack(spacing: NidusSpacing.sm) {
+                    lengthControl
+                    FocusSetupsBar(model: model)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    lengthControl
+                    FocusSetupsBar(model: model)
+                }
+            }
+        } else {
+            HStack(spacing: NidusSpacing.sm) {
+                lengthControl
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
+    @ViewBuilder private var lengthControl: some View {
+        if model.customLengthDraft == nil { durationMenu } else { customLengthField }
+    }
+
+    private var startRow: some View {
+        HStack(spacing: NidusSpacing.sm) {
+            startButton
+            moreButton
+        }
+    }
+
+    /// Something is waiting behind More: a note to pick up, the inbox, or
+    /// the offer to save a setup.
+    private var moreHasNudge: Bool { nudge == .resume || nudge == .inbox || nudge == .saveSetup }
+
+    private var moreButton: some View {
+        Button {
+            if reduceMotion { moreOpen.toggle() }
+            else { withAnimation(.easeInOut(duration: 0.18)) { moreOpen.toggle() } }
+        } label: {
+            HStack(spacing: 4) {
+                Text("More")
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .semibold))
+                    .rotationEffect(.degrees(moreOpen ? 180 : 0))
+            }
+            .frame(minHeight: 27)
+            .overlay(alignment: .topTrailing) {
+                if moreHasNudge && !moreOpen {
+                    Circle().fill(Solanum.clay).frame(width: 7, height: 7)
+                        .offset(x: 9, y: -3)
+                        .accessibilityHidden(true)
+                }
+            }
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.large)
+        .fixedSize()
+        .help(moreOpen ? "Hide categories, project and plan" : "Categories, project and plan")
+        .accessibilityLabel(moreHasNudge && !moreOpen ? "More options, something is waiting" : "More options")
+        .accessibilityValue(moreOpen ? "Expanded" : "Collapsed")
+    }
+
+    /// What Start will block, in one line, while the menu for it is hidden.
+    @ViewBuilder private var blockingSummary: some View {
+        let summary = model.composerSelectionSummary
+        Label(model.composerMode == .allow ? "Only \(summary) allowed" : "Blocks \(summary)",
+              systemImage: model.composerMode == .allow ? "checkmark.shield" : "nosign")
+            .font(.system(size: 11))
+            .foregroundStyle(Solanum.inkMuted)
+            .lineLimit(1)
+            .truncationMode(.tail)
+            .padding(.horizontal, 2)
+    }
+
+    private var moreContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: NidusSpacing.sm) {
+                categoryMenu
+                Spacer(minLength: 0)
+            }
+            if model.offersProjectPicker { FocusProjectPickerRow(model: model) }
+            // While a custom length is being typed it is not committed;
+            // its own caption previews it until Return sets the choice.
+            if model.customLengthDraft == nil, let preview = model.sessionPreview() {
+                SessionPreviewRow(preview: preview)
+            }
+            if nudge == .resume { ResumePopoverRow(model: model) }
+            footerNudge
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Solanum.segmentWell, in: .rect(cornerRadius: 12, style: .continuous))
+        .transition(.opacity)
     }
 
     @ViewBuilder private var footerNudge: some View {
@@ -775,30 +816,6 @@ enum IdleNudge: Equatable, CaseIterable {
     }
 }
 
-/// The idle footer's text, worked out again only when the history, the day
-/// or the setting changes. A full history is 5,000 sessions, and the popover
-/// draws again on every key typed into the goal.
-@MainActor
-final class TodayLineCache {
-    private struct Key: Equatable {
-        var historyVersion: Int
-        var day: Date
-        var recording: Bool
-    }
-    private var key: Key?
-    private var text: String?
-
-    func line(for model: NidusModel, now: Date = Date()) -> String? {
-        let current = Key(historyVersion: model.controller?.historyVersion ?? 0,
-                          day: Calendar.current.startOfDay(for: now), recording: model.recordsHistory)
-        if current != key {
-            key = current
-            text = model.todayLine
-        }
-        return text
-    }
-}
-
 /// A session's progress, drawn here. The system's linear ProgressView kept
 /// its fill gray with `.tint` set (see the running popover's render), so the
 /// clay fill is drawn directly.
@@ -834,17 +851,6 @@ extension NidusModel {
         if session.plan.duration != nil, case .running(let deadline) = session.phase { endsAt = deadline }
         return FocusFormat.runningLine(paused: isPaused, blocking: engine?.enforcement != nil, endsAt: endsAt,
                                        startedAt: session.startedAt, blocked: blockedCount)
-    }
-
-    /// "Today 1 hr 10 min · 3-day streak" for the foot of the idle popover; nil
-    /// when sessions are not being recorded, since a line about the history
-    /// the user turned off would be a line about nothing, and when there is
-    /// nothing to say (see `FocusFormat.todayLine`).
-    var todayLine: String? {
-        guard recordsHistory, let sessions = controller?.history.sessions, !sessions.isEmpty else { return nil }
-        // One week is enough for today; the streak reads the whole history.
-        let stats = FocusStats(sessions: sessions, weeks: 1)
-        return FocusFormat.todayLine(focused: stats.focusedToday, streak: stats.currentStreak)
     }
 
     /// What the running session blocks, by category name when it can.

@@ -7,6 +7,7 @@
 //  speak for themselves. The same seconds are never counted from both.
 //
 
+import AppKit
 import Foundation
 
 struct ActivityScope {
@@ -183,6 +184,21 @@ struct ActivityRibbon {
 enum ActivityReopen: Equatable {
     case page(URL)
     case app(String)
+
+    /// Opens the page, or brings the app forward (launching it if it quit).
+    @MainActor
+    func perform() {
+        switch self {
+        case .page(let url):
+            NSWorkspace.shared.open(url)
+        case .app(let id):
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
+                app.activate()
+            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            }
+        }
+    }
 }
 
 extension ActivityRank {
@@ -190,22 +206,5 @@ extension ActivityRank {
     var reopenTarget: ActivityReopen? {
         if let kept = ActivityProbe.keptURL(url), let url = URL(string: kept) { return .page(url) }
         return appID.map(ActivityReopen.app)
-    }
-}
-
-/// "Today 5h 12m · mostly Word", for the idle popover.
-enum ActivityDayLine {
-    static func text(_ log: ActivityDayLog) -> String? {
-        var seconds: [String: TimeInterval] = [:]
-        var names: [String: String] = [:]
-        for row in log.totals where row.seconds > 0 {
-            seconds[row.appID, default: 0] += row.seconds
-            names[row.appID] = row.appName
-        }
-        let total = seconds.values.reduce(0, +)
-        let minutes = Int(total / 60)
-        guard minutes > 0, let lead = seconds.max(by: { $0.value < $1.value }), let name = names[lead.key] else { return nil }
-        let length = minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
-        return "Today \(length) · mostly \(name)"
     }
 }

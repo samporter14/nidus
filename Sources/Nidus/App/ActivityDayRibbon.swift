@@ -13,12 +13,15 @@ struct ActivityDayRibbon: View {
     let ribbon: ActivityRibbon
     var calendar: Calendar = .current
     let openSession: (UUID) -> Void
+    /// The popover's small ribbon: a thin track, bars without names, one axis
+    /// row that gives way to the hover text, and no legend.
+    var compact = false
 
     @State private var hovered: ActivityRibbon.Block?
     @State private var hoveredFocus: ActivityRibbon.Focus?
     @State private var width: CGFloat = 0
 
-    private let trackHeight: CGFloat = 26
+    private var trackHeight: CGFloat { compact ? 16 : 26 }
     /// Hover finds a stretch within this many points, however narrow it is.
     private let hoverReach: CGFloat = 3
     /// Narrower than this, a focus bar has no room for its name.
@@ -26,6 +29,39 @@ struct ActivityDayRibbon: View {
     private let barHeight: CGFloat = 5
 
     var body: some View {
+        if compact { compactBody } else { fullBody }
+    }
+
+    /// One row of 12pt under the track: where the day starts and "now", or
+    /// what is under the pointer, so the height never changes on hover.
+    private var compactBody: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            focusBars
+            track
+            ZStack(alignment: .leading) {
+                if hovered != nil || hoveredFocus != nil {
+                    Text(verbatim: readout)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    HStack {
+                        Text(verbatim: ribbon.span.start.formatted(date: .omitted, time: .shortened))
+                        Spacer(minLength: 0)
+                        Text(verbatim: abs(ribbon.span.end.timeIntervalSinceNow) < 600
+                             ? "now" : ribbon.span.end.formatted(date: .omitted, time: .shortened))
+                    }
+                }
+            }
+            .font(.system(size: 10))
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 12, alignment: .leading)
+            .clipped()
+            .accessibilityHidden(true)
+        }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+
+    private var fullBody: some View {
         VStack(alignment: .leading, spacing: 5) {
             focusBars
             track
@@ -50,6 +86,7 @@ struct ActivityDayRibbon: View {
     /// Room for names only when one of them fits.
     private var focusHeight: CGFloat {
         if ribbon.focus.isEmpty { return 0 }
+        if compact { return barHeight }
         return ribbon.focus.contains { barWidth($0, in: width) >= nameWidth } ? 22 : barHeight
     }
 
@@ -80,7 +117,7 @@ struct ActivityDayRibbon: View {
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Spacer(minLength: 0)
-                        if width >= nameWidth {
+                        if !compact, width >= nameWidth {
                             Text(verbatim: bar.name)
                                 .font(.system(size: 9))
                                 .foregroundStyle(ActivityInk.clay)
