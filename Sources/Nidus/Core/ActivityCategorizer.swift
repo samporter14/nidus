@@ -152,6 +152,20 @@ struct ActivityCategorizer: Sendable {
         totals(rows.lazy.map { ($0.appID, $0.site, nil, $0.seconds) })
     }
 
+    /// Stretches and the rows of time that has no stretches (a session
+    /// recorded without a timeline) counted together.
+    func totals(of stretches: [FocusActivitySegment], plus rows: [FocusActivity]) -> [ActivityCategoryTotal] {
+        let items: [(String, String?, String?, TimeInterval)] =
+            stretches.map { ($0.appID, $0.site, $0.url, $0.seconds) } + rows.map { ($0.appID, $0.site, nil, $0.seconds) }
+        return totals(items)
+    }
+
+    /// The name and symbol of a group by its id; nil is Uncategorized.
+    func label(of id: String?) -> (name: String, symbol: String) {
+        if let group = groups.first(where: { $0.id == id }) { return (group.name, group.symbol) }
+        return (Self.uncategorizedName, Self.uncategorizedSymbol)
+    }
+
     private func totals(_ items: some Sequence<(String, String?, String?, TimeInterval)>) -> [ActivityCategoryTotal] {
         // Many stretches share an app and page; the matcher parses a URL for
         // every group, so each distinct one is read once.
