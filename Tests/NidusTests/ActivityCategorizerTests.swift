@@ -162,91 +162,150 @@ struct ActivityCategorizerTests {
     }
 }
 
-struct ActivityGroupEditingTests {
-    func groups() -> ActivityGroups {
-        ActivityGroups(
-            work: FocusCategory.workSeed,
-            categories: [category("social", sites: ["x.com", "reddit.com"]),
-                         category("messaging", apps: [slack], sites: ["discord.com"]),
-                         category("search", sites: ["google.com"])])
+struct ActivityOverrideTests {
+    let google = category("search", sites: ["google.com"])
+    let social = category("social", sites: ["x.com", "reddit.com"])
+    let messaging = category("messaging", apps: [slack])
+    let browsers = category("browsers", apps: [safari])
+
+    func categorizer(_ overrides: ActivityOverrides, work: FocusCategory = FocusCategory.workSeed,
+                     _ categories: [FocusCategory]? = nil) -> ActivityCategorizer {
+        ActivityCategorizer(categories: categories ?? [google, social, messaging, browsers], work: work, overrides: overrides)
     }
 
-    @Test func countingASiteMovesItOutOfTheOldGroup() {
-        var g = groups()
-        g.count(appID: nil, site: "x.com", as: .category("messaging"))
-        #expect(g.assignment(appID: safari, site: "x.com") == .category("messaging"))
-        #expect(g.categories[0].websites == ["reddit.com"])
-        #expect(g.categories[1].websites == ["discord.com", "x.com"])
+    func overrides(_ group: ActivityGroup, appID: String? = nil, site: String? = nil, url: String? = nil) -> ActivityOverrides {
+        var overrides = ActivityOverrides()
+        overrides.set(group, appID: appID, appName: appID, site: site, url: url)
+        return overrides
     }
 
-    @Test func countingASiteAsWorkAddsItToWorkAndRemovesItElsewhere() {
-        var g = groups()
-        g.count(appID: nil, site: "reddit.com", as: .work)
-        #expect(g.work.websites == ["reddit.com"])
-        #expect(g.assignment(appID: safari, site: "reddit.com") == .work)
-        #expect(g.categories[0].websites == ["x.com"])
+    // Order: 1 site override, 2 site rule, 3 app override, 4 app list, 5 none.
+
+    @Test func step1ASiteOverrideBeatsTheSitesOwnRule() {
+        let c = categorizer(overrides(.category("messaging"), site: "x.com"))
+        #expect(c.category(appID: safari, site: "x.com") == "messaging")
+        #expect(c.category(appID: safari, site: "reddit.com") == "social")
     }
 
-    @Test func uncategorizedTakesAnItemOutOfEveryGroup() {
-        var g = groups()
-        g.count(appID: nil, site: "reddit.com", as: .work)
-        g.count(appID: nil, site: "reddit.com", as: .uncategorized)
-        #expect(g.assignment(appID: safari, site: "reddit.com") == .uncategorized)
-        #expect(g.work.websites.isEmpty && g.categories[0].websites == ["x.com"])
-        g.count(appID: slack, site: nil, as: .uncategorized)
-        #expect(g.assignment(appID: slack, site: nil) == .uncategorized)
-        #expect(g.categories[1].apps.isEmpty)
+    @Test func step1ASiteOverrideBeatsAnAppOverrideOnTheBrowser() {
+        var o = overrides(.work, appID: safari)
+        o.set(.category("messaging"), appID: nil, site: "x.com")
+        #expect(categorizer(o).category(appID: safari, site: "x.com") == "messaging")
     }
 
-    @Test func countingAnAppMovesItAndNamesIt() {
-        var g = groups()
-        g.count(appID: slack, appName: "Slack", site: nil, as: .work)
-        #expect(g.assignment(appID: slack, site: nil) == .work)
-        #expect(g.work.apps == [BlockedApp(bundleID: slack, name: "Slack")])
-        #expect(g.categories[1].apps.isEmpty)
-        g.count(appID: slack, site: nil, as: .category("social"))
-        #expect(g.work.apps.isEmpty && g.categories[0].apps.map(\.bundleID) == [slack])
+    @Test func step2ASiteRuleBeatsAnAppOverrideOnTheBrowser() {
+        let c = categorizer(overrides(.work, appID: safari))
+        #expect(c.category(appID: safari, site: "x.com") == "social")
     }
 
-    @Test func aSiteWinsOverTheBrowserWhenBothAreGiven() {
-        var g = groups()
-        g.count(appID: safari, site: "x.com", as: .work)
-        #expect(g.work.apps.isEmpty && g.work.websites == ["x.com"])
+    @Test func step3AnAppOverrideCoversTheBrowserWhenNoSiteRuleMatches() {
+        let c = categorizer(overrides(.work, appID: safari))
+        #expect(c.category(appID: safari, site: "example.org") == "work")
+        #expect(c.category(appID: safari, site: nil) == "work")
     }
 
-    @Test func aBroaderRuleIsExceptedNotRewritten() {
-        var g = groups()
-        #expect(g.assignment(appID: safari, site: "docs.google.com") == .category("search"))
-        g.count(appID: nil, site: "docs.google.com", as: .work)
-        #expect(g.assignment(appID: safari, site: "docs.google.com") == .work)
-        #expect(g.categories[2].websites == ["google.com"], "the broad rule stays")
-        #expect(g.categories[2].websiteExceptions.count == 1)
-        #expect(g.assignment(appID: safari, site: "mail.google.com") == .category("search"))
-        // And back: the exception is taken back when the category is the target.
-        g.count(appID: nil, site: "docs.google.com", as: .category("search"))
-        #expect(g.assignment(appID: safari, site: "docs.google.com") == .category("search"))
-        #expect(g.categories[2].websiteExceptions.isEmpty && g.work.websites.isEmpty)
+    @Test func step3AnAppOverrideBeatsTheAppsInheritedGroup() {
+        let c = categorizer(overrides(.category("social"), appID: slack))
+        #expect(c.category(appID: slack, site: nil) == "social")
+        #expect(categorizer(ActivityOverrides()).category(appID: slack, site: nil) == "messaging")
     }
 
-    @Test func aServiceLabelCountsByItsHost() {
-        var g = groups()
-        g.count(appID: safari, site: "Google Docs", as: .work)
-        #expect(g.work.websites == ["docs.google.com"])
-        #expect(g.assignment(appID: safari, site: "Google Docs") == .work)
+    @Test func step4TheInheritedAppGroupAppliesWithoutOverrides() {
+        let c = categorizer(overrides(.work, appID: notes))
+        #expect(c.category(appID: slack, site: nil) == "messaging")
+        #expect(c.category(appID: safari, site: "example.org") == "browsers")
     }
 
-    @Test func aCategoryThatIsGoneChangesNothing() {
-        var g = groups()
-        let before = g
-        g.count(appID: nil, site: "x.com", as: .category("missing"))
-        #expect(g == before)
+    @Test func step5NothingMatchingIsUncategorized() {
+        let c = categorizer(overrides(.work, appID: notes))
+        #expect(c.category(appID: "com.example.other", site: "example.org") == nil)
     }
 
-    @Test func anItemWithNothingToNameChangesNothing() {
-        var g = groups()
-        let before = g
-        g.count(appID: nil, site: nil, as: .work)
-        #expect(g == before)
+    @Test func explicitUncategorizedBeatsInheritedMembership() {
+        let o = overrides(.uncategorized, appID: slack)
+        #expect(categorizer(o).category(appID: slack, site: nil) == nil)
+        #expect(categorizer(o).group(appID: slack, site: nil) == .uncategorized)
+        let site = overrides(.uncategorized, site: "x.com")
+        #expect(categorizer(site).category(appID: safari, site: "x.com") == nil)
+        // An explicit Uncategorized site does not fall through to the browser's list.
+        #expect(categorizer(site).category(appID: safari, site: "x.com", url: "https://x.com/home") == nil)
+    }
+
+    @Test func aSiteOverrideCoversThatHostOnly() {
+        let c = categorizer(overrides(.work, site: "reddit.com"))
+        #expect(c.category(appID: safari, site: "reddit.com") == "work")
+        #expect(c.category(appID: safari, site: nil, url: "https://www.reddit.com/r/swift") == "work")
+        #expect(c.category(appID: safari, site: "old.reddit.com") == "social", "a subdomain keeps its own group")
+    }
+
+    @Test func aServiceLabelAndItsAddressShareOneOverride() {
+        var o = ActivityOverrides()
+        o.set(.work, appID: safari, site: "Google Docs")
+        #expect(o.sites.keys.sorted() == ["docs.google.com"])
+        let c = categorizer(o)
+        #expect(c.category(appID: safari, site: "Google Docs") == "work")
+        #expect(c.category(appID: safari, site: "docs.google.com", url: "https://docs.google.com/d/1") == "work")
+        #expect(c.category(appID: safari, site: "mail.google.com") == "search")
+    }
+
+    @Test func anOverrideToADeletedCategoryIsIgnored() {
+        let c = categorizer(overrides(.category("gone"), appID: slack))
+        #expect(c.category(appID: slack, site: nil) == "messaging")
+        let site = categorizer(overrides(.category("gone"), site: "x.com"))
+        #expect(site.category(appID: safari, site: "x.com") == "social")
+    }
+
+    @Test func workStaysAValidTargetEvenWhenEmpty() {
+        let c = categorizer(overrides(.category(ActivityCategorizer.workID), appID: notes))
+        #expect(c.category(appID: notes, site: nil) == "work")
+    }
+
+    @Test func itemsWithNothingToNameAreNotStored() {
+        var o = ActivityOverrides()
+        let bare = o.set(.work, appID: nil, site: nil)
+        let label = o.set(.work, appID: nil, site: "Capsid")
+        #expect(!bare && !label)
+        #expect(o.isEmpty)
+    }
+
+    @Test func aWebsiteIsKeyedByItsBareHostAndAnAppByItsBundleID() {
+        var o = ActivityOverrides()
+        o.set(.work, appID: safari, appName: "Safari", site: nil, url: "https://www.Example.com/a?b=1")
+        o.set(.work, appID: slack, appName: "Slack", site: nil)
+        #expect(o.sites["example.com"]?.name == "example.com")
+        #expect(o.apps[slack]?.name == "Slack")
+        o.remove(.site("example.com"))
+        o.remove(.app(slack))
+        #expect(o.isEmpty)
+    }
+
+    @Test func removingOrMovingACategoryTouchesOnlyItsOverrides() {
+        var o = overrides(.category("social"), appID: slack)
+        o.set(.category("messaging"), appID: nil, site: "x.com")
+        o.set(.work, appID: nil, site: "reddit.com")
+        var pruned = o
+        pruned.removeCategory("social")
+        #expect(pruned.apps.isEmpty && pruned.sites.keys.sorted() == ["reddit.com", "x.com"])
+        var moved = o
+        moved.moveCategory("social", to: "messaging")
+        #expect(moved.apps[slack]?.group == .category("messaging"))
+    }
+
+    @Test func overridesRoundTripAndDropADamagedEntry() throws {
+        var o = overrides(.category("social"), appID: slack)
+        o.set(.uncategorized, appID: nil, site: "x.com")
+        o.set(.work, appID: nil, site: "github.com")
+        #expect(try JSONDecoder().decode(ActivityOverrides.self, from: JSONEncoder().encode(o)) == o)
+        let damaged = Data("""
+        {"apps":{"a":{"group":"work","name":"A"},"b":{"group":42}},"sites":{"x.com":{"group":"nonsense","name":"x"}}}
+        """.utf8)
+        let loaded = try JSONDecoder().decode(ActivityOverrides.self, from: damaged)
+        #expect(loaded.apps.keys.sorted() == ["a"] && loaded.sites.isEmpty)
+    }
+
+    @Test func aDeletedCategoryDoesNotBreakTotals() {
+        let c = categorizer(overrides(.category("gone"), appID: slack))
+        #expect(c.totals(of: [stretch(slack, seconds: 60)]).map(\.id) == ["messaging"])
     }
 }
 
@@ -262,10 +321,8 @@ struct WorkIsNeverBlockedTests {
     }
 
     @Test func aRequestNamingWorkBuildsAPlanWithoutIt() throws {
-        let groups = ActivityGroups(work: work(apps: [notes], sites: ["github.com"],
-                                               exceptions: [.init(kind: .subtree, address: "github.com/pulls")]),
-                                    categories: [category("social", sites: ["x.com"])])
-        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: ["social"], categories: groups.categories)
+        let categories = [category("social", sites: ["x.com"])]
+        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: ["social"], categories: categories)
         var request = SessionRequest()
         request.categoryIDs = ["work", "social"]
         let resolved = try #require(request.resolved(with: defaults, length: { (25, false) }))
@@ -278,11 +335,11 @@ struct WorkIsNeverBlockedTests {
     }
 
     @Test func aSetupNamingWorkLeavesItOutOfItsCategories() {
-        let groups = ActivityGroups(work: work(sites: ["github.com"]), categories: [category("social", sites: ["x.com"])])
+        let categories = [category("social", sites: ["x.com"])]
         let setup = FocusSetup(name: "Writing", minutes: 25, categoryIDs: ["work", "social"], mode: .block)
-        #expect(setup.liveCategoryIDs(in: groups.categories) == ["social"])
+        #expect(setup.liveCategoryIDs(in: categories) == ["social"])
         let plan = SessionPlan(goal: "", duration: nil, mode: .block,
-                               categories: groups.categories.filter { setup.categoryIDs.contains($0.id) },
+                               categories: categories.filter { setup.categoryIDs.contains($0.id) },
                                reopensQuitApps: false)
         #expect(plan.websites == ["x.com"])
     }
@@ -322,5 +379,98 @@ struct WorkPreferencesTests {
         let preferences = NidusHost.Preferences(defaults: defaults)
         let loaded: FocusCategory = preferences.value(forKey: NidusModel.Key.workGroup, default: FocusCategory.workSeed)
         #expect(loaded == FocusCategory.workSeed)
+    }
+}
+
+@MainActor
+struct CountAsLeavesBlockingAloneTests {
+    func model(_ name: String, categories: [FocusCategory], work: FocusCategory) -> NidusModel {
+        let defaults = UserDefaults(suiteName: "local.sam.nidus.tests.\(name)")!
+        defaults.removePersistentDomain(forName: "local.sam.nidus.tests.\(name)")
+        let model = NidusModel()
+        model.preferencesOverride = NidusHost.Preferences(defaults: defaults)
+        model.categories = categories
+        model.workGroup = work
+        return model
+    }
+
+    /// What a session started now would block, from the model's own lists.
+    func plan(_ model: NidusModel) throws -> SessionPlan {
+        let defaults = StartDefaults(mode: .block, selectedCategoryIDs: model.categories.map(\.id), categories: model.categories)
+        var request = SessionRequest()
+        request.categoryIDs = model.categories.map(\.id)
+        return try #require(request.resolved(with: defaults, length: { (25, false) })).plan
+    }
+
+    @Test func countingNeverChangesACategoryTheWorkListOrAPlan() throws {
+        let excepted = category("social", apps: [slack], sites: ["x.com", "reddit.com"],
+                                exceptions: [.init(kind: .subtree, address: "reddit.com/r/swift")])
+        let model = model("blocking", categories: [excepted, category("search", sites: ["google.com"])],
+                          work: work(apps: [notes], sites: ["github.com"]))
+        let before = (model.categories, model.workGroup, try plan(model))
+        let targets: [ActivityGroup] = [.work, .category("social"), .category("search"), .uncategorized]
+        for target in targets {
+            model.countActivity(appID: slack, appName: "Slack", site: nil, as: target)
+            model.countActivity(appID: safari, site: "x.com", as: target)
+            model.countActivity(appID: safari, site: "docs.google.com", as: target)
+            model.countActivity(appID: safari, site: "Google Docs", url: "https://docs.google.com/d/1", as: target)
+            model.countActivity(appID: notes, site: nil, as: target)
+            model.countActivity(appID: safari, site: nil, url: "https://github.com/a/b", as: target)
+            #expect(model.categories == before.0)
+            #expect(model.workGroup == before.1)
+            #expect(try plan(model) == before.2)
+        }
+        #expect(!model.activityOverrides.isEmpty)
+    }
+
+    @Test func countingChangesWhereTimeCountsAndRemovingRestoresIt() {
+        let model = model("moves", categories: [category("social", sites: ["x.com"]), category("messaging", apps: [slack])],
+                          work: work())
+        #expect(model.activityAssignment(appID: safari, site: "x.com") == .category("social"))
+        model.countActivity(appID: safari, site: "x.com", as: .work)
+        model.countActivity(appID: slack, appName: "Slack", site: nil, as: .uncategorized)
+        #expect(model.activityAssignment(appID: safari, site: "x.com") == .work)
+        #expect(model.activityAssignment(appID: slack, site: nil) == .uncategorized)
+        #expect(model.activityCategorizer.category(appID: safari, site: "x.com") == "work")
+        model.removeActivityOverride(.site("x.com"))
+        model.removeActivityOverride(.app(slack))
+        #expect(model.activityAssignment(appID: safari, site: "x.com") == .category("social"))
+        #expect(model.activityAssignment(appID: slack, site: nil) == .category("messaging"))
+        #expect(model.activityOverrides.isEmpty)
+    }
+
+    @Test func aCategoryThatDoesNotExistStoresNothing() {
+        let model = model("missing", categories: [category("social", sites: ["x.com"])], work: work())
+        model.countActivity(appID: nil, site: "x.com", as: .category("missing"))
+        model.countActivity(appID: nil, site: nil, as: .work)
+        #expect(model.activityOverrides.isEmpty)
+    }
+
+    @Test func deletingACategoryTakesItsOverridesWithIt() {
+        let model = model("deleted", categories: [category("social", sites: ["x.com"]), category("ai", sites: ["claude.ai"])],
+                          work: work())
+        model.countActivity(appID: nil, site: "example.org", as: .category("ai"))
+        model.countActivity(appID: nil, site: "example.net", as: .category("social"))
+        model.deleteCategory("ai")
+        #expect(model.activityOverrides.sites.keys.sorted() == ["example.net"])
+    }
+
+    @Test func aFileWithoutOverridesLoadsEmpty() throws {
+        let defaults = UserDefaults(suiteName: "local.sam.nidus.tests.oldoverrides")!
+        defaults.removePersistentDomain(forName: "local.sam.nidus.tests.oldoverrides")
+        defaults.set(try JSONEncoder().encode(FocusCategory.presets), forKey: NidusModel.Key.categories)
+        let model = NidusModel()
+        model.preferencesOverride = NidusHost.Preferences(defaults: defaults)
+        #expect(model.activityOverrides.isEmpty)
+        defaults.set(Data("not json".utf8), forKey: NidusModel.Key.activityOverrides)
+        #expect(model.activityOverrides.isEmpty)
+        model.countActivity(appID: nil, site: "x.com", as: .work)
+        #expect(model.activityOverrides.sites.keys.sorted() == ["x.com"])
+    }
+}
+
+struct ActivityOverridesRoutingTests {
+    @Test func theEditorOpensInsideTheBlockingTab() {
+        #expect(SettingsRoute.resolve(NidusModel.activityOverridesPageID) == SettingsRoute(tab: .blocking, pushes: true))
     }
 }

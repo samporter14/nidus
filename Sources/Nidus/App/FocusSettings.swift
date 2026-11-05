@@ -44,6 +44,7 @@ extension NidusModel {
         case _ where id.hasPrefix(Self.sequencePagePrefix): return makeSequencePage(id: id)
         default: break
         }
+        if id == Self.activityOverridesPageID { return AnyView(ActivityOverridesPage(model: self)) }
         if id == Self.workPageID { return AnyView(FocusCategoryPage(model: self, categoryID: ActivityCategorizer.workID, isWork: true)) }
         guard id.hasPrefix(Self.categoryPagePrefix) else { return nil }
         let categoryID = String(id.dropFirst(Self.categoryPagePrefix.count))
@@ -55,6 +56,9 @@ extension NidusModel {
     nonisolated static let launchAppsPageID = "launch-apps"
     /// Inside the category pages' prefix, so it opens in the Blocking tab.
     nonisolated static let workPageID = categoryPagePrefix + ActivityCategorizer.workID
+    /// Also inside the prefix. No category id is this (they are UUIDs or the
+    /// preset words).
+    nonisolated static let activityOverridesPageID = categoryPagePrefix + "activity-categories"
 
     func openCategoryPage(_ category: FocusCategory) {
         host?.workspace.openSettingsPage(Self.categoryPagePrefix + category.id, title: category.name)
@@ -77,6 +81,7 @@ extension NidusModel {
     func deleteCategory(_ id: String) {
         categories.removeAll { $0.id == id }
         selectedCategoryIDs.removeAll { $0 == id }
+        pruneActivityOverrides(of: id)
         host?.workspace.goBackInSettings()
     }
 
@@ -105,8 +110,18 @@ extension NidusModel {
             updated.categoryIDs = remap(schedule.categoryIDs)
             return updated
         }
+        var overrides = activityOverrides
+        overrides.moveCategory(id, to: target.id)
+        if overrides != activityOverrides { activityOverrides = overrides }
         categories.removeAll { $0.id == id }
         host?.workspace.goBackInSettings()
+    }
+
+    /// A deleted category's "Count as" choices go with it.
+    private func pruneActivityOverrides(of id: String) {
+        var overrides = activityOverrides
+        overrides.removeCategory(id)
+        if overrides != activityOverrides { activityOverrides = overrides }
     }
 }
 
@@ -372,6 +387,15 @@ struct FocusBlockingPage: View {
                     page: NidusModel.workPageID
                 ) {
                     CategoryTile(symbol: model.workGroup.symbol)
+                }
+                NidusSettingsPageLink(
+                    "Activity categories",
+                    subtitle: model.activityOverrides.isEmpty
+                        ? "Count an app or website differently in Activity."
+                        : "\(model.activityOverrides.items.count) counted differently. Never changes what is blocked.",
+                    page: NidusModel.activityOverridesPageID
+                ) {
+                    CategoryTile(symbol: "arrow.triangle.branch")
                 }
             }
             if !FocusCategory.suggested(in: model.categories).isEmpty {
@@ -880,5 +904,44 @@ struct FocusShortcutRows: View {
     private func choose(_ focus: FocusShortcuts.AppleFocus) {
         model.startShortcut = focus.onShortcut
         model.endShortcut = focus.offShortcut
+    }
+}
+
+// MARK: - Activity categories
+
+/// The "Count as" choices, apart from blocking. Removing one puts the item
+/// back under the category that lists it, if any.
+struct ActivityOverridesPage: View {
+    @ObservedObject var model: NidusModel
+
+    private func groupName(_ group: ActivityGroup) -> String {
+        switch group {
+        case .work: return model.workGroup.name
+        case .uncategorized: return ActivityCategorizer.uncategorizedName
+        case .category(let id): return model.categories.first { $0.id == id }?.name ?? "A removed category"
+        }
+    }
+
+    var body: some View {
+        NidusSettingsPage {
+            Text("Choose \"Count as\" on an app or website in Activity. It changes how time is counted, never what a session blocks.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            let items = model.activityOverrides.items
+            NidusSettingsCard {
+                if items.isEmpty {
+                    Text("Nothing is counted differently.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(items, id: \.subject) { item in
+                        NidusControlRow(title: "\(item.entry.name) \u{2192} \(groupName(item.entry.group))") {
+                            Button("Remove") { model.removeActivityOverride(item.subject) }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -14,6 +14,9 @@ import SwiftUI
 @MainActor
 final class NidusModel: NSObject, ObservableObject {
     private(set) var host: NidusHost?
+    /// Tests give the model a suite of its own, so it needs no host and never
+    /// reads or writes the real preferences.
+    var preferencesOverride: NidusHost.Preferences?
     private(set) var controller: FocusController?
     private var subscriptions: Set<AnyCancellable> = []
     private var menuBar: FocusMenuBar?
@@ -666,6 +669,7 @@ extension NidusModel {
     enum Key {
         static let categories = "categories"
         static let workGroup = "workGroup"
+        static let activityOverrides = "activityOverrides"
         static let selection = "selectedCategories"
         static let durationMinutes = "durationMinutes"
         static let mode = "mode"
@@ -692,18 +696,20 @@ extension NidusModel {
     /// 0 means no break.
     static let breakChoices = [0, 5, 10, 15]
 
+    private var preferences: NidusHost.Preferences? { preferencesOverride ?? host?.preferences }
+
     func preference<Value: Codable>(_ key: String, default value: Value) -> Value {
-        host?.preferences.value(forKey: key, default: value) ?? value
+        preferences?.value(forKey: key, default: value) ?? value
     }
 
     /// A saved list, keeping every element that still decodes. For every
     /// list of things the user made (setups, schedules, projects, sequences).
     func preferenceList<Element: Codable>(_ key: String, default value: [Element] = []) -> [Element] {
-        host?.preferences.list(forKey: key, default: value) ?? value
+        preferences?.list(forKey: key, default: value) ?? value
     }
 
     func setPreference<Value: Codable>(_ value: Value, _ key: String) {
-        host?.preferences.setValue(value, forKey: key)
+        preferences?.setValue(value, forKey: key)
         objectWillChange.send()
     }
 
@@ -731,32 +737,43 @@ extension NidusModel {
         workGroup = group
     }
 
-    var activityGroups: ActivityGroups {
-        get { ActivityGroups(work: workGroup, categories: categories) }
-        set {
-            if newValue.work != workGroup { workGroup = newValue.work }
-            if newValue.categories != categories { categories = newValue.categories }
-        }
+    /// "Count as" choices, kept apart from the blocking lists. An older
+    /// preferences file has none, and a damaged one reads as none.
+    var activityOverrides: ActivityOverrides {
+        get { preference(Key.activityOverrides, default: ActivityOverrides()) }
+        set { setPreference(newValue, Key.activityOverrides) }
+    }
+
+    /// The categorizer for the groups and overrides as they are now.
+    var activityCategorizer: ActivityCategorizer {
+        ActivityCategorizer(categories: categories, work: workGroup, overrides: activityOverrides)
     }
 
     /// Where an app or website counts now. Pass the page's `url` when there
     /// is one: it is read in preference to `site`.
     func activityAssignment(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {
-        activityGroups.assignment(appID: appID, site: site, url: url)
+        activityCategorizer.group(appID: appID, site: site, url: url)
     }
 
-    /// Moves an app or website to Work, to a category, or to `.uncategorized`,
-    /// which takes it out of every group.
-    ///
-    /// This edits the real blocking categories on purpose: the groups are
-    /// the same lists a session blocks from, so a site moved out of Social is
-    /// no longer blocked by the next Social session, and one moved into a
-    /// category is blocked by it. A running session keeps its own plan.
+    /// Makes an app or website count as Work, a category or Uncategorized in
+    /// Activity. It stores an override and nothing else: no category, no
+    /// Work list and no blocking plan changes. A category that does not exist
+    /// changes nothing.
     func countActivity(appID: String?, appName: String? = nil, site: String?, url: String? = nil,
                        as target: ActivityGroup) {
-        var groups = activityGroups
-        groups.count(appID: appID, appName: appName ?? appID.flatMap(Self.installedAppName), site: site, url: url, as: target)
-        activityGroups = groups
+        if case .category(let id) = target, id != ActivityCategorizer.workID, !categories.contains(where: { $0.id == id }) {
+            return
+        }
+        var overrides = activityOverrides
+        let name = appName ?? appID.flatMap(Self.installedAppName)
+        guard overrides.set(target, appID: appID, appName: name, site: site, url: url) else { return }
+        activityOverrides = overrides
+    }
+
+    func removeActivityOverride(_ subject: ActivityOverrides.Subject) {
+        var overrides = activityOverrides
+        overrides.remove(subject)
+        activityOverrides = overrides
     }
 
     private static func installedAppName(_ bundleID: String) -> String? {
@@ -765,9 +782,6 @@ extension NidusModel {
             return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
         }
     }
-
-    /// The categorizer for the groups as they are now.
-    var activityCategorizer: ActivityCategorizer { activityGroups.categorizer }
 
     var selectedCategoryIDs: [String] {
         get { preference(Key.selection, default: FocusCategory.defaultSelection) }

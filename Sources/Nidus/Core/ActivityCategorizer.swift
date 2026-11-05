@@ -17,6 +17,9 @@
 //    nothing falls back to the browser app's group, else Uncategorized.
 //  - Websites are read by `WebsiteRule`, the blocker's own rule, exceptions
 //    included: a page excepted from one group is read against the next.
+//  - "Count as" is an `ActivityOverrides` entry, kept apart from the lists
+//    above: a category's apps and websites are what a session blocks and are
+//    only read here. See `category(appID:site:url:)` for the order.
 //
 //  What `site` holds: a stretch's `site` is either a bare domain
 //  (`docs.google.com`, no `www.`, from `ActivityDomain`) or a service label
@@ -70,11 +73,13 @@ struct ActivityCategorizer: Sendable {
 
     /// Work first, then the categories in order.
     private let groups: [Group]
+    private let overrides: ActivityOverrides
 
-    init(categories: [FocusCategory], work: FocusCategory) {
+    init(categories: [FocusCategory], work: FocusCategory, overrides: ActivityOverrides = ActivityOverrides()) {
         var work = work
         work.id = Self.workID
         groups = ([work] + categories.filter { $0.id != Self.workID }).map(Group.init)
+        self.overrides = overrides
     }
 
     // MARK: One stretch
@@ -82,12 +87,46 @@ struct ActivityCategorizer: Sendable {
     /// The id of the group a stretch counts under: `workID`, a category's id,
     /// or nil for Uncategorized. `url` is the stretch's address when it has
     /// one; it is preferred over `site`.
+    ///
+    /// Order, first hit wins:
+    ///  1. an override on the page's host;
+    ///  2. a group whose website rules match the page;
+    ///  3. an override on the app;
+    ///  4. a group that lists the app;
+    ///  5. Uncategorized.
+    /// A page is judged before its app, so a browser's own override or list
+    /// never beats a page that has a category of its own. An override whose
+    /// category is gone is skipped, as if it were not there. An override to
+    /// Uncategorized is a hit: it beats a list that holds the item.
     func category(appID: String, site: String?, url: String? = nil) -> String? {
-        if let address = Self.address(site: site, url: url),
-           let match = groups.first(where: { $0.rule?.blocks(address) == true }) {
+        let address = Self.address(site: site, url: url)
+        if !overrides.sites.isEmpty, let address, let host = ActivityDomain.site(from: address),
+           let hit = resolve(overrides.sites[host]) {
+            return hit
+        }
+        if let address, let match = groups.first(where: { $0.rule?.blocks(address) == true }) {
             return match.id
         }
+        if let hit = resolve(overrides.apps[appID]) { return hit }
         return groups.first { $0.apps.contains(appID) }?.id
+    }
+
+    /// The same, as a group.
+    func group(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {
+        ActivityGroup(id: category(appID: appID ?? "", site: site, url: url))
+    }
+
+    /// An override's id, with nil inside for Uncategorized; nil outside when
+    /// there is no override or its category no longer exists.
+    private func resolve(_ entry: ActivityOverrides.Entry?) -> String?? {
+        switch entry?.group {
+        case nil: return nil
+        case .work?: return .some(Self.workID)
+        case .uncategorized?: return .some(nil)
+        case .category(let id)?:
+            if id == Self.workID { return .some(Self.workID) }
+            return groups.contains { $0.id == id } ? .some(id) : nil
+        }
     }
 
     /// The page a site or address names, as a URL the website rules read.
