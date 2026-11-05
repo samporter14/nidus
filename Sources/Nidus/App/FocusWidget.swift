@@ -106,7 +106,7 @@ struct FocusWidget: View {
 
     // MARK: Idle
 
-    /// A small starter: the goal, the length (and setups), Start, and More.
+    /// A small starter: the goal, any setups, then length, Start and More.
     /// What is rarely changed waits behind More, closed each time the popover
     /// opens. The popover follows its content; nothing here has a fixed height.
     private var idle: some View {
@@ -177,33 +177,17 @@ struct FocusWidget: View {
                           lineWidth: goalFocused ? 1.5 : 1))
     }
 
-    /// Length, then setups on the same line when they fit, under it when not.
+    /// Setups get their own line. The custom length field needs the room,
+    /// so while it's open it takes a line too; otherwise the length sits
+    /// beside Start.
     @ViewBuilder private var lengthRow: some View {
-        if FocusSetupsBar.isVisible(model: model) {
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: NidusSpacing.sm) {
-                    lengthControl
-                    FocusSetupsBar(model: model)
-                }
-                VStack(alignment: .leading, spacing: 8) {
-                    lengthControl
-                    FocusSetupsBar(model: model)
-                }
-            }
-        } else {
-            HStack(spacing: NidusSpacing.sm) {
-                lengthControl
-                Spacer(minLength: 0)
-            }
-        }
-    }
-
-    @ViewBuilder private var lengthControl: some View {
-        if model.customLengthDraft == nil { durationMenu } else { customLengthField }
+        if model.customLengthDraft != nil { customLengthField }
+        if FocusSetupsBar.isVisible(model: model) { FocusSetupsBar(model: model) }
     }
 
     private var startRow: some View {
         HStack(spacing: NidusSpacing.sm) {
+            if model.customLengthDraft == nil { durationMenu }
             startButton
             moreButton
         }
