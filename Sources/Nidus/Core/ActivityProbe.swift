@@ -91,6 +91,20 @@ enum ActivityProbe {
         return nil
     }
 
+    /// A page of each service `service(for:)` names, so a stretch saved with
+    /// only its label can still be read against website rules. nil for a label
+    /// with no public address (the local Science and Capsid tabs).
+    static func address(forService label: String) -> String? {
+        let page: String
+        switch label {
+        case "Google Docs": page = "docs.google.com/document/"
+        case "Claude": page = "claude.ai/"
+        case "Microsoft Word": page = "word.cloud.microsoft/"
+        default: return nil
+        }
+        return "https://" + page
+    }
+
     /// Machine-local Science origin; never treats arbitrary localhost tools as Science.
     static func isLocalScienceURL(_ raw: String) -> Bool {
         guard let u = URLComponents(string: raw), u.scheme == "http",

@@ -95,6 +95,13 @@ extension FocusCategory {
         ),
     ] + PresetUpdates.suggestedCategories, since: 1)
 
+    /// The Work group when none is saved: empty, so nothing counts as Work
+    /// until the user says so. It is a `FocusCategory` only so the blocker's
+    /// own matching reads it; it is stored apart from `categories` and is
+    /// never offered for a session.
+    static let workSeed = FocusCategory(id: ActivityCategorizer.workID, name: "Work", symbol: "briefcase",
+                                        apps: [], websites: [])
+
     /// What a session blocks when the user has picked no category yet.
     static let defaultSelection: [String] = ["social", "video"]
 

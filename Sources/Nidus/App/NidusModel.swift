@@ -665,6 +665,7 @@ final class NidusModel: NSObject, ObservableObject {
 extension NidusModel {
     enum Key {
         static let categories = "categories"
+        static let workGroup = "workGroup"
         static let selection = "selectedCategories"
         static let durationMinutes = "durationMinutes"
         static let mode = "mode"
@@ -710,6 +711,63 @@ extension NidusModel {
         get { preferenceList(Key.categories, default: FocusCategory.presets) }
         set { setPreference(newValue, Key.categories) }
     }
+
+    /// What counts as Work in Activity. Kept apart from `categories` so no
+    /// code that builds a session, a setup or the composer's list can reach
+    /// it: it is never blocked or offered. An older preferences file has none
+    /// and gets the empty group.
+    var workGroup: FocusCategory {
+        get {
+            var group = preference(Key.workGroup, default: FocusCategory.workSeed)
+            group.id = ActivityCategorizer.workID
+            return group
+        }
+        set { setPreference(newValue, Key.workGroup) }
+    }
+
+    func updateWorkGroup(_ change: (inout FocusCategory) -> Void) {
+        var group = workGroup
+        change(&group)
+        workGroup = group
+    }
+
+    var activityGroups: ActivityGroups {
+        get { ActivityGroups(work: workGroup, categories: categories) }
+        set {
+            if newValue.work != workGroup { workGroup = newValue.work }
+            if newValue.categories != categories { categories = newValue.categories }
+        }
+    }
+
+    /// Where an app or website counts now. Pass the page's `url` when there
+    /// is one: it is read in preference to `site`.
+    func activityAssignment(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {
+        activityGroups.assignment(appID: appID, site: site, url: url)
+    }
+
+    /// Moves an app or website to Work, to a category, or to `.uncategorized`,
+    /// which takes it out of every group.
+    ///
+    /// This edits the real blocking categories on purpose: the groups are
+    /// the same lists a session blocks from, so a site moved out of Social is
+    /// no longer blocked by the next Social session, and one moved into a
+    /// category is blocked by it. A running session keeps its own plan.
+    func countActivity(appID: String?, appName: String? = nil, site: String?, url: String? = nil,
+                       as target: ActivityGroup) {
+        var groups = activityGroups
+        groups.count(appID: appID, appName: appName ?? appID.flatMap(Self.installedAppName), site: site, url: url, as: target)
+        activityGroups = groups
+    }
+
+    private static func installedAppName(_ bundleID: String) -> String? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
+            let name = FileManager.default.displayName(atPath: $0.path)
+            return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+        }
+    }
+
+    /// The categorizer for the groups as they are now.
+    var activityCategorizer: ActivityCategorizer { activityGroups.categorizer }
 
     var selectedCategoryIDs: [String] {
         get { preference(Key.selection, default: FocusCategory.defaultSelection) }
