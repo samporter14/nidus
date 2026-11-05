@@ -282,8 +282,7 @@ final class BrickCompanion {
         if let refreshed = result.refreshedBookmark {
             model.host?.preferences.setValueQuietly(refreshed, forKey: NidusModel.Key.brickFileBookmark)
         }
-        model.brickFileName = result.name
-        model.brickFileStatus = result.status
+        model.noteBrickFile(name: result.name, status: result.status)
         guard let data = result.data else { return }
         // A selected file's existing value is a baseline on launch, enable,
         // or selection. Subsequent identical reads are inert.
@@ -340,6 +339,14 @@ extension NidusModel {
         guard let offer = brickOffer,
               offer.isActionable(at: Date(), enabled: brickEnabled, idle: canStartNew) else { return nil }
         return offer
+    }
+
+    /// What the last read found. It's read every two seconds and rarely
+    /// changes, and each assignment to these redraws every open surface, so
+    /// only a change is assigned.
+    func noteBrickFile(name: String, status: String) {
+        if brickFileName != name { brickFileName = name }
+        if brickFileStatus != status { brickFileStatus = status }
     }
 
     func expireBrickOffer(now: Date = Date()) {
