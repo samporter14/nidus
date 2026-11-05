@@ -89,7 +89,7 @@ import Testing
         #expect(ai.apps.map(\.name) == ["Safari"])
         #expect(ai.apps.first?.seconds == 1.5 * 3600)
         #expect(ai.sites.map(\.id) == ["claude.ai"])
-        #expect(ai.documents.map(\.name) == ["Notes"])
+        #expect(ai.documents.isEmpty)
         #expect(ai.sites.first?.url == "https://claude.ai/chat/1")
     }
 
@@ -183,8 +183,9 @@ import Testing
         let site = scope.totals.sites.first { $0.id == "claude.ai" }
         #expect(site?.sourceAppID == "id.Safari")
         #expect(site?.url == "https://claude.ai/chat/1")
-        let doc = scope.totals.documents.first { $0.name == "Notes" }
-        #expect(doc?.site == "claude.ai")
+        let doc = ActivityScope(logs: [log([stretch(9, 10, app: "Safari", site: "Google Docs", title: "Notes - Google Docs")])],
+                                sessions: [], calendar: calendar).totals.documents.first { $0.name == "Notes" }
+        #expect(doc?.site == "Google Docs")
         #expect(doc?.appName == "Safari")
     }
 }
@@ -230,6 +231,30 @@ struct WebDocumentTests {
         let totals = totals([stretch(site: "Google Docs", title: nil, url: "https://docs.google.com/document/d/abc", at: 0)])
         #expect(totals.sites.isEmpty)
         #expect(totals.documents.map(\.name) == ["Google Docs"])
+    }
+
+    @Test("A page goes under its site, however it was read")
+    func pagesAreNotDocuments() {
+        let safari = "com.apple.Safari"
+        #expect(ActivityTimeline.documentName(appID: safari, title: "Cart : Target", site: "target.com") == nil)
+        #expect(ActivityTimeline.documentName(appID: safari, title: "Home / X", site: "x.com") == nil)
+        #expect(ActivityTimeline.documentName(appID: safari, title: "Chat", site: "Claude") == nil)
+        #expect(ActivityTimeline.documentName(appID: safari, title: "Router", site: nil) == nil)
+        #expect(ActivityTimeline.documentName(appID: "com.google.Chrome", title: "Router", site: "") == nil)
+        #expect(ActivityTimeline.documentName(appID: "local.sam.bench", title: "Plate 3", site: "Capsid") == nil)
+
+        let totals = totals([stretch(site: "target.com", title: "Cart : Target", url: "https://target.com/cart", at: 0),
+                             stretch(site: "x.com", title: "Home / X", url: "https://x.com/home", at: 600),
+                             stretch(site: "Google Docs", title: "Aims - Google Docs", url: nil, at: 1200)])
+        #expect(totals.documents.map(\.name) == ["Aims"])
+        #expect(Set(totals.sites.map(\.name)) == ["target.com", "x.com"])
+    }
+
+    @Test("A file in a document app stays a document")
+    func filesAreDocuments() {
+        #expect(ActivityTimeline.documentName(appID: "com.microsoft.Excel", title: "Plate.xlsx", site: nil) == "Plate.xlsx")
+        #expect(ActivityTimeline.documentName(appID: "com.apple.TextEdit", title: "", site: nil) == nil)
+        #expect(ActivityTimeline.documentName(appID: "com.apple.TextEdit", title: nil, site: nil) == nil)
     }
 
     @Test("Other sites keep their title out of it")

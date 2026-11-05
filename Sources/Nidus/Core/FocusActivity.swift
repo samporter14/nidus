@@ -90,6 +90,16 @@ enum ActivityTimeline {
         return title
     }
 
+    /// What a titled stretch counts as in a list of documents, or nil when it
+    /// isn't one. A browser's title names a web page, which counts under its
+    /// site, unless the page is itself a document.
+    static func documentName(appID: String, title: String?, site: String?) -> String? {
+        if isDocumentService(site) { return documentName(title: title, site: site) }
+        guard let title, !title.isEmpty, site?.isEmpty ?? true,
+              !BrowserProfile.known.contains(where: { $0.bundleID == appID }) else { return nil }
+        return title
+    }
+
     static func sameContext(_ a: FocusActivitySegment, _ b: FocusActivitySegment) -> Bool {
         a.appID == b.appID && a.site == b.site && a.title == b.title && samePage(a.url, b.url)
     }
