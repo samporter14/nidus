@@ -175,12 +175,12 @@ final class ActivityRecorder {
         if old.retentionDays != new.retentionDays { lastPruneDay = nil; prune() }
         let added = new.excluded.subtracting(old.excluded)
         if !added.isEmpty {
-            log.remove(apps: added)
-            store.enqueue(.remove(apps: added))
+            // Saved time stays, hidden by the views, and comes back if the
+            // app is let in again.
             invalidateReads()
             if let open, added.contains(open.segment.appID) {
-                self.open = nil
-                gap()
+                let t = clock()
+                closeOpen(at: t, at: t)
             }
             onSave()
         }

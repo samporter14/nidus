@@ -90,6 +90,14 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
         stretches = ActivityRedaction.withoutTitles(stretches)
     }
 
+    /// This day as the views show it, without the apps.
+    func hiding(_ apps: Set<String>) -> ActivityDayLog {
+        guard !apps.isEmpty else { return self }
+        var log = self
+        log.remove(apps: apps)
+        return log
+    }
+
     /// Takes the apps out. A gap is left where they were, so their neighbors
     /// are not taken for one continuous stretch.
     mutating func remove(apps: Set<String>) {

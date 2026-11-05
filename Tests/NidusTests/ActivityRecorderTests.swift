@@ -360,6 +360,17 @@ struct ActivityRecorderTests {
         #expect(rig.stretches.first?.site == nil)
     }
 
+    @Test func excludingAnAppKeepsItsSavedTime() {
+        let rig = Rig()
+        rig.start(Rig.mail)
+        rig.clock.advance(10)
+        var settings = rig.recorder.settings
+        settings.excluded = [Rig.mail.id]
+        rig.recorder.apply(settings)
+        rig.clock.advance(5)
+        #expect(rig.stretches.map(\.appID).contains(Rig.mail.id), "Hidden by the views, and back if it is let in again")
+    }
+
     private func page(_ domain: String, title: String? = nil) -> ActivityDetail {
         ActivityDetail(site: nil, title: title, domain: domain)
     }
@@ -545,7 +556,7 @@ struct ActivityRecorderTests {
         #expect(again.day("2026-11-04")?.seconds == 8, "Times stay")
     }
 
-    @Test func excludingAnAppTakesItOutOfTodayAndPastDays() {
+    @Test func excludingAnAppLeavesTodayAndPastDaysOnDisk() {
         let rig = Rig()
         var old = ActivityDayLog(day: "2026-11-01")
         let then = rig.clock.now.addingTimeInterval(-86_400)
@@ -560,20 +571,10 @@ struct ActivityRecorderTests {
         settings.excluded = [Rig.mail.id]
         rig.recorder.apply(settings)
         rig.recorder.stop()
-        #expect(rig.day("2026-11-01")?.totals.map(\.appID) == [Rig.word.id])
-        #expect(rig.day("2026-11-04")?.stretches.map(\.appID) == [Rig.word.id])
+        #expect(rig.day("2026-11-01")?.totals.map(\.appID) == [Rig.mail.id, Rig.word.id])
+        #expect(rig.day("2026-11-04")?.stretches.map(\.appID) == [Rig.mail.id, Rig.word.id])
     }
 
-    @Test func excludingTheAppInFrontDropsItsOpenStretch() {
-        let rig = Rig()
-        rig.start(Rig.word)
-        rig.clock.advance(30)
-        var settings = rig.recorder.settings
-        settings.excluded = [Rig.word.id]
-        rig.recorder.apply(settings)
-        rig.clock.advance(30)
-        #expect(rig.recorder.today().isEmpty)
-    }
 
     @Test func turningNamesOffStripsTheOpenStretch() {
         var settings = ActivityRecorderSettings(enabled: true)

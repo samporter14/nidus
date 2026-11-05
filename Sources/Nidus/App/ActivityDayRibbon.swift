@@ -15,10 +15,15 @@ struct ActivityDayRibbon: View {
     let openSession: (UUID) -> Void
 
     @State private var hovered: ActivityRibbon.Block?
+    @State private var hoveredFocus: ActivityRibbon.Focus?
+    @State private var width: CGFloat = 0
 
     private let trackHeight: CGFloat = 26
     /// Hover finds a stretch within this many points, however narrow it is.
     private let hoverReach: CGFloat = 3
+    /// Narrower than this, a focus bar has no room for its name.
+    private let nameWidth: CGFloat = 58
+    private let barHeight: CGFloat = 5
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -35,9 +40,24 @@ struct ActivityDayRibbon: View {
                 .accessibilityHidden(true)
             legend
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    }
+
+    private func barWidth(_ bar: ActivityRibbon.Focus, in total: CGFloat) -> CGFloat {
+        max(6, total * (ribbon.position(of: bar.end) - ribbon.position(of: bar.start)))
+    }
+
+    /// Room for names only when one of them fits.
+    private var focusHeight: CGFloat {
+        if ribbon.focus.isEmpty { return 0 }
+        return ribbon.focus.contains { barWidth($0, in: width) >= nameWidth } ? 22 : barHeight
     }
 
     private var readout: String {
+        if let hoveredFocus {
+            let times = hoveredFocus.start.formatted(date: .omitted, time: .shortened) + "–" + hoveredFocus.end.formatted(date: .omitted, time: .shortened)
+            return "\(times) · \(hoveredFocus.name)"
+        }
         guard let hovered else {
             if ribbon.blocks.isEmpty { return "Nothing was counted on this day." }
             return ribbon.focus.isEmpty ? "Hover a stretch for what was in front." : "Hover a stretch for what was in front. Click a session for its recap."
@@ -54,32 +74,33 @@ struct ActivityDayRibbon: View {
         GeometryReader { proxy in
             ForEach(ribbon.focus) { bar in
                 let x = proxy.size.width * ribbon.position(of: bar.start)
-                let width = max(6, proxy.size.width * (ribbon.position(of: bar.end) - ribbon.position(of: bar.start)))
+                let width = barWidth(bar, in: proxy.size.width)
                 Button {
                     if let id = bar.sessionID { openSession(id) }
                 } label: {
                     VStack(alignment: .leading, spacing: 2) {
                         Spacer(minLength: 0)
-                        if width >= 58 {
+                        if width >= nameWidth {
                             Text(verbatim: bar.name)
                                 .font(.system(size: 9))
                                 .foregroundStyle(ActivityInk.clay)
                                 .lineLimit(1)
                         }
-                        Capsule().fill(ActivityInk.clay).frame(height: 5)
+                        Capsule().fill(ActivityInk.clay).frame(height: barHeight)
                     }
-                    .frame(width: width, height: 22, alignment: .leading)
+                    .frame(width: width, height: focusHeight, alignment: .leading)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(bar.sessionID == nil)
                 .offset(x: min(x, max(0, proxy.size.width - width)))
                 .help(bar.name)
+                .onHover { hoveredFocus = $0 ? bar : nil }
                 .accessibilityLabel("Focus session, \(bar.name), \(bar.start.formatted(date: .omitted, time: .shortened)) to \(bar.end.formatted(date: .omitted, time: .shortened))")
                 .accessibilityHint(bar.sessionID == nil ? "Still running" : "Opens the session recap")
             }
         }
-        .frame(height: 22)
+        .frame(height: focusHeight)
     }
 
     private var track: some View {

@@ -49,6 +49,7 @@ struct ActivityScope {
         }
         stretches = kept.sorted { $0.start < $1.start }
         totals = ActivityTotals(rows: rows, focused: sessions.reduce(0) { $0 + max(0, $1.focused) })
+        totals.noteAddresses(from: stretches)
     }
 
     private static func date(of key: String, calendar: Calendar) -> Date {
@@ -96,8 +97,12 @@ struct ActivityRibbon {
     init(stretches: [FocusActivitySegment], sessions: [SessionEntry], live: Focus? = nil, day: DateInterval, now: Date,
          calendar: Calendar = .current) {
         var seconds: [String: TimeInterval] = [:]
-        for stretch in stretches { seconds[ActivityTotals.series(site: stretch.site, appName: stretch.appName), default: 0] += stretch.seconds }
-        var ranked: [ActivityRank] = seconds.map { key, value in ActivityRank(id: key, name: key, seconds: value) }
+        var names: [String: String] = [:]
+        for stretch in stretches {
+            seconds[stretch.appID, default: 0] += stretch.seconds
+            names[stretch.appID] = stretch.appName
+        }
+        var ranked: [ActivityRank] = seconds.map { key, value in ActivityRank(id: key, name: names[key] ?? key, seconds: value) }
         ranked.sort { (a: ActivityRank, b: ActivityRank) -> Bool in
             a.seconds == b.seconds ? a.name < b.name : a.seconds > b.seconds
         }
@@ -117,11 +122,10 @@ struct ActivityRibbon {
             }
         }
         blocks = merged.map { stretch in
-            let key = ActivityTotals.series(site: stretch.site, appName: stretch.appName)
             let name = stretch.site ?? stretch.title ?? stretch.appName
             let detail = [stretch.site == nil ? nil : stretch.appName, stretch.site == nil ? nil : stretch.title]
                 .compactMap { $0 }.joined(separator: " · ")
-            return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[key] ?? Self.namedSeries,
+            return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[stretch.appID] ?? Self.namedSeries,
                          name: name, detail: detail.isEmpty ? (stretch.title == nil ? nil : stretch.appName) : detail)
         }
         focus = sessions.filter { $0.end > $0.start }.sorted { $0.start < $1.start }.map { entry in
@@ -142,17 +146,20 @@ struct ActivityRibbon {
         span = DateInterval(start: max(first, day.start), end: max(min(last, day.end), max(first, day.start).addingTimeInterval(3600)))
     }
 
-    /// Whole hours worth labeling, about every three.
+    /// Every third hour, and the first hour too when it leaves the next
+    /// label room.
     func ticks(calendar: Calendar = .current) -> [Date] {
         var hour = calendar.dateInterval(of: .hour, for: span.start)?.start ?? span.start
         if hour < span.start { hour = hour.addingTimeInterval(3600) }
+        let first = hour
         var result: [Date] = []
         while hour <= span.end {
-            if result.isEmpty || calendar.component(.hour, from: hour) % 3 == 0 { result.append(hour) }
+            if calendar.component(.hour, from: hour) % 3 == 0 { result.append(hour) }
             guard let next = calendar.date(byAdding: .hour, value: 1, to: hour) else { break }
             hour = next
         }
-        return result
+        guard let label = result.first else { return [first] }
+        return label.timeIntervalSince(first) >= 2 * 3600 ? [first] + result : result
     }
 
     func position(of date: Date) -> Double {
@@ -169,5 +176,36 @@ struct ActivityRibbon {
             if distance <= reach, distance < (best?.distance ?? .infinity) { best = (block, distance) }
         }
         return best?.block
+    }
+}
+
+/// Where a row in the ranked list goes back to.
+enum ActivityReopen: Equatable {
+    case page(URL)
+    case app(String)
+}
+
+extension ActivityRank {
+    /// A page's last address, or the app that holds a document.
+    var reopenTarget: ActivityReopen? {
+        if let kept = ActivityProbe.keptURL(url), let url = URL(string: kept) { return .page(url) }
+        return appID.map(ActivityReopen.app)
+    }
+}
+
+/// "Today 5h 12m · mostly Word", for the idle popover.
+enum ActivityDayLine {
+    static func text(_ log: ActivityDayLog) -> String? {
+        var seconds: [String: TimeInterval] = [:]
+        var names: [String: String] = [:]
+        for row in log.totals where row.seconds > 0 {
+            seconds[row.appID, default: 0] += row.seconds
+            names[row.appID] = row.appName
+        }
+        let total = seconds.values.reduce(0, +)
+        let minutes = Int(total / 60)
+        guard minutes > 0, let lead = seconds.max(by: { $0.value < $1.value }), let name = names[lead.key] else { return nil }
+        let length = minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
+        return "Today \(length) · mostly \(name)"
     }
 }

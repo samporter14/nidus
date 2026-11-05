@@ -26,7 +26,17 @@ enum ActivityChoices {
 }
 
 extension NidusModel {
-    var activitySessions: [SessionEntry] { controller?.history.sessions ?? [] }
+    /// Sessions as Activity shows them, without excluded apps.
+    var activitySessions: [SessionEntry] {
+        let excluded = activityExcludedApps
+        return (controller?.history.sessions ?? []).map { $0.hiding(excluded) }
+    }
+
+    /// "Today 5h 12m · mostly Word" while no session runs, all day being on.
+    var allDayLine: String? {
+        guard recordsHistory, activityTrackingEnabled, activityAllDayEnabled, let controller, !controller.engine.isRunning else { return nil }
+        return ActivityDayLine.text(controller.activityRecorder.today().hiding(activityExcludedApps))
+    }
 
     var activityTrackingEnabled: Bool {
         get { preference(Key.activityTracking, default: true) }
@@ -85,8 +95,22 @@ extension NidusModel {
     }
     func exportActivity() {
         let sessions = activitySessions
-        guard !sessions.isEmpty else { return }
-        let data = Data(ActivityExport.csv(sessions: sessions).utf8)
+        let excluded = activityExcludedApps
+        let recorder = controller?.activityRecorder
+        Task { @MainActor in
+            var logs = await recorder?.store.loadAll() ?? []
+            if let recorder, recorder.isRecording {
+                let today = recorder.today()
+                logs.removeAll { $0.day == today.day }
+                logs.append(today)
+            }
+            guard !sessions.isEmpty || !logs.isEmpty else { return }
+            saveExport(ActivityExport.csv(logs: logs.map { $0.hiding(excluded) }, sessions: sessions))
+        }
+    }
+
+    private func saveExport(_ text: String) {
+        let data = Data(text.utf8)
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = "Nidus activity \(Date().formatted(.iso8601.year().month().day())).csv"
@@ -108,6 +132,7 @@ struct ActivityTrackingControls: View {
     @State private var expanded = false
     @State private var accessibilityGranted = AXIsProcessTrusted()
     @State private var permissionNotice = ""
+    @State private var confirmingClear = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
@@ -174,9 +199,13 @@ struct ActivityTrackingControls: View {
                 Divider()
                 HStack {
                     Button("Export activity…", action: model.exportActivity)
-                        .disabled(model.activitySessions.isEmpty)
                     Spacer()
-                    Button("Clear history…") { model.openStats() }
+                    Button("Clear history…", role: .destructive) { confirmingClear = true }
+                }
+                .confirmationDialog("Clear your focus history?", isPresented: $confirmingClear) {
+                    Button("Clear history", role: .destructive, action: model.clearHistory)
+                } message: {
+                    Text(FocusStatsPage.clearHistoryMessage)
                 }
             }
             .padding(.top, 14)

@@ -16,7 +16,6 @@ final class ActivityDayStore: @unchecked Sendable {
         case write(ActivityDayLog)
         case clear
         case removeTitles
-        case remove(apps: Set<String>)
         /// Deletes day files before this key.
         case prune(before: String)
     }
@@ -92,6 +91,15 @@ final class ActivityDayStore: @unchecked Sendable {
         }
     }
 
+    /// Every saved day, oldest first.
+    func loadAll() async -> [ActivityDayLog] {
+        await withCheckedContinuation { continuation in
+            queue.async { [self] in
+                continuation.resume(returning: dayKeys().compactMap { Self.read(url(for: $0)) })
+            }
+        }
+    }
+
     /// Whether any day file still holds a name.
     func hasTitles() async -> Bool {
         await withCheckedContinuation { continuation in
@@ -143,8 +151,6 @@ final class ActivityDayStore: @unchecked Sendable {
                 for key in dayKeys() { try delete(key) }
             case .removeTitles:
                 try rewrite { $0.hasTitles ? $0.removeTitles() : () }
-            case .remove(let apps):
-                try rewrite { $0.remove(apps: apps) }
             case .prune(let before):
                 for key in dayKeys() where key < before { try delete(key) }
             }

@@ -50,7 +50,8 @@ struct FocusActivityPage: View {
     private var requestedCacheKey: ActivityCacheKey {
         let interval = requestedInterval
         return ActivityCacheKey(version: model.controller?.historyVersion ?? 0, dayVersion: model.controller?.activityDayVersion ?? 0,
-                                start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly)
+                                start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly,
+                                excluded: model.activityExcludedApps)
     }
     /// The session running now, for the ribbon and focus-only views.
     private var liveFocus: ActivityRibbon.Focus? {
@@ -336,7 +337,8 @@ struct FocusActivityPage: View {
                     .padding(.vertical, 6)
             }
             ForEach(Array(visible.enumerated()), id: \.element.id) { index, row in
-                ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint)
+                ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint,
+                                reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { reopen(target) } })
             }
             if rows.count > 5 {
                 Button(expandedList ? "Show less" : "Show all \(rows.count)") {
@@ -400,6 +402,19 @@ struct FocusActivityPage: View {
         selectedSession = entry
     }
 
+    private func reopen(_ target: ActivityReopen) {
+        switch target {
+        case .page(let url):
+            NSWorkspace.shared.open(url)
+        case .app(let id):
+            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
+                app.activate()
+            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
+                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
+            }
+        }
+    }
+
     private func refreshProjects() {
         let version = model.controller?.historyVersion ?? 0
         guard displayedProjectsVersion != version else { return }
@@ -423,11 +438,12 @@ struct FocusActivityPage: View {
         let recorder = model.controller?.activityRecorder
         var logs = await recorder?.store.load(days: dayKeys(from: key.start, to: key.end)) ?? []
         guard !Task.isCancelled else { return }
+        logs = logs.map { $0.hiding(key.excluded) }
         if let recorder, recorder.isRecording {
             let today = recorder.today()
             if dayKeys(from: key.start, to: key.end).contains(today.day) {
                 logs.removeAll { $0.day == today.day }
-                logs.append(today)
+                logs.append(today.hiding(key.excluded))
             }
         }
         let live = liveFocus.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
@@ -467,6 +483,7 @@ private struct ActivityCacheKey: Hashable {
     let end: Date
     let projectID: UUID?
     let focusOnly: Bool
+    let excluded: Set<String>
 }
 
 /// The one ranked list's three views of the same seconds, which is why they
@@ -635,6 +652,7 @@ struct ActivityTotals {
         var documentSeconds: [String: TimeInterval] = [:]
         var documentTitles: [String: String] = [:]
         var documentSources: [String: String] = [:]
+        var documentApps: [String: String] = [:]
         var appNames: [String: String] = [:]
         var serviceSeconds: [String: TimeInterval] = [:]
         var serviceSecondsByDay: [Date: [String: TimeInterval]] = [:]
@@ -647,17 +665,19 @@ struct ActivityTotals {
             serviceSecondsByDay[day, default: [:]][service, default: 0] += item.seconds
             if let site = item.site, !site.isEmpty { siteSeconds[site, default: 0] += item.seconds }
             if let title = item.title, !title.isEmpty {
-                let key = "\(item.appID)\u{1F}\(item.site ?? "")\u{1F}\(title)"
+                let key = Self.documentKey(appID: item.appID, site: item.site, title: title)
                 let source = [item.appName, item.site].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 documentSeconds[key, default: 0] += item.seconds
                 documentTitles[key] = title
                 documentSources[key] = source
+                documentApps[key] = item.appID
             }
         }
         apps = Self.ranked(appSeconds, names: appNames)
         sites = Self.ranked(siteSeconds)
         documents = documentSeconds.map { key, seconds in
-            ActivityRank(id: key, name: documentTitles[key] ?? key, seconds: seconds, subtitle: documentSources[key])
+            ActivityRank(id: key, name: documentTitles[key] ?? key, seconds: seconds, subtitle: documentSources[key],
+                         appID: documentApps[key])
         }.sorted { $0.seconds > $1.seconds }
         let rankedServices = Self.ranked(serviceSeconds)
         if rankedServices.count > 4 {
@@ -676,6 +696,26 @@ struct ActivityTotals {
         }
     }
 
+    private static func documentKey(appID: String, site: String?, title: String) -> String {
+        "\(appID)\u{1F}\(site ?? "")\u{1F}\(title)"
+    }
+
+    /// Gives sites and documents the last address each was seen at, from
+    /// stretches in time order.
+    mutating func noteAddresses(from stretches: [FocusActivitySegment]) {
+        var bySite: [String: String] = [:]
+        var byDocument: [String: String] = [:]
+        for stretch in stretches {
+            guard let url = stretch.url else { continue }
+            if let site = stretch.site { bySite[site] = url }
+            if let title = stretch.title {
+                byDocument[Self.documentKey(appID: stretch.appID, site: stretch.site, title: title)] = url
+            }
+        }
+        for index in sites.indices { sites[index].url = bySite[sites[index].id] }
+        for index in documents.indices { documents[index].url = byDocument[documents[index].id] }
+    }
+
     private static func ranked(_ values: [String: TimeInterval], names: [String: String] = [:]) -> [ActivityRank] {
         values.map { key, seconds in ActivityRank(id: key, name: names[key] ?? key, seconds: seconds) }
             .sorted { $0.seconds == $1.seconds ? $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending : $0.seconds > $1.seconds }
@@ -687,6 +727,10 @@ struct ActivityRank: Identifiable {
     var name: String
     var seconds: TimeInterval
     var subtitle: String? = nil
+    /// A document's app.
+    var appID: String? = nil
+    /// The address it was last seen at.
+    var url: String? = nil
 }
 
 private struct ActivityDay: Identifiable {
@@ -825,8 +869,23 @@ private struct ActivityRankRow: View {
     let item: ActivityRank
     let maximum: TimeInterval
     let tint: Color
+    /// Goes back to the page or document, where the row has somewhere to go.
+    var reopen: (() -> Void)? = nil
+    @State private var hovering = false
 
     var body: some View {
+        if let reopen {
+            Button(action: reopen) { content.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .onHover { hovering = $0 }
+                .help(item.url == nil ? "Open the app" : "Open again")
+                .accessibilityHint(item.url == nil ? "Opens the app" : "Opens the page")
+        } else {
+            content
+        }
+    }
+
+    private var content: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 9) {
                 Text(String(format: "%02d", rank))
@@ -839,6 +898,13 @@ private struct ActivityRankRow: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
+                if reopen != nil {
+                    Image(systemName: "arrow.up.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(ActivityInk.clay)
+                        .opacity(hovering ? 1 : 0)
+                        .accessibilityHidden(true)
+                }
                 Text(ActivityDuration.string(item.seconds))
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)

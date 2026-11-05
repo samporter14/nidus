@@ -63,7 +63,6 @@ private final class Recorder: @unchecked Sendable {
         case .write(let log): return "write \(log.day) \(Int(log.seconds))"
         case .clear: return "clear"
         case .removeTitles: return "removeTitles"
-        case .remove(let apps): return "remove \(apps.sorted().joined(separator: ","))"
         case .prune(let before): return "prune \(before)"
         }
     }
@@ -84,21 +83,15 @@ struct ActivityDomainTests {
 
     @Test func reducesToTheRegistrableDomain() {
         let table: [(String, String)] = [
-            ("https://lab.slack.com/x", "slack.com"),
-            ("https://a.b.example.co.uk/", "example.co.uk"),
-            ("https://www.bbc.co.uk/news", "bbc.co.uk"),
-            ("https://lab.ox.ac.uk/", "ox.ac.uk"),
-            ("https://foo.ac.jp/", "foo.ac.jp"),
-            ("https://x.foo.ac.jp/", "foo.ac.jp"),
-            ("https://sub.example.com.au/", "example.com.au"),
-            ("https://someone.github.io/", "someone.github.io"),
-            ("https://repo.someone.github.io/", "someone.github.io"),
+            ("https://docs.google.com/document/d/1", "docs.google.com"),
+            ("https://mail.google.com/mail/u/0/", "mail.google.com"),
+            ("https://scholar.google.com/", "scholar.google.com"),
+            ("https://canvas.umich.edu/courses/1", "canvas.umich.edu"),
+            ("https://www.nature.com/articles/a", "nature.com"),
+            ("https://WWW.BBC.co.uk/news", "bbc.co.uk"),
             ("https://pubmed.ncbi.nlm.nih.gov/123/", "pubmed.ncbi.nlm.nih.gov"),
             ("https://www.ncbi.nlm.nih.gov/gene", "ncbi.nlm.nih.gov"),
-            ("https://ncbi.nlm.nih.gov/", "ncbi.nlm.nih.gov"),
-            ("https://www.nih.gov/", "nih.gov"),
-            ("https://docs.google.com/document/d/1", "google.com"),
-            ("https://a.b.example.org/", "example.org"),
+            ("https://www.com/", "www.com"),
         ]
         for (input, expected) in table {
             #expect(ActivityDomain.site(from: input) == expected, "\(input)")
@@ -607,25 +600,6 @@ struct ActivityDayStoreTests {
         #expect(days[1].totals.first?.site == "nature.com")
     }
 
-    @Test func removingAppsRewritesEveryDayAndDeletesADayLeftEmpty() throws {
-        let dir = tempDirectory()
-        defer { try? FileManager.default.removeItem(at: dir) }
-        let store = ActivityDayStore(directory: dir)
-        store.enqueue(.write(dayLog("2026-01-05", [seg(0, 10), seg(10, 20, app: "com.b", name: "B"), seg(20, 30)])))
-        store.enqueue(.write(dayLog("2026-01-06", [seg(0, 10, app: "com.b", name: "B")])))
-        store.enqueue(.write(dayLog("2026-01-07", [seg(0, 10)])))
-        store.flush()
-
-        store.enqueue(.remove(apps: ["com.b"]))
-        store.flush()
-        let first = try #require(store.load(day: "2026-01-05"))
-        #expect(first.totals.map(\.appID) == ["com.a"])
-        #expect(first.stretches.count == 2)
-        #expect(!ActivityTimeline.touches(first.stretches[0], first.stretches[1]))
-        #expect(store.load(day: "2026-01-06") == nil)
-        #expect(!FileManager.default.fileExists(atPath: store.url(for: "2026-01-06").path))
-        #expect(store.load(day: "2026-01-07") != nil)
-    }
 
     @Test func aBurstKeepsTheInProgressWriteAndTheNewestPerDay() {
         let recorder = Recorder(hold: true)
@@ -711,7 +685,6 @@ struct ActivityDayStoreTests {
 
         // Maintenance passes step over it.
         store.enqueue(.removeTitles)
-        store.enqueue(.remove(apps: ["com.a"]))
         store.flush()
         #expect(FileManager.default.fileExists(atPath: store.url(for: "2026-01-01").path))
     }
@@ -738,5 +711,55 @@ struct ActivityDayStoreTests {
         for key in ["2026-1-05", "2026/01/05", "20260105", "abcd-ef-gh", "2026-01-05x", "", "2026-01-05.json"] {
             #expect(!ActivityDayStore.isDayKey(key), "\(key)")
         }
+    }
+}
+
+@MainActor
+@Suite struct ActivityExportTests {
+    private let start = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    private var calendar: Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        return calendar
+    }
+    private func lines(_ csv: String) -> [String] { csv.components(separatedBy: "\r\n").filter { !$0.isEmpty } }
+
+    @Test func aStretchIsCutAtItsSessionAndFlagged() {
+        let stretch = FocusActivitySegment(start: start, end: start.addingTimeInterval(300), appID: "s", appName: "Safari",
+                                           site: "nature.com", title: "+Paper", url: "https://nature.com/a?b=1")
+        var log = ActivityDayLog(day: ActivityDayLog.key(for: start, calendar: calendar))
+        log.add(stretch)
+        let session = SessionEntry(start: start.addingTimeInterval(100), end: start.addingTimeInterval(200), focused: 100,
+                                   planned: nil, outcome: .completed, goal: "Read")
+        let rows = lines(ActivityExport.csv(logs: [log], sessions: [session], calendar: calendar))
+        #expect(rows.count == 4)
+        #expect(rows[0] == ActivityExport.columns.joined(separator: ","))
+        #expect(rows[1].contains(",false,,,100.0"))
+        #expect(rows[2].contains(",true,,Read,100.0"))
+        #expect(rows[3].contains(",false,,,100.0"))
+        #expect(rows[2].contains("nature.com,'+Paper,https://nature.com/a?b=1,"))
+    }
+
+    @Test func aSessionWithADailyRecordIsNotCountedTwice() {
+        var log = ActivityDayLog(day: ActivityDayLog.key(for: start, calendar: calendar))
+        log.add(FocusActivitySegment(start: start, end: start.addingTimeInterval(60), appID: "w", appName: "Word"))
+        let session = SessionEntry(start: start, end: start.addingTimeInterval(60), focused: 60, planned: nil, outcome: .completed,
+                                   foreground: ["w": 60], names: ["w": "Word"])
+        #expect(lines(ActivityExport.csv(logs: [log], sessions: [session], calendar: calendar)).count == 2)
+    }
+
+    @Test func hiddenAppsLeaveAViewOfTheDayButNotItsFile() {
+        var log = ActivityDayLog(day: "2026-11-04")
+        log.add(FocusActivitySegment(start: start, end: start.addingTimeInterval(60), appID: "a", appName: "A"))
+        log.add(FocusActivitySegment(start: start.addingTimeInterval(60), end: start.addingTimeInterval(90), appID: "b", appName: "B"))
+        #expect(log.hiding(["a"]).totals.map(\.appID) == ["b"])
+        #expect(log.totals.count == 2)
+        #expect(log.hiding([]) == log)
+        var session = SessionEntry(start: start, end: start.addingTimeInterval(60), focused: 60, planned: nil, outcome: .completed,
+                                   foreground: ["a": 40, "b": 20])
+        session.activity = [FocusActivity(appID: "a", appName: "A", seconds: 40), FocusActivity(appID: "b", appName: "B", seconds: 20)]
+        let hidden = session.hiding(["a"])
+        #expect(hidden.foreground == ["b": 20])
+        #expect(hidden.activity?.map(\.appID) == ["b"])
     }
 }

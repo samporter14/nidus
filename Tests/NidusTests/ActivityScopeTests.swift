@@ -48,6 +48,39 @@ import Testing
         #expect(scope.totals.observed == 3600)
     }
 
+    @Test func theRibbonIsColoredByAppSoABrowserKeepsItsPlace() {
+        let stretches = [stretch(9, 10, app: "Safari", site: "nature.com"), stretch(10, 11, app: "Safari", site: "Claude"),
+                         stretch(11, 11.5, app: "Word")]
+        let ribbon = ActivityRibbon(stretches: stretches, sessions: [], day: day(), now: at(23), calendar: calendar)
+        #expect(ribbon.series.map(\.name) == ["Safari", "Word"])
+        #expect(ribbon.blocks.map(\.series) == [0, 0, 1])
+    }
+
+    @Test func hourLabelsLeaveEachOtherRoom() {
+        let ribbon = ActivityRibbon(stretches: [stretch(9, 10)], sessions: [], day: day(), now: at(12), calendar: calendar)
+        let hours = ribbon.ticks(calendar: calendar).map { calendar.component(.hour, from: $0) }
+        #expect(hours == [9, 12, 15, 18])
+    }
+
+    @Test func aPageReopensAtItsLastAddressAndADocumentFallsBackToItsApp() {
+        let first = FocusActivitySegment(start: at(9), end: at(10), appID: "id.S", appName: "Safari", site: "nature.com",
+                                         title: "A", url: "https://nature.com/a")
+        let second = FocusActivitySegment(start: at(11), end: at(12), appID: "id.S", appName: "Safari", site: "nature.com",
+                                          title: "B", url: "https://nature.com/b")
+        let word = stretch(12, 13, app: "Word", title: "Aims")
+        let totals = ActivityScope(logs: [log([first, second, word])], sessions: [], calendar: calendar).totals
+        #expect(totals.sites.first?.reopenTarget == .page(URL(string: "https://nature.com/b")!))
+        #expect(totals.documents.first { $0.name == "A" }?.reopenTarget == .page(URL(string: "https://nature.com/a")!))
+        #expect(totals.documents.first { $0.name == "Aims" }?.reopenTarget == .app("id.Word"))
+        #expect(ActivityRank(id: "x", name: "x", seconds: 1).reopenTarget == nil)
+    }
+
+    @Test func thePopoverLineNamesTheDayAndItsLead() {
+        #expect(ActivityDayLine.text(log([stretch(9, 13, app: "Word"), stretch(13, 14.2, app: "Mail")])) == "Today 5h 12m · mostly Word")
+        #expect(ActivityDayLine.text(log([stretch(9, 9.5, app: "Mail")])) == "Today 30m · mostly Mail")
+        #expect(ActivityDayLine.text(log([])) == nil)
+    }
+
     @Test func seriesKeepAServiceAndFoldADomainIntoItsBrowser() {
         #expect(ActivityTotals.series(site: "Claude", appName: "Safari") == "Claude")
         #expect(ActivityTotals.series(site: "nature.com", appName: "Safari") == "Safari")
