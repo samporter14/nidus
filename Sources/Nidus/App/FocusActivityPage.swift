@@ -338,7 +338,7 @@ struct FocusActivityPage: View {
             }
             ForEach(Array(visible.enumerated()), id: \.element.id) { index, row in
                 ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint,
-                                reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { reopen(target) } })
+                                reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { target.perform() } })
             }
             if rows.count > 5 {
                 Button(expandedList ? "Show less" : "Show all \(rows.count)") {
@@ -400,19 +400,6 @@ struct FocusActivityPage: View {
     private func openInitialSession() {
         guard let initialSessionID, let entry = sessions.first(where: { $0.id == initialSessionID }) else { return }
         selectedSession = entry
-    }
-
-    private func reopen(_ target: ActivityReopen) {
-        switch target {
-        case .page(let url):
-            NSWorkspace.shared.open(url)
-        case .app(let id):
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
-                app.activate()
-            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
-                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-            }
-        }
     }
 
     private func refreshProjects() {

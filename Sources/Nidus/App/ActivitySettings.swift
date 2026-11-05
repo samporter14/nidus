@@ -32,12 +32,6 @@ extension NidusModel {
         return (controller?.history.sessions ?? []).map { $0.hiding(excluded) }
     }
 
-    /// "Today 5h 12m · mostly Word" while no session runs, all day being on.
-    var allDayLine: String? {
-        guard recordsHistory, activityTrackingEnabled, activityAllDayEnabled, let controller, !controller.engine.isRunning else { return nil }
-        return ActivityDayLine.text(controller.activityRecorder.today().hiding(activityExcludedApps))
-    }
-
     /// Today for the popover: the day's record, today's sessions and the
     /// session running now. Reads what the recorder already holds.
     func todayOverview(now: Date = Date()) -> TodayOverview? {
