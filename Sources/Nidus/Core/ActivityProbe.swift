@@ -2,17 +2,40 @@
 //  ActivityProbe.swift
 //  Nidus
 //
-//  Reads metadata from the foreground app only. URL and title values are
-//  transient: callers receive a recognized service label and, if requested,
-//  a short selected-page/document title. No page or document text is read.
+//  Reads metadata from the foreground app only. A full URL lives only inside
+//  this file: callers receive a recognized service label, the site's domain
+//  and, if requested, a short selected-page/document title. No page or
+//  document text is read.
 //
 
 import AppKit
 import ApplicationServices
 
+/// Whether the front browser window is one the person kept out of history.
+enum ActivityWindowPrivacy: Sendable, Equatable {
+    case normal
+    case privateWindow
+    /// The browser would not say. Nothing about the page may be kept all day.
+    case unknown
+}
+
 struct ActivityDetail: Sendable, Equatable {
+    /// A recognized service label, such as Google Docs.
     var site: String?
     var title: String?
+    /// The site's domain, for all-day activity only. A focus session's own
+    /// record never holds one; see `forSession`.
+    var domain: String? = nil
+    var privacy: ActivityWindowPrivacy = .normal
+
+    /// What a focus session keeps of this: the service label, and a title
+    /// only where one could be kept before domains existed. Nothing at all
+    /// from a private window.
+    var forSession: ActivityDetail? {
+        guard privacy != .privateWindow else { return nil }
+        let unrecognizedPage = site == nil && domain != nil
+        return ActivityDetail(site: site, title: unrecognizedPage ? nil : title)
+    }
 }
 
 enum ActivityProbe {
@@ -21,10 +44,14 @@ enum ActivityProbe {
     static let claudeID = "com.anthropic.claudefordesktop"
     static let scienceID = "com.anthropic.operon"
     static let scienceWebAppID = "com.apple.Safari.WebApp.67246384-D749-4D50-B379-1C4A27B67E88"
+    static let previewID = "com.apple.Preview"
+    static let acrobatIDs: Set<String> = ["com.adobe.Reader", "com.adobe.Acrobat.Pro"]
+    /// Apps whose focused window title names the document, with names on.
+    private static let windowTitleApps = Set([wordID, claudeID, scienceID, scienceWebAppID, previewID]).union(acrobatIDs)
 
     static func needsProbe(_ bundleID: String, titles: Bool) -> Bool {
         if BrowserProfile.known.contains(where: { $0.bundleID == bundleID }) { return true }
-        return titles && (bundleID == capsidID || bundleID == wordID || bundleID == claudeID || bundleID == scienceID || bundleID == scienceWebAppID)
+        return titles && (bundleID == capsidID || windowTitleApps.contains(bundleID))
     }
 
     /// Safe to call on a utility queue. Apple Events have a short timeout and
@@ -33,18 +60,47 @@ enum ActivityProbe {
         if let browser = BrowserProfile.known.first(where: { $0.bundleID == bundleID }) {
             return selectedTab(in: browser, pid: pid, titles: titles)
         }
-        switch bundleID {
-        case capsidID:
-            return titles ? CapsidActivityContext.read(pid: pid) : nil
-        case wordID:
-            return ActivityDetail(site: nil, title: titles ? usefulWindowTitle(pid: pid) : nil)
-        case claudeID:
-            return ActivityDetail(site: nil, title: titles ? usefulWindowTitle(pid: pid) : nil)
-        case scienceID, scienceWebAppID:
-            return ActivityDetail(site: nil, title: titles ? usefulWindowTitle(pid: pid) : nil)
-        default:
-            return nil
+        if bundleID == capsidID { return titles ? CapsidActivityContext.read(pid: pid) : nil }
+        guard windowTitleApps.contains(bundleID) else { return nil }
+        let title = titles ? usefulTitle(documentTitle(windowTitle(pid: pid), bundleID: bundleID)) : nil
+        return ActivityDetail(site: nil, title: title)
+    }
+
+    /// Chrome and the browsers built on it say so in the window's `mode`.
+    static func privacy(mode: String?) -> ActivityWindowPrivacy {
+        switch mode {
+        case "normal": return .normal
+        case "incognito": return .privateWindow
+        default: return .unknown
         }
+    }
+
+    /// Safari's scripting does not mention private windows, and hands over
+    /// their URLs like any other. Only the Accessibility title differs: it is
+    /// the tab's name followed by a localized "Private Browsing". So a title
+    /// that extends the tab's name is private in every language, and a title
+    /// that cannot be matched to the tab tells us nothing.
+    static func safariPrivacy(windowTitle: String?, tabName: String?) -> ActivityWindowPrivacy {
+        guard let windowTitle else { return .unknown }
+        if windowTitle.hasSuffix(", Private Browsing") || windowTitle == "Private Browsing" { return .privateWindow }
+        guard let tabName, !tabName.isEmpty else { return .unknown }
+        if windowTitle == tabName { return .normal }
+        return windowTitle.hasPrefix(tabName) ? .privateWindow : .unknown
+    }
+
+    /// Takes off what changes while the same document stays open: Preview's
+    /// page number, and Acrobat's own name.
+    static func documentTitle(_ raw: String?, bundleID: String) -> String? {
+        guard var title = raw else { return nil }
+        if bundleID == previewID,
+           let page = title.range(of: #"\s*[\(\-–—]\s*[Pp]age \d+ of \d+\)?\s*$"#, options: .regularExpression) {
+            title.removeSubrange(page)
+        }
+        if acrobatIDs.contains(bundleID),
+           let name = title.range(of: #"\s+[\-–—]\s+Adobe Acrobat.*$"#, options: .regularExpression) {
+            title.removeSubrange(name)
+        }
+        return title
     }
 
     /// Recognition takes place before any tab title is requested or retained.
@@ -75,37 +131,45 @@ enum ActivityProbe {
         guard target.automationPermission(ask: false) == nil else { return nil }
         let window = ObjectSpecifier.index("cwin", 1)
         let tab = ObjectSpecifier.property(browser.bundleID == BrowserProfile.safari.bundleID ? "cTab" : "acTa", of: window)
-        let rawURL = try? target.get(ObjectSpecifier.property(browser.urlProperty, of: tab), timeout: 0.75).stringValue
+        let url = ObjectSpecifier.property(browser.urlProperty, of: tab)
+        let name = ObjectSpecifier.property("pnam", of: tab)
+        let rawURL = try? target.get(url, timeout: 0.75).stringValue
         guard let rawURL else { return nil }
         // The local Science launcher serves its UI in a separate browser.
         // A loopback address alone is not enough: require the running launcher,
         // its exact port/routes, and the application's generic tab title.
         if isLocalScienceURL(rawURL) {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: scienceID).isEmpty else { return nil }
-            let label = try? target.get(ObjectSpecifier.property("pnam", of: tab), timeout: 0.75).stringValue
+            let label = try? target.get(name, timeout: 0.75).stringValue
             guard label == "Claude Science" else { return nil }
-            let confirmed = try? target.get(ObjectSpecifier.property(browser.urlProperty, of: tab), timeout: 0.75).stringValue
+            let confirmed = try? target.get(url, timeout: 0.75).stringValue
             guard confirmed == rawURL else { return nil }
             return ActivityDetail(site: "Claude Science", title: nil)
         }
-        guard let site = service(for: rawURL) else { return nil }
-        guard titles else { return ActivityDetail(site: site, title: nil) }
-        let rawTitle = try? target.get(ObjectSpecifier.property("pnam", of: tab), timeout: 0.75).stringValue
-        // The selected tab may change between two Apple Events. A title from
-        // a different tab must never inherit the first tab's trusted service.
-        let confirmedURL = try? target.get(ObjectSpecifier.property(browser.urlProperty, of: tab), timeout: 0.75).stringValue
+        let privacy: ActivityWindowPrivacy
+        if browser.bundleID == BrowserProfile.safari.bundleID {
+            let tabName = try? target.get(name, timeout: 0.75).stringValue
+            privacy = safariPrivacy(windowTitle: windowTitle(pid: pid), tabName: tabName)
+        } else {
+            privacy = Self.privacy(mode: try? target.get(ObjectSpecifier.property("mode", of: window), timeout: 0.75).stringValue)
+        }
+        guard privacy != .privateWindow else { return ActivityDetail(site: nil, title: nil, privacy: .privateWindow) }
+        let site = service(for: rawURL)
+        let domain = privacy == .normal ? ActivityDomain.site(from: rawURL) : nil
+        // The selected tab or window may change between two Apple Events.
+        // A title from a different tab must never inherit the first tab's
+        // service, and a domain must never outlive the check of its window.
+        let rawTitle = titles && (site != nil || domain != nil) ? (try? target.get(name, timeout: 0.75).stringValue) : nil
+        let confirmedURL = try? target.get(url, timeout: 0.75).stringValue
         guard confirmedURL == rawURL else { return nil }
-        return ActivityDetail(site: site, title: cleanTitle(rawTitle))
-    }
-
-    private static func usefulWindowTitle(pid: pid_t) -> String? {
-        usefulTitle(windowTitle(pid: pid))
+        return ActivityDetail(site: site, title: cleanTitle(rawTitle), domain: domain, privacy: privacy)
     }
 
     static func usefulTitle(_ raw: String?) -> String? {
         guard let title = cleanTitle(raw) else { return nil }
         let generic: Set<String> = ["claude", "claude science", "microsoft word", "word", "settings",
-                                    "preferences", "open", "save", "open document", "save as"]
+                                    "preferences", "open", "save", "open document", "save as",
+                                    "preview", "adobe acrobat", "adobe acrobat reader", "adobe acrobat pro", "home"]
         return generic.contains(title.lowercased()) ? nil : title
     }
 
@@ -120,7 +184,7 @@ enum ActivityProbe {
         AXUIElementSetMessagingTimeout(window, 0.75)
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &value) == .success else { return nil }
-        return cleanTitle(value as? String)
+        return value as? String
     }
 
     static func cleanTitle(_ raw: String?) -> String? {
