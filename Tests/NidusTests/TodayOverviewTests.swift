@@ -28,9 +28,21 @@ import Testing
     }
     private func overview(_ log: ActivityDayLog = ActivityDayLog(day: "2026-11-04"), sessions: [SessionEntry] = [],
                           live: ActivityRibbon.Focus? = nil, liveFocused: TimeInterval = 0, tracking: Bool = true,
-                          now: Double = 15) -> TodayOverview {
+                          now: Double = 15, categorizer: ActivityCategorizer = ActivityCategorizer(categories: [], work: FocusCategory.workSeed)) -> TodayOverview {
         TodayOverview(log: log, sessions: sessions, live: live, liveFocused: liveFocused, tracking: tracking,
-                      now: at(now), calendar: calendar)
+                      now: at(now), categorizer: categorizer, calendar: calendar)
+    }
+
+    /// Work holds Word; AI, Messaging and Video hold a site or an app each.
+    private func sorted(_ more: [FocusCategory] = []) -> ActivityCategorizer {
+        func category(_ id: String, _ name: String, apps: [String] = [], sites: [String] = []) -> FocusCategory {
+            FocusCategory(id: id, name: name, symbol: "circle", apps: apps.map { BlockedApp(bundleID: $0, name: $0) }, websites: sites)
+        }
+        var work = FocusCategory.workSeed
+        work.apps = [BlockedApp(bundleID: "id.Word", name: "Word")]
+        return ActivityCategorizer(categories: [category("ai", "AI", sites: ["claude.ai"]),
+                                                category("msg", "Messaging", apps: ["id.Slack"]),
+                                                category("video", "Video", sites: ["youtube.com"])] + more, work: work)
     }
 
     @Test func totalsCountTimeAtTheMacAndFocus() {
@@ -128,5 +140,40 @@ import Testing
     @Test func anEmptyDayIsAnHourEndingNow() {
         let today = overview(now: 15.5)
         #expect(today.ribbon.span == DateInterval(start: at(14.5), end: at(15.5)))
+    }
+
+    // MARK: Category line
+
+    @Test func theCategoryLineKeepsTheThreeLongestAndFoldsTheRestIntoOther() {
+        let day = log([stretch(8, 11, app: "Word"), stretch(11, 12, app: "Safari", site: "claude.ai"),
+                       stretch(12, 12.5, app: "Slack"), stretch(12.5, 12.7, app: "Safari", site: "youtube.com"),
+                       stretch(13, 13.2, app: "Notes")])
+        let split = overview(day, categorizer: sorted()).categorySplit
+        #expect(split?.parts.map(\.name) == ["Work", "AI", "Messaging", "Other"])
+        // Other is Video and Uncategorized, which were not in the top three.
+        #expect(split?.parts.last?.seconds == 0.2 * 3600 + 0.2 * 3600)
+        #expect(split?.text(first: 2) == "Work \(ActivityDuration.string(3 * 3600)) \u{00B7} AI \(ActivityDuration.string(3600))")
+    }
+
+    @Test func uncategorizedIsNamedWhenItIsAmongTheThreeLongest() {
+        let day = log([stretch(8, 9, app: "Word"), stretch(9, 12, app: "Notes"), stretch(12, 12.5, app: "Slack")])
+        let split = overview(day, categorizer: sorted()).categorySplit
+        #expect(split?.parts.map(\.name) == ["Uncategorized", "Work", "Messaging"])
+    }
+
+    @Test func fewGroupsMakeNoOther() {
+        let split = overview(log([stretch(8, 9, app: "Word"), stretch(9, 10, app: "Slack")]), categorizer: sorted()).categorySplit
+        #expect(split?.parts.map(\.name) == ["Messaging", "Work"])
+    }
+
+    @Test func theLineIsHiddenWhenNothingIsCategorized() {
+        #expect(overview(log([stretch(8, 9, app: "Notes")]), categorizer: sorted()).categorySplit == nil)
+        #expect(overview(log([stretch(8, 9, app: "Word")])).categorySplit == nil)
+        #expect(overview().categorySplit == nil)
+    }
+
+    @Test func categoriesAreNotAPopoverList() {
+        #expect(!ActivityListKind.popoverKinds.contains(.categories))
+        #expect(overview(log([stretch(8, 9, app: "Word")]), categorizer: sorted()).rows(.categories).isEmpty)
     }
 }

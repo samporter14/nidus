@@ -25,7 +25,7 @@ struct TodayPopoverPiece: View {
             if let overview {
                 switch overview.state {
                 case .data:
-                    TodayContent(overview: overview, generation: generation, kind: $kind, model: model)
+                    TodayContent(overview: overview, generation: generation, kind: $kind, model: model, counted: refresh)
                         .equatable()
                 case .empty:
                     note("Nothing counted yet today.")
@@ -102,7 +102,10 @@ struct TodayPopoverPiece: View {
                     .lineLimit(1)
                     .padding(.leading, 2)
             }
-            // A later change adds one line here: today's time by category.
+            if let split = overview?.categorySplit, overview?.state == .data {
+                CategorySplitLine(split: split)
+                    .padding(.leading, 2)
+            }
         }
     }
 
@@ -112,6 +115,34 @@ struct TodayPopoverPiece: View {
         if overview.atMac > 0 { parts.append(ActivityDuration.string(overview.atMac)) }
         if overview.focused > 0 { parts.append(ActivityDuration.string(overview.focused) + " in focus") }
         return parts.joined(separator: " \u{00B7} ")
+    }
+}
+
+/// "Work 3h 10m · AI 1h 05m · Messaging 40m · Other 12m", on one line. When
+/// it does not fit, parts come off the end whole (Other first) rather than a
+/// word being cut in half.
+private struct CategorySplitLine: View {
+    let split: CategorySplit
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            line(split.parts.count).fixedSize(horizontal: true, vertical: false)
+            if split.parts.count > 3 { line(3).fixedSize(horizontal: true, vertical: false) }
+            if split.parts.count > 2 { line(2).fixedSize(horizontal: true, vertical: false) }
+            line(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(split.text())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(split.text())
+    }
+
+    private func line(_ count: Int) -> some View {
+        Text(verbatim: split.text(first: count))
+            .font(.system(size: 12))
+            .foregroundStyle(Solanum.inkMuted)
+            .lineLimit(1)
+            .truncationMode(.tail)
     }
 }
 
@@ -131,6 +162,8 @@ private struct TodayContent: View, Equatable {
     let generation: Int
     @Binding var kind: ActivityListKind
     let model: NidusModel
+    /// Rebuilds the overview after a row is counted as something else.
+    let counted: () -> Void
 
     nonisolated static func == (a: TodayContent, b: TodayContent) -> Bool {
         a.generation == b.generation && a.kind == b.kind
@@ -144,7 +177,7 @@ private struct TodayContent: View, Equatable {
         VStack(alignment: .leading, spacing: 10) {
             ActivityDayRibbon(ribbon: overview.ribbon, openSession: { model.openActivity(sessionID: $0) }, compact: true)
             Picker("List", selection: $kind) {
-                ForEach(ActivityListKind.allCases) { Text($0.title).tag($0) }
+                ForEach(ActivityListKind.popoverKinds) { Text($0.title).tag($0) }
             }
             .pickerStyle(.segmented)
             .controlSize(.mini)
@@ -169,6 +202,7 @@ private struct TodayContent: View, Equatable {
                                  target: kind == .apps ? row.appID.map(ActivityReopen.app) : row.reopenTarget,
                                  close: { model.menuBarItem?.closePopover() })
                         .frame(height: Self.rowHeight)
+                        .activityCountAs(model: model, target: ActivityCountTarget(rank: row, kind: kind), counted: counted)
                 }
             }
         }
@@ -180,6 +214,7 @@ private struct TodayContent: View, Equatable {
         case .apps: return "No apps counted yet."
         case .websites: return "No websites counted yet."
         case .documents: return "No documents counted yet."
+        case .categories: return "Nothing counted yet."
         }
     }
 }

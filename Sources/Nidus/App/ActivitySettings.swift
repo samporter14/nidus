@@ -10,6 +10,7 @@ extension NidusModel.Key {
     static let activityIdleMinutes = "activityIdleMinutes"
     static let activityRetentionDays = "activityRetentionDays"
     static let activityPausedUntil = "activityPausedUntil"
+    static let activityRibbonCategory = "activityRibbonByCategory"
 }
 
 /// The choices Activity settings offers, in minutes and in days (0: forever).
@@ -49,7 +50,14 @@ extension NidusModel {
             liveFocused = controller.engine.elapsed ?? 0
         }
         return TodayOverview(log: log.hiding(activityExcludedApps), sessions: activitySessions, live: live, liveFocused: liveFocused,
-                             tracking: recordsHistory && activityTrackingEnabled && activityAllDayEnabled, now: now)
+                             tracking: recordsHistory && activityTrackingEnabled && activityAllDayEnabled, now: now,
+                             categorizer: activityCategorizer)
+    }
+
+    /// Whether the day's ribbon is colored by category rather than by app.
+    var activityRibbonByCategory: Bool {
+        get { preference(Key.activityRibbonCategory, default: false) }
+        set { setPreference(newValue, Key.activityRibbonCategory) }
     }
 
     var activityTrackingEnabled: Bool {

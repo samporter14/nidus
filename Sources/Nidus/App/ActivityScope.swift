@@ -16,6 +16,12 @@ struct ActivityScope {
     var stretches: [FocusActivitySegment]
     /// Some of this comes from a daily record, so time outside focus is here.
     var hasDailyRecords: Bool
+    /// What categories are counted from: the stretches that account for all
+    /// of their time, and the rows for time they don't (a session recorded
+    /// without a timeline, or a day whose timeline was cut short). Together
+    /// they hold each second once.
+    private(set) var categoryStretches: [FocusActivitySegment] = []
+    private(set) var categoryRows: [(day: Date, row: FocusActivity)] = []
 
     /// `narrowed`: only time inside these sessions (and `live`, the session
     /// running now) counts, cut to their start and end.
@@ -27,17 +33,21 @@ struct ActivityScope {
         if let live { ranges.append(live) }
         var rows: [(day: Date, row: FocusActivity)] = []
         var kept: [FocusActivitySegment] = []
+        var exact: [FocusActivitySegment] = []
+        var unsegmented: [(day: Date, row: FocusActivity)] = []
         for log in days {
             let day = Self.date(of: log.day, calendar: calendar)
             if narrowed {
                 let slices = ActivityDayLog.slice(log.stretches, to: ranges)
                 kept += slices
+                exact += slices
                 var slicedDay = ActivityDayLog(day: log.day)
                 slices.forEach { slicedDay.add($0) }
                 rows += slicedDay.totals.map { (day, $0) }
             } else {
                 kept += log.stretches
                 rows += log.totals.map { (day, $0) }
+                if log.truncated { unsegmented += log.totals.map { (day, $0) } } else { exact += log.stretches }
             }
         }
         let recorded = days.flatMap(\.stretches)
@@ -45,12 +55,51 @@ struct ActivityScope {
             let range = DateInterval(start: session.start, end: max(session.start, session.end))
             guard !recorded.contains(where: { $0.end > range.start && $0.start < range.end }) else { continue }
             let day = calendar.startOfDay(for: session.start)
-            rows += ActivityTotals.rows(of: session).map { (day, $0) }
+            let own = ActivityTotals.rows(of: session).map { (day, $0) }
+            rows += own
             kept += session.activitySegments ?? []
+            if let segments = session.activitySegments, !segments.isEmpty, session.activityTimelineTruncated != true {
+                exact += segments
+            } else {
+                unsegmented += own
+            }
         }
+        categoryStretches = exact.sorted { $0.start < $1.start }
+        categoryRows = unsegmented
         stretches = kept.sorted { $0.start < $1.start }
         totals = ActivityTotals(rows: rows, focused: sessions.reduce(0) { $0 + max(0, $1.focused) })
         totals.noteAddresses(from: stretches)
+    }
+
+    // MARK: Categories
+
+    /// Time per group, longest first. `categorizer` is the groups as they are now.
+    func categoryTotals(using categorizer: ActivityCategorizer) -> [ActivityCategoryTotal] {
+        categorizer.totals(of: categoryStretches, plus: categoryRows.map(\.row))
+    }
+
+    /// The ranked lists for only the time that counts under one group
+    /// (`ActivityCategorizer.uncategorizedID` for none). The figures stay
+    /// the whole scope's: `focused` is carried over, not cut.
+    func totals(in groupID: String, using categorizer: ActivityCategorizer, calendar: Calendar = .current) -> ActivityTotals {
+        var seen: [String: String] = [:]
+        func group(appID: String, site: String?, url: String?) -> String {
+            let key = appID + "\u{1}" + (url ?? site ?? "")
+            if let known = seen[key] { return known }
+            let id = categorizer.category(appID: appID, site: site, url: url) ?? ActivityCategorizer.uncategorizedID
+            seen[key] = id
+            return id
+        }
+        let stretches = categoryStretches.filter { $0.seconds > 0 && group(appID: $0.appID, site: $0.site, url: $0.url) == groupID }
+        var rows: [(day: Date, row: FocusActivity)] = stretches.map { stretch in
+            (calendar.startOfDay(for: stretch.start),
+             FocusActivity(appID: stretch.appID, appName: stretch.appName, site: stretch.site, title: stretch.title,
+                           seconds: stretch.seconds))
+        }
+        rows += categoryRows.filter { group(appID: $0.row.appID, site: $0.row.site, url: nil) == groupID }
+        var result = ActivityTotals(rows: rows, focused: totals.focused)
+        result.noteAddresses(from: stretches)
+        return result
     }
 
     private static func date(of key: String, calendar: Calendar) -> Date {
@@ -85,6 +134,12 @@ struct ActivityRibbon {
         let name: String
     }
 
+    /// What blocks are colored by.
+    enum Coloring {
+        case app
+        case category(ActivityCategorizer)
+    }
+
     static let otherID = "__other__"
     /// Named in the legend; the rest share a color as Other.
     static let namedSeries = 4
@@ -96,14 +151,29 @@ struct ActivityRibbon {
     var isEmpty: Bool { blocks.isEmpty && focus.isEmpty }
 
     init(stretches: [FocusActivitySegment], sessions: [SessionEntry], live: Focus? = nil, day: DateInterval, now: Date,
-         calendar: Calendar = .current) {
+         colorBy: Coloring = .app, calendar: Calendar = .current) {
+        // A series is an app, or a group. A page is read once per address.
+        var groupOf: [String: String] = [:]
+        func seriesKey(of stretch: FocusActivitySegment) -> String {
+            guard case .category(let categorizer) = colorBy else { return stretch.appID }
+            let address = stretch.appID + "\u{1}" + (stretch.url ?? stretch.site ?? "")
+            if let known = groupOf[address] { return known }
+            let id = categorizer.category(appID: stretch.appID, site: stretch.site, url: stretch.url) ?? ActivityCategorizer.uncategorizedID
+            groupOf[address] = id
+            return id
+        }
         var seconds: [String: TimeInterval] = [:]
         var names: [String: String] = [:]
         for stretch in stretches {
-            seconds[stretch.appID, default: 0] += stretch.seconds
-            names[stretch.appID] = stretch.appName
+            let id = seriesKey(of: stretch)
+            seconds[id, default: 0] += stretch.seconds
+            if case .category(let categorizer) = colorBy {
+                names[id] = categorizer.label(of: id == ActivityCategorizer.uncategorizedID ? nil : id).name
+            } else {
+                names[id] = stretch.appName
+            }
         }
-        var ranked: [ActivityRank] = seconds.map { key, value in ActivityRank(id: key, name: names[key] ?? key, seconds: value) }
+        var ranked: [ActivityRank] = seconds.map { id, value in ActivityRank(id: id, name: names[id] ?? id, seconds: value) }
         ranked.sort { (a: ActivityRank, b: ActivityRank) -> Bool in
             a.seconds == b.seconds ? a.name < b.name : a.seconds > b.seconds
         }
@@ -126,7 +196,7 @@ struct ActivityRibbon {
             let name = stretch.site ?? stretch.title ?? stretch.appName
             let detail = [stretch.site == nil ? nil : stretch.appName, stretch.site == nil ? nil : stretch.title]
                 .compactMap { $0 }.joined(separator: " · ")
-            return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[stretch.appID] ?? Self.namedSeries,
+            return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[seriesKey(of: stretch)] ?? Self.namedSeries,
                          name: name, detail: detail.isEmpty ? (stretch.title == nil ? nil : stretch.appName) : detail)
         }
         focus = sessions.filter { $0.end > $0.start }.sorted { $0.start < $1.start }.map { entry in
