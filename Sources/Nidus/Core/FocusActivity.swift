@@ -2,7 +2,7 @@
 //  FocusActivity.swift
 //  Nidus
 //
-//  A deliberately small activity record. A URL, page contents, document
+//  A small activity record of what was in front. Page contents, document
 //  contents, and input events never enter this model or the history file.
 //
 
@@ -12,7 +12,7 @@ struct FocusActivity: Codable, Equatable, Sendable, Identifiable {
     var id: String
     var appID: String
     var appName: String
-    /// A recognized service label, such as Google Docs; never a hostname.
+    /// A recognized service label, such as Google Docs, or a domain.
     var site: String?
     /// The optional selected page or document name.
     var title: String?
@@ -39,13 +39,15 @@ struct FocusActivitySegment: Codable, Equatable, Sendable, Identifiable {
     var appName: String
     var site: String?
     var title: String?
+    /// The page's address, latest in the stretch, on all-day stretches only.
+    var url: String?
     /// Changes at a pause or relaunch, even when two dates happen to touch.
     var continuity: Int
 
     var seconds: TimeInterval { max(0, end.timeIntervalSince(start)) }
 
     init(id: String = UUID().uuidString, start: Date, end: Date, appID: String,
-         appName: String, site: String? = nil, title: String? = nil, continuity: Int = 0) {
+         appName: String, site: String? = nil, title: String? = nil, url: String? = nil, continuity: Int = 0) {
         self.id = id
         self.start = start
         self.end = end
@@ -53,6 +55,7 @@ struct FocusActivitySegment: Codable, Equatable, Sendable, Identifiable {
         self.appName = appName
         self.site = site
         self.title = title
+        self.url = url
         self.continuity = continuity
     }
 }
@@ -62,8 +65,7 @@ enum ActivityTimeline {
     /// Sampling intervals must touch to prove an uninterrupted stretch.
     static let tolerance: TimeInterval = 0
 
-    /// Only labels emitted by the local probe enter the persisted model.
-    /// Hostnames, URLs, paths, and arbitrary page text are never site labels.
+    /// The labels the local probe emits for a recognized service.
     static func safeSite(_ site: String?) -> String? {
         guard let site else { return nil }
         let labels: Set<String> = ["Google Docs", "Claude", "Microsoft Word", "Claude Science", "Capsid"]
@@ -148,6 +150,7 @@ enum ActivityRedaction {
             previous = segment
             segment.continuity += offset
             segment.title = nil
+            segment.url = nil
             redacted.append(segment)
         }
         return redacted

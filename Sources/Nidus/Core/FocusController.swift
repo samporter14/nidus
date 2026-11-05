@@ -120,7 +120,7 @@ final class FocusController: ObservableObject {
             applyRecorderSettings()
         }
     }
-    /// All-day activity, on top of `activityTrackingEnabled`. Off by default.
+    /// All-day activity, on top of `activityTrackingEnabled`.
     var activityAllDayEnabled = false { didSet { applyRecorderSettings() } }
     var activityIdleCutoff = ActivityRecorder.defaultIdleCutoff { didSet { applyRecorderSettings() } }
     var activityRetentionDays = ActivityRecorder.defaultRetentionDays { didSet { applyRecorderSettings() } }
@@ -128,6 +128,7 @@ final class FocusController: ObservableObject {
     var activityPausedUntil: Date? { didSet { applyRecorderSettings() } }
     /// Bumped when a day's record changes on disk; a page showing it refreshes.
     @Published private(set) var activityDayVersion = 0
+    func bumpActivityDayVersion() { activityDayVersion += 1 }
     let activityRecorder: ActivityRecorder
     /// Tells the stats page something was added.
     @Published private(set) var historyVersion = 0
@@ -206,7 +207,7 @@ final class FocusController: ObservableObject {
         engine.onEvent = { [weak self] event in self?.handle(event) }
         engine.isAway = { [weak self] in self?.isScreenLocked ?? false }
         now = Date()
-        activityRecorder.onSave = { [weak self] in self?.activityDayVersion += 1 }
+        activityRecorder.onSave = { [weak self] in self?.bumpActivityDayVersion() }
         engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
                        allowTitles: activityDocumentTitlesEnabled,
                        excludedApps: activityExcludedApps)

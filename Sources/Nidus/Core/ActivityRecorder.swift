@@ -7,7 +7,7 @@
 //  locks, the Mac sleeps) and otherwise sets one timer for the next moment
 //  anything could change, so an unchanging afternoon costs almost nothing.
 //  The only regular work is the tab or window-title read, at most every four
-//  seconds, while a browser or document app is in front.
+//  seconds.
 //
 //  A stretch ends when the app, site or title changes, or at idle, lock,
 //  sleep, a pause or midnight. Time after the last input is not credited,
@@ -75,7 +75,6 @@ final class ActivityRecorder {
 
         /// A browser's first read may yet say this is a private window, so
         /// until then none of it may be kept.
-        var isKeepable: Bool { !(awaitingFirstRead && ActivityRecorder.isBrowser(segment.appID)) }
     }
 
     private let host: any ActivityRecorderHost
@@ -106,11 +105,9 @@ final class ActivityRecorder {
     private var probeInFlight = false
     private var generation = 0
     private var lastProbeAt: Date?
-    private var lastConfirmedAt: Date?
     private var failedProbes = 0
     private var lastDetail: (detail: ActivityDetail, id: String, pid: pid_t, at: Date)?
     /// The private window in front, kept out until a read says otherwise.
-    private var skippedPID: pid_t?
     private var lastPruneDay: String?
 
     init(store: ActivityDayStore, host: any ActivityRecorderHost, now: @escaping () -> Date = Date.init,
@@ -135,7 +132,7 @@ final class ActivityRecorder {
     func today() -> ActivityDayLog {
         let t = clock()
         var snapshot = log
-        if let open, open.isKeepable, let segment = closing(open, at: creditedEnd(at: t)) {
+        if let open, let segment = closing(open, at: creditedEnd(at: t)) {
             snapshot.add(segment)
         }
         return snapshot
@@ -200,7 +197,6 @@ final class ActivityRecorder {
                 // was already kept is written without it.
                 open = nil
                 isIdle = false
-                skippedPID = nil
                 gap()
                 if hasUnsaved { save(at: clock()) }
             }
@@ -300,14 +296,12 @@ final class ActivityRecorder {
         isIdle = false
         guard let front = host.frontApp(), isRecordable(front) else {
             closeOpen(at: t, at: t)
-            skippedPID = nil
             return
         }
         if let open, open.segment.appID != front.id || open.pid != front.pid {
             closeOpen(at: t, at: t, continues: true)
         }
-        if skippedPID != front.pid { skippedPID = nil }
-        if open == nil, skippedPID == nil {
+        if open == nil {
             let start = returning ? max(t.addingTimeInterval(-since), idleFloor ?? .distantPast) : t
             open = OpenStretch(segment: FocusActivitySegment(start: start, end: t, appID: front.id, appName: front.name,
                                                              continuity: continuity),
@@ -322,10 +316,6 @@ final class ActivityRecorder {
 
     private func isRecordable(_ app: ActivityFrontApp) -> Bool {
         app.isRegular && !Self.notWork.contains(app.id) && !settings.excluded.contains(app.id)
-    }
-
-    fileprivate nonisolated static func isBrowser(_ id: String) -> Bool {
-        BrowserProfile.known.contains { $0.bundleID == id }
     }
 
     /// Where credit ends if counting stopped now: now, unless the person had
@@ -350,7 +340,7 @@ final class ActivityRecorder {
         guard let closed = open else { return }
         open = nil
         if !continues { gap() }
-        guard closed.isKeepable, let segment = closing(closed, at: min(end, t)) else { return }
+        guard let segment = closing(closed, at: min(end, t)) else { return }
         file(segment)
     }
 
@@ -413,7 +403,7 @@ final class ActivityRecorder {
     private func save(at t: Date) {
         lastSavedAt = t
         var snapshot = log
-        if let open, open.isKeepable, let segment = closing(open, at: creditedEnd(at: t)) {
+        if let open, let segment = closing(open, at: creditedEnd(at: t)) {
             snapshot.add(segment)
         }
         hasUnsaved = false
@@ -476,47 +466,31 @@ final class ActivityRecorder {
     }
 
     private func take(_ detail: ActivityDetail, for app: ActivityFrontApp, at t: Date) {
-        if detail.privacy == .privateWindow {
-            skippedPID = app.pid
-            if let open {
-                self.open = nil
-                gap()
-                // Up to the last read that vouched for it, and no further.
-                if open.isKeepable, let segment = closing(open, at: lastConfirmedAt ?? open.segment.start) {
-                    file(segment)
-                }
-            }
-            return
+        let site = ActivityTimeline.safeDaySite(detail.site ?? detail.domain)
+        let title = settings.titles ? detail.title : nil
+        guard let current = open else { return }
+        open?.awaitingFirstRead = false
+        if current.awaitingFirstRead {
+            open?.segment.site = site
+            open?.segment.title = title
+            open?.segment.url = detail.url
+        } else if current.segment.site == site, title == nil || current.segment.title == nil {
+            // A name arriving late, or one read that returned none.
+            open?.segment.title = title ?? current.segment.title
+            open?.segment.url = detail.url ?? current.segment.url
+        } else if current.segment.site != site || current.segment.title != title {
+            change(to: site, title: title, url: detail.url, at: t)
+        } else {
+            open?.segment.url = detail.url ?? current.segment.url
         }
-        let known = detail.privacy == .normal || !Self.isBrowser(app.id)
-        let site = known ? ActivityTimeline.safeDaySite(detail.site ?? detail.domain) : nil
-        let title = known && settings.titles ? detail.title : nil
-        if skippedPID == app.pid {
-            skippedPID = nil
-            open = OpenStretch(segment: FocusActivitySegment(start: t, end: t, appID: app.id, appName: app.name,
-                                                             site: site, title: title, continuity: continuity),
-                               pid: app.pid, awaitingFirstRead: false)
-        } else if let current = open {
-            open?.awaitingFirstRead = false
-            if current.awaitingFirstRead {
-                open?.segment.site = site
-                open?.segment.title = title
-            } else if current.segment.site == site, title == nil || current.segment.title == nil {
-                // A name arriving late, or one read that returned none.
-                open?.segment.title = title ?? current.segment.title
-            } else if current.segment.site != site || current.segment.title != title {
-                change(to: site, title: title, at: t)
-            }
-        }
-        lastConfirmedAt = t
     }
 
-    private func change(to site: String?, title: String?, at t: Date) {
+    private func change(to site: String?, title: String?, url: String? = nil, at t: Date) {
         guard let current = open else { return }
         var next = current
         closeOpen(at: t, at: t, continues: true)
         next.segment = FocusActivitySegment(start: t, end: t, appID: current.segment.appID, appName: current.segment.appName,
-                                            site: site, title: title, continuity: continuity)
+                                            site: site, title: title, url: url, continuity: continuity)
         next.awaitingFirstRead = false
         open = next
     }
@@ -534,7 +508,7 @@ final class ActivityRecorder {
         } else {
             if isIdle { wait = min(wait, Self.idlePollInterval) }
             if open != nil, !focusRunning { wait = min(wait, settings.idleCutoff - idleSeconds) }
-            if open != nil || skippedPID != nil, let front = host.frontApp(),
+            if open != nil, let front = host.frontApp(),
                ActivityProbe.needsProbe(front.id, titles: settings.titles) {
                 let due = lastProbeAt.map { Self.probeInterval - t.timeIntervalSince($0) } ?? 0
                 wait = min(wait, due)

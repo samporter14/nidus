@@ -327,6 +327,13 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
             sequences.forEach(menu.addItem)
             menu.addItem(.separator())
             menu.addItem(action("Activity…", #selector(openActivity)))
+            if let end = model.activityPauseEnd {
+                let resume = action("Resume tracking", #selector(resumeActivity))
+                if #available(macOS 14.4, *) { resume.subtitle = "Paused until " + end.formatted(date: .omitted, time: .shortened) }
+                menu.addItem(resume)
+            } else if model.canPauseActivity {
+                menu.addItem(action("Pause tracking for an hour", #selector(pauseActivity)))
+            }
             menu.addItem(action("Stats…", #selector(openStats)))
             menu.addItem(action("Nidus settings…", #selector(openSettings)))
         }
@@ -356,6 +363,8 @@ final class FocusMenuBar: NSObject, NSMenuDelegate {
     @objc private func showProtectionFixes() { model?.openProtectionFixes() }
     @objc private func openSettings() { model?.openSettings() }
     @objc private func openActivity() { model?.openActivity() }
+    @objc private func pauseActivity() { model?.pauseActivityForAnHour() }
+    @objc private func resumeActivity() { model?.resumeActivity() }
     @objc private func openStats() { model?.openStats() }
     @objc private func quit() { NSApp.terminate(nil) }
 }

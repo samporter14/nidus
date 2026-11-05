@@ -147,6 +147,12 @@ and the categories to block, and press Start. Until the session ends:
   as its goal, and opens its link, on that click and no other; Dismiss puts it
   away. Resume never replaces a session or break that is on, and says why it
   can't.
+- **Activity.** A record of your whole day: which apps, websites and
+  documents were in front and when, drawn to clock scale with your focus
+  sessions above it, ranked by day, week or month. Time stops when you step
+  away. It keeps page and window titles and full addresses, in one file a day
+  on your Mac for 90 days, and you can turn it off, exclude apps, pause it for
+  an hour or clear it. [More on what it records](docs/activity.md).
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
   session, how many goals you finished and what you blocked most. On Monday a
   card sums up last week. Export your history as CSV or JSON whenever you

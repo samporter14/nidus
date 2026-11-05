@@ -2,9 +2,9 @@
 //  FocusActivityPage.swift
 //  Nidus
 //
-//  A session-scoped view of the apps, sites, and (when enabled) document
-//  titles that were in front during focus. It reports observed time, not a
-//  measure of productivity.
+//  The apps, sites, and (when enabled) document titles that were in front:
+//  all day where the daily record is on, and during focus sessions always.
+//  It reports observed time, not a measure of productivity.
 //
 
 import AppKit
@@ -18,7 +18,7 @@ struct FocusActivityPage: View {
     var initialSessionID: UUID? = nil
 
     init(model: NidusModel, now: Date? = nil, calendar: Calendar = .current,
-         initialSessionID: UUID? = nil, initialPeriod: ActivityPeriod = .week) {
+         initialSessionID: UUID? = nil, initialPeriod: ActivityPeriod = .today) {
         self.model = model
         self.now = now
         self.calendar = calendar
@@ -26,78 +26,91 @@ struct FocusActivityPage: View {
         _period = State(initialValue: initialPeriod)
     }
 
-    @State private var period: ActivityPeriod = .week
+    @State private var period: ActivityPeriod = .today
     @State private var projectID: UUID?
     @State private var selectedSession: SessionEntry?
-    @State private var expandedApps = false
-    @State private var expandedSites = false
-    @State private var expandedDocuments = false
+    @State private var listKind: ActivityListKind = .apps
+    @State private var expandedList = false
     @State private var expandedSessions = false
     @State private var selectedDay: Date?
     @State private var periodOffset = 0
+    @State private var focusOnly = false
     @State private var displayedSessions: [SessionEntry] = []
-    @State private var displayedTotals = ActivityTotals(sessions: [])
-    @State private var displayedCacheKey: ActivityCacheKey?
+    @State private var displayedScope = ActivityScope(logs: [], sessions: [])
+    @State private var displayedLoadKey: ActivityCacheKey?
     @State private var displayedProjects: [ActivityProjectChoice] = []
     @State private var displayedProjectsVersion = -1
 
     private var sessions: [SessionEntry] { model.activitySessions }
-    private var effectiveNow: Date { now ?? model.controller?.now ?? Date() }
-    private var requestedCacheKey: ActivityCacheKey {
-        let interval = period.interval(around: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar), calendar: calendar)
-        return ActivityCacheKey(version: model.controller?.historyVersion ?? 0,
-                                start: interval.start, end: interval.end, projectID: projectID)
+    private var effectiveNow: Date { now ?? Date() }
+    private var displayedTotals: ActivityTotals { displayedScope.totals }
+    private var requestedInterval: DateInterval {
+        period.interval(around: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar), calendar: calendar)
     }
+    private var requestedCacheKey: ActivityCacheKey {
+        let interval = requestedInterval
+        return ActivityCacheKey(version: model.controller?.historyVersion ?? 0, dayVersion: model.controller?.activityDayVersion ?? 0,
+                                start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly)
+    }
+    /// The session running now, for the ribbon and focus-only views.
+    private var liveFocus: ActivityRibbon.Focus? {
+        guard let controller = model.controller, controller.engine.isRunning, let session = controller.engine.session,
+              session.startedAt < effectiveNow else { return nil }
+        return ActivityRibbon.Focus(id: "live", sessionID: nil, start: session.startedAt, end: effectiveNow,
+                                    name: session.plan.goal.isEmpty ? "Focus" : session.plan.goal)
+    }
+
     var body: some View {
         let rangeSessions = displayedSessions
-        let summary = displayedTotals
+        let scope = displayedScope
         return NidusSettingsPage {
-            hero(summary)
-            filters
-            if rangeSessions.isEmpty {
+            hero
+            filters(scope)
+            if rangeSessions.isEmpty && scope.stretches.isEmpty && scope.totals.observed == 0 {
                 emptyState
             } else {
-                overview(summary, sessions: rangeSessions)
-                dailyPattern(summary, sessions: rangeSessions)
+                overview(scope, sessions: rangeSessions)
+                if period == .today {
+                    dayRibbon(scope, sessions: rangeSessions)
+                } else {
+                    dailyPattern(scope.totals, sessions: rangeSessions)
+                }
+                rankedList(scope.totals)
                 projectInsights
-                rankings(title: "Apps", subtitle: "Apps observed in front", rows: summary.apps,
-                         expanded: $expandedApps, tint: ActivityInk.blue)
-                if !summary.sites.isEmpty {
-                    rankings(title: "Recognized sites", subtitle: "Sites identified in supported browsers", rows: summary.sites,
-                             expanded: $expandedSites, tint: ActivityInk.sage)
-                }
-                if !summary.documents.isEmpty {
-                    rankings(title: "Titles", subtitle: "Document and conversation names, when enabled", rows: summary.documents,
-                             expanded: $expandedDocuments, tint: ActivityInk.clay)
-                }
                 sessionList(rangeSessions)
             }
             NidusSettingsCard { ActivityTrackingControls(model: model) }
-            coverageNote
         }
         .sheet(item: $selectedSession) { entry in
             ActivitySessionRecap(entry: entry)
                 .frame(minWidth: 430, minHeight: 440)
         }
-        .onAppear { refreshCache(); openInitialSession() }
-        .onChange(of: requestedCacheKey) { _, _ in refreshCache() }
+        .onAppear { refreshProjects(); openInitialSession() }
+        .task(id: requestedCacheKey) { await reload(requestedCacheKey) }
     }
 
-    private func hero(_ totals: ActivityTotals) -> some View {
+    private var hero: some View {
         NidusSettingsSection {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Activity")
                     .font(.system(size: 28, weight: .regular, design: .serif))
                     .foregroundStyle(.primary)
-                Text("A record of what was in front during focus sessions.")
+                Text(model.activityAllDayEnabled ? "A record of your day: what was in front, and when."
+                                                 : "A record of what was in front during focus sessions.")
                     .font(.system(size: 13))
                     .foregroundStyle(.secondary)
-                if let lead = totals.lead {
-                    Text("Most observed: \(lead.name) · \(ActivityDuration.string(lead.seconds))")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(ActivityInk.clay)
-                        .padding(.top, 4)
-                        .accessibilityLabel("Most observed: \(lead.name), \(ActivityDuration.string(lead.seconds))")
+                if let end = model.activityPauseEnd {
+                    HStack(spacing: 8) {
+                        Text("Paused until \(end.formatted(date: .omitted, time: .shortened))")
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(ActivityInk.clay)
+                        Button("Resume", action: model.resumeActivity)
+                            .buttonStyle(.plain)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundStyle(ActivityInk.clay)
+                            .underline()
+                    }
+                    .padding(.top, 4)
                 }
             }
             .padding(.top, 4)
@@ -106,7 +119,7 @@ struct FocusActivityPage: View {
         }
     }
 
-    private var filters: some View {
+    private func filters(_ scope: ActivityScope) -> some View {
         NidusSettingsCard {
             HStack(spacing: 10) {
                 Picker("Time range", selection: $period) {
@@ -147,6 +160,15 @@ struct FocusActivityPage: View {
                     .frame(maxWidth: 96)
             }
             .padding(.vertical, 4)
+            if scope.hasDailyRecords || focusOnly {
+                Toggle("During focus only", isOn: $focusOnly)
+                    .toggleStyle(.switch)
+                    .controlSize(.mini)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                    .padding(.bottom, 2)
+            }
         }
     }
 
@@ -159,7 +181,9 @@ struct FocusActivityPage: View {
                 Text("No activity in this view")
                     .font(.system(size: 16, weight: .medium))
                     .foregroundStyle(.primary)
-                Text("Activity appears here for recorded focus sessions in the selected time range and project.")
+                Text(model.activityAllDayEnabled
+                     ? "Nothing was counted in the selected time range and project."
+                     : "Activity appears here for recorded focus sessions in the selected time range and project. To see your whole day, turn on Track all day under Tracking.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -170,16 +194,33 @@ struct FocusActivityPage: View {
         }
     }
 
-    private func overview(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
-        NidusSettingsCard {
+    private func overview(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
+        let totals = scope.totals
+        let allDay = scope.hasDailyRecords && !focusOnly && projectID == nil
+        return NidusSettingsCard {
             HStack(alignment: .center, spacing: 0) {
-                ActivityFigure(label: "Focused", value: ActivityDuration.string(totals.focused), color: ActivityInk.clay)
+                ActivityFigure(label: allDay ? "At the Mac" : "Observed", value: ActivityDuration.string(totals.observed), color: ActivityInk.blue)
                 Divider().frame(height: 42)
-                ActivityFigure(label: "Observed", value: ActivityDuration.string(totals.observed), color: ActivityInk.blue)
-                Divider().frame(height: 42)
-                ActivityFigure(label: "Unobserved", value: ActivityDuration.string(max(0, totals.focused - totals.observed)), color: ActivityInk.sage)
-                Divider().frame(height: 42)
-                ActivityFigure(label: "Sessions", value: "\(sessions.count)", color: ActivityInk.blue)
+                ActivityFigure(label: "In focus", value: ActivityDuration.string(totals.focused), color: ActivityInk.clay)
+            }
+            .padding(.top, 8)
+            Text(verbatim: ActivityOverviewLine.text(lead: totals.lead, sessions: sessions.count, withinFocus: !allDay))
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 8)
+        }
+    }
+
+    private func dayRibbon(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
+        let interval = requestedInterval
+        let live = liveFocus.flatMap { interval.intersects(DateInterval(start: $0.start, end: $0.end)) ? $0 : nil }
+        let ribbon = ActivityRibbon(stretches: scope.stretches, sessions: sessions, live: live, day: interval,
+                                    now: effectiveNow, calendar: calendar)
+        return NidusSettingsCard {
+            ActivityDayRibbon(ribbon: ribbon, calendar: calendar) { id in
+                selectedSession = sessions.first { $0.id == id }
             }
             .padding(.vertical, 8)
         }
@@ -189,7 +230,7 @@ struct FocusActivityPage: View {
         NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Daily pattern")
-                Text("Observed time by the app or recognized site in front, grouped by session start day.")
+                Text("Observed time by the app or service in front.")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
             }
@@ -270,32 +311,44 @@ struct FocusActivityPage: View {
         return ActivityProjectInsights.summaries(sessions: sessions, interval: interval, calendar: calendar)
     }
 
-    private func rankings(title: String, subtitle: String, rows: [ActivityRank], expanded: Binding<Bool>, tint: Color) -> some View {
-        let visible = expanded.wrappedValue ? rows : Array(rows.prefix(5))
-        return NidusSettingsSection {
-            VStack(alignment: .leading, spacing: 3) {
-                settingsSectionHeader(title)
-                Text(subtitle)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+    private func rankedList(_ totals: ActivityTotals) -> some View {
+        let rows: [ActivityRank]
+        switch listKind {
+        case .apps: rows = totals.apps
+        case .websites: rows = totals.sites
+        case .documents: rows = totals.documents
+        }
+        let visible = expandedList ? rows : Array(rows.prefix(5))
+        return NidusSettingsCard {
+            Picker("Show", selection: $listKind) {
+                ForEach(ActivityListKind.allCases) { kind in Text(kind.title).tag(kind) }
             }
-        } content: {
-            NidusSettingsCard {
-                ForEach(Array(visible.enumerated()), id: \.element.id) { index, row in
-                    ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: tint)
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .accessibilityLabel("Rank activity by")
+            .onChange(of: listKind) { _, _ in expandedList = false }
+            .padding(.vertical, 6)
+            if rows.isEmpty {
+                Text(listKind.emptyNote)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 6)
+            }
+            ForEach(Array(visible.enumerated()), id: \.element.id) { index, row in
+                ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint)
+            }
+            if rows.count > 5 {
+                Button(expandedList ? "Show less" : "Show all \(rows.count)") {
+                    if reduceMotion { expandedList.toggle() }
+                    else { withAnimation(.easeInOut(duration: 0.2)) { expandedList.toggle() } }
                 }
-                if rows.count > 5 {
-                    Button(expanded.wrappedValue ? "Show less" : "Show all \(rows.count)") {
-                        if reduceMotion { expanded.wrappedValue.toggle() }
-                        else { withAnimation(.easeInOut(duration: 0.2)) { expanded.wrappedValue.toggle() } }
-                    }
-                    .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(ActivityInk.clay)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-                    .padding(.top, 3)
-                    .accessibilityHint("Expands the ranked list")
-                }
+                .buttonStyle(.plain)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(ActivityInk.clay)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 3)
+                .accessibilityHint("Expands the ranked list")
             }
         }
     }
@@ -342,45 +395,57 @@ struct FocusActivityPage: View {
         }
     }
 
-    private var coverageNote: some View {
-        NidusSettingsCard {
-            VStack(alignment: .leading, spacing: 5) {
-                Label("Coverage varies by session", systemImage: "info.circle")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.secondary)
-                Text("Only time observed during focus sessions is shown. Older sessions may contain app totals only. Sessions recorded with activity tracking off have no new activity measurements. Recognized sites and titles are available only when captured. Unobserved time includes focus time with no activity sample. This view describes what was in front, not how productive a session was.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .padding(.vertical, 3)
-        }
-    }
-
     private func openInitialSession() {
         guard let initialSessionID, let entry = sessions.first(where: { $0.id == initialSessionID }) else { return }
         selectedSession = entry
     }
 
-    private func refreshCache() {
-        let key = requestedCacheKey
-        let source = sessions
-        if displayedProjectsVersion != key.version {
-            var seen = Set<UUID>()
-            displayedProjects = source.compactMap { entry in
-                guard let id = entry.projectID, let name = entry.projectName, !name.isEmpty,
-                      seen.insert(id).inserted else { return nil }
-                return ActivityProjectChoice(id: id, name: name)
-            }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            displayedProjectsVersion = key.version
-        }
-        guard key != displayedCacheKey else { return }
-        displayedSessions = source.filter { entry in
+    private func refreshProjects() {
+        let version = model.controller?.historyVersion ?? 0
+        guard displayedProjectsVersion != version else { return }
+        var seen = Set<UUID>()
+        displayedProjects = sessions.compactMap { entry in
+            guard let id = entry.projectID, let name = entry.projectName, !name.isEmpty,
+                  seen.insert(id).inserted else { return nil }
+            return ActivityProjectChoice(id: id, name: name)
+        }.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        displayedProjectsVersion = version
+    }
+
+    /// Daily files come off the main actor; today's comes from the recorder
+    /// when it is running, since that includes the stretch still open.
+    private func reload(_ key: ActivityCacheKey) async {
+        refreshProjects()
+        let inRange = sessions.filter { entry in
             key.start <= entry.start && entry.start < key.end
                 && (key.projectID == nil || entry.projectID == key.projectID)
         }.sorted { $0.start > $1.start }
-        displayedTotals = ActivityTotals(sessions: displayedSessions, calendar: calendar)
-        displayedCacheKey = key
+        let recorder = model.controller?.activityRecorder
+        var logs = await recorder?.store.load(days: dayKeys(from: key.start, to: key.end)) ?? []
+        guard !Task.isCancelled else { return }
+        if let recorder, recorder.isRecording {
+            let today = recorder.today()
+            if dayKeys(from: key.start, to: key.end).contains(today.day) {
+                logs.removeAll { $0.day == today.day }
+                logs.append(today)
+            }
+        }
+        let live = liveFocus.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
+        displayedSessions = inRange
+        displayedScope = ActivityScope(logs: logs, sessions: inRange, narrowed: key.focusOnly || key.projectID != nil,
+                                       live: key.projectID == nil ? live : nil, calendar: calendar)
+        displayedLoadKey = key
+    }
+
+    private func dayKeys(from start: Date, to end: Date) -> [String] {
+        var keys: [String] = []
+        var day = calendar.startOfDay(for: start)
+        while day < end {
+            keys.append(ActivityDayLog.key(for: day, calendar: calendar))
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return keys
     }
 
     private var periodLabel: String {
@@ -397,9 +462,43 @@ struct FocusActivityPage: View {
 
 private struct ActivityCacheKey: Hashable {
     let version: Int
+    let dayVersion: Int
     let start: Date
     let end: Date
     let projectID: UUID?
+    let focusOnly: Bool
+}
+
+/// The one ranked list's three views of the same seconds, which is why they
+/// never add up to each other.
+enum ActivityListKind: String, CaseIterable, Identifiable {
+    case apps, websites, documents
+    var id: String { rawValue }
+    var title: String { rawValue.capitalized }
+    var tint: Color {
+        switch self {
+        case .apps: return ActivityInk.blue
+        case .websites: return ActivityInk.sage
+        case .documents: return ActivityInk.clay
+        }
+    }
+    var emptyNote: String {
+        switch self {
+        case .apps: return "No apps were counted here."
+        case .websites: return "No websites here. Allow website access browser by browser under Tracking."
+        case .documents: return "No page or window names here. Allow window-title access under Tracking."
+        }
+    }
+}
+
+enum ActivityOverviewLine {
+    static func text(lead: ActivityRank?, sessions: Int, withinFocus: Bool) -> String {
+        let count = "\(sessions) focus \(sessions == 1 ? "session" : "sessions")"
+        guard let lead else { return sessions == 0 ? "Nothing was counted." : "Across \(count), with nothing observed." }
+        let most = "Most of it in \(lead.name), \(ActivityDuration.string(lead.seconds))"
+        if sessions == 0 { return most + "." }
+        return most + (withinFocus ? ", across \(count)." : ", with \(count).")
+    }
 }
 
 private struct ActivityProjectChoice: Identifiable {
@@ -473,7 +572,7 @@ enum ActivityDuration {
     }
 }
 
-private enum ActivityInk {
+enum ActivityInk {
     static let clay = FocusPalette.clay
     static let blue = Color(light: Color(.sRGB, red: 0.36, green: 0.55, blue: 0.70, opacity: 1), dark: Color(.sRGB, red: 0.53, green: 0.69, blue: 0.81, opacity: 1))
     static let sage = Color(light: Color(.sRGB, red: 0.48, green: 0.62, blue: 0.52, opacity: 1), dark: Color(.sRGB, red: 0.63, green: 0.76, blue: 0.65, opacity: 1))
@@ -507,6 +606,30 @@ struct ActivityTotals {
 
     var lead: ActivityRank? { services.first }
     init(sessions: [SessionEntry], calendar: Calendar = .current) {
+        self.init(rows: sessions.flatMap { session in
+            let day = calendar.startOfDay(for: session.start)
+            return Self.rows(of: session).map { (day, $0) }
+        }, focused: sessions.reduce(0) { $0 + max(0, $1.focused) })
+    }
+
+    /// A session's rows. Legacy records have an app-only foreground map: that
+    /// coverage stays visible, without implying websites or titles exist.
+    static func rows(of session: SessionEntry) -> [FocusActivity] {
+        if let activity = session.activity { return activity }
+        return session.foreground.map { appID, seconds in
+            FocusActivity(id: appID, appID: appID, appName: session.names[appID] ?? appID, seconds: seconds)
+        }
+    }
+
+    /// What a stretch of time counts as in a chart or ribbon. A recognized
+    /// service stands on its own; any other site is time in its browser, so
+    /// one day's reading doesn't scatter into a color per domain.
+    static func series(site: String?, appName: String) -> String {
+        ActivityTimeline.safeSite(site) ?? appName
+    }
+
+    init(rows: [(day: Date, row: FocusActivity)], focused: TimeInterval) {
+        self.focused = focused
         var appSeconds: [String: TimeInterval] = [:]
         var siteSeconds: [String: TimeInterval] = [:]
         var documentSeconds: [String: TimeInterval] = [:]
@@ -515,37 +638,20 @@ struct ActivityTotals {
         var appNames: [String: String] = [:]
         var serviceSeconds: [String: TimeInterval] = [:]
         var serviceSecondsByDay: [Date: [String: TimeInterval]] = [:]
-        for session in sessions {
-            focused += max(0, session.focused)
-            let day = calendar.startOfDay(for: session.start)
-            if let activity = session.activity {
-                for item in activity where item.seconds > 0 {
-                    observed += item.seconds
-                    appNames[item.appID] = item.appName
-                    appSeconds[item.appID, default: 0] += item.seconds
-                    let service = item.site?.isEmpty == false ? item.site! : item.appName
-                    serviceSeconds[service, default: 0] += item.seconds
-                    serviceSecondsByDay[day, default: [:]][service, default: 0] += item.seconds
-                    if let site = item.site, !site.isEmpty { siteSeconds[site, default: 0] += item.seconds }
-                    if let title = item.title, !title.isEmpty {
-                        let key = "\(item.appID)\u{1F}\(item.site ?? "")\u{1F}\(title)"
-                        let source = [item.appName, item.site].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
-                        documentSeconds[key, default: 0] += item.seconds
-                        documentTitles[key] = title
-                        documentSources[key] = source
-                    }
-                }
-            } else {
-                // Legacy records have an app-only foreground map. Keep that
-                // coverage visible without implying websites or titles exist.
-                for (appID, seconds) in session.foreground where seconds > 0 {
-                    observed += seconds
-                    appSeconds[appID, default: 0] += seconds
-                    let name = session.names[appID] ?? appID
-                    appNames[appID] = name
-                    serviceSeconds[name, default: 0] += seconds
-                    serviceSecondsByDay[day, default: [:]][name, default: 0] += seconds
-                }
+        for (day, item) in rows where item.seconds > 0 {
+            observed += item.seconds
+            appNames[item.appID] = item.appName
+            appSeconds[item.appID, default: 0] += item.seconds
+            let service = Self.series(site: item.site, appName: item.appName)
+            serviceSeconds[service, default: 0] += item.seconds
+            serviceSecondsByDay[day, default: [:]][service, default: 0] += item.seconds
+            if let site = item.site, !site.isEmpty { siteSeconds[site, default: 0] += item.seconds }
+            if let title = item.title, !title.isEmpty {
+                let key = "\(item.appID)\u{1F}\(item.site ?? "")\u{1F}\(title)"
+                let source = [item.appName, item.site].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                documentSeconds[key, default: 0] += item.seconds
+                documentTitles[key] = title
+                documentSources[key] = source
             }
         }
         apps = Self.ranked(appSeconds, names: appNames)
@@ -702,7 +808,7 @@ private struct ActivityDailyChart: View {
     }
 }
 
-private struct ActivityLegend: View {
+struct ActivityLegend: View {
     let color: Color
     let title: String
     var body: some View {
@@ -913,7 +1019,7 @@ struct ActivitySessionRecap: View {
         let documents = aggregateDocuments(activity)
         VStack(alignment: .leading, spacing: 12) {
             recapGroup("Apps", rows: apps)
-            if !sites.isEmpty { recapGroup("Recognized sites", rows: sites) }
+            if !sites.isEmpty { recapGroup("Websites", rows: sites) }
             if !documents.isEmpty { recapGroup("Titles", rows: documents) }
             if activity.isEmpty {
                 Text("No activity details were observed during this session.")
@@ -933,33 +1039,7 @@ struct ActivitySessionRecap: View {
     }
 
     private func recapGroup(_ title: String, rows: [ActivityRank]) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(0.6)
-                .foregroundStyle(.secondary)
-            if rows.isEmpty {
-                Text("No time recorded").font(.system(size: 11)).foregroundStyle(.tertiary)
-            } else {
-                ForEach(rows.prefix(12)) { row in
-                    HStack(spacing: 8) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: row.name).lineLimit(1).truncationMode(.middle)
-                            if let subtitle = row.subtitle, !subtitle.isEmpty {
-                                Text(verbatim: subtitle).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
-                            }
-                        }
-                        Spacer(minLength: 8)
-                        Text(ActivityDuration.string(row.seconds)).monospacedDigit()
-                    }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.primary)
-                    .padding(.vertical, 3)
-                }
-            }
-        }
-        .padding(12)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        ActivityRecapGroup(title: title, rows: rows)
     }
 
     private func aggregate(_ values: [(String, TimeInterval)]) -> [ActivityRank] {
@@ -987,6 +1067,56 @@ struct ActivitySessionRecap: View {
         return secondsByKey.map { key, seconds in
             ActivityRank(id: key, name: titles[key] ?? key, seconds: seconds, subtitle: sources[key])
         }.sorted { $0.seconds > $1.seconds }
+    }
+}
+
+/// One list in a recap. Long lists start short, and all of it is one click
+/// away: nothing a session holds is out of reach.
+private struct ActivityRecapGroup: View {
+    static let collapsedCount = 12
+    let title: String
+    let rows: [ActivityRank]
+    @State private var expanded = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title.uppercased())
+                .font(.system(size: 10, weight: .semibold))
+                .tracking(0.6)
+                .foregroundStyle(.secondary)
+            if rows.isEmpty {
+                Text("No time recorded").font(.system(size: 11)).foregroundStyle(.tertiary)
+            } else {
+                ForEach(expanded ? rows : Array(rows.prefix(Self.collapsedCount))) { row in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(verbatim: row.name).lineLimit(1).truncationMode(.middle)
+                            if let subtitle = row.subtitle, !subtitle.isEmpty {
+                                Text(verbatim: subtitle).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
+                            }
+                        }
+                        Spacer(minLength: 8)
+                        Text(ActivityDuration.string(row.seconds)).monospacedDigit()
+                    }
+                    .font(.system(size: 12))
+                    .foregroundStyle(.primary)
+                    .padding(.vertical, 3)
+                }
+                if rows.count > Self.collapsedCount {
+                    Button(expanded ? "Show fewer" : "Show all \(rows.count)") {
+                        if reduceMotion { expanded.toggle() }
+                        else { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
+                    }
+                    .buttonStyle(.plain)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(ActivityInk.clay)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+                }
+            }
+        }
+        .padding(12)
+        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 

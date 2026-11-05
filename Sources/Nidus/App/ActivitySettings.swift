@@ -5,37 +5,77 @@ import UniformTypeIdentifiers
 
 extension NidusModel.Key {
     static let activityTracking = "activityTrackingEnabled"
-    static let activityTitles = "activityDocumentTitlesEnabled"
     static let activityExcluded = "activityExcludedApps"
+    static let activityAllDay = "activityAllDayEnabled"
+    static let activityIdleMinutes = "activityIdleMinutes"
+    static let activityRetentionDays = "activityRetentionDays"
+    static let activityPausedUntil = "activityPausedUntil"
+}
+
+/// The choices Activity settings offers, in minutes and in days (0: forever).
+enum ActivityChoices {
+    static let idleMinutes = [2, 5, 10, 15, 30]
+    static let retentionDays = [30, 90, 365, 0]
+    static func retentionName(_ days: Int) -> String {
+        switch days {
+        case 0: return "Forever"
+        case 365: return "1 year"
+        default: return "\(days) days"
+        }
+    }
 }
 
 extension NidusModel {
-    /// Whether any recorded session still holds a document or conversation name.
-    var hasSavedActivityTitles: Bool { controller?.history.hasActivityTitles ?? false }
-
-    /// Takes the names out of every recorded session and the running one,
-    /// keeping their times. Asked for from Settings, behind a confirmation.
-    func removeSavedActivityTitles() { controller?.removeActivityTitles() }
-
     var activitySessions: [SessionEntry] { controller?.history.sessions ?? [] }
 
     var activityTrackingEnabled: Bool {
-        get { preference(Key.activityTracking, default: false) }
+        get { preference(Key.activityTracking, default: true) }
         set { setPreference(newValue, Key.activityTracking); applyActivitySettings() }
-    }
-    var activityDocumentTitlesEnabled: Bool {
-        get { preference(Key.activityTitles, default: false) }
-        set { setPreference(newValue, Key.activityTitles); applyActivitySettings() }
     }
     var activityExcludedApps: Set<String> {
         get { preference(Key.activityExcluded, default: Set<String>()) }
         set { setPreference(newValue, Key.activityExcluded); applyActivitySettings() }
     }
+    /// Only meaningful with Activity and history on.
+    var activityAllDayEnabled: Bool {
+        get { preference(Key.activityAllDay, default: true) }
+        set { setPreference(newValue, Key.activityAllDay); applyActivitySettings() }
+    }
+    var activityIdleMinutes: Int {
+        get { preference(Key.activityIdleMinutes, default: Int(ActivityRecorder.defaultIdleCutoff / 60)) }
+        set { setPreference(newValue, Key.activityIdleMinutes); applyActivitySettings() }
+    }
+    var activityRetentionDays: Int {
+        get { preference(Key.activityRetentionDays, default: ActivityRecorder.defaultRetentionDays) }
+        set { setPreference(newValue, Key.activityRetentionDays); applyActivitySettings() }
+    }
+    var activityPausedUntil: Date? {
+        get {
+            let seconds = preference(Key.activityPausedUntil, default: 0.0)
+            return seconds > 0 ? Date(timeIntervalSince1970: seconds) : nil
+        }
+        set {
+            setPreference(newValue?.timeIntervalSince1970 ?? 0, Key.activityPausedUntil)
+            applyActivitySettings()
+        }
+    }
     func applyActivitySettings() {
         controller?.activityTrackingEnabled = recordsHistory && activityTrackingEnabled
-        controller?.activityDocumentTitlesEnabled = activityDocumentTitlesEnabled
+        controller?.activityDocumentTitlesEnabled = true
         controller?.activityExcludedApps = activityExcludedApps
+        controller?.activityAllDayEnabled = activityAllDayEnabled
+        controller?.activityIdleCutoff = TimeInterval(max(1, activityIdleMinutes) * 60)
+        controller?.activityRetentionDays = max(0, activityRetentionDays)
+        controller?.activityPausedUntil = activityPausedUntil
     }
+
+    /// There is something to pause: Activity is collecting, now or at the
+    /// next session.
+    var canPauseActivity: Bool { recordsHistory && activityTrackingEnabled }
+    /// When a pause still in force ends.
+    var activityPauseEnd: Date? { activityPausedUntil.flatMap { $0 > Date() ? $0 : nil } }
+    func pauseActivityForAnHour() { activityPausedUntil = Date().addingTimeInterval(3600) }
+    func resumeActivity() { activityPausedUntil = nil }
     func openActivity(sessionID: UUID? = nil) {
         if let sessionID {
             host?.workspace.openSettingsPage("activity:" + sessionID.uuidString, title: "Session activity")
@@ -50,7 +90,7 @@ extension NidusModel {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = "Nidus activity \(Date().formatted(.iso8601.year().month().day())).csv"
-        panel.message = "App, website and document durations. Includes document names when recorded."
+        panel.message = "App, website and document durations."
         let write: @MainActor (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
             do { try data.write(to: url, options: .atomic) }
@@ -62,45 +102,50 @@ extension NidusModel {
     }
 }
 
-/// Local, session-scoped collection. Permission prompts happen only from a button.
+/// Permission prompts happen only from a button.
 struct ActivityTrackingControls: View {
     @ObservedObject var model: NidusModel
     @State private var expanded = false
     @State private var accessibilityGranted = AXIsProcessTrusted()
     @State private var permissionNotice = ""
-    @State private var confirmsRemovingTitles = false
 
     var body: some View {
         DisclosureGroup(isExpanded: $expanded) {
-            VStack(alignment: .leading, spacing: 16) {
-                Toggle("Record activity during focus sessions", isOn: model.binding(\.activityTrackingEnabled))
+            VStack(alignment: .leading, spacing: 14) {
+                Toggle("Track activity", isOn: model.binding(\.activityTrackingEnabled))
                 if !model.recordsHistory {
-                    Label("Session history is off. Activity is not being recorded.", systemImage: "pause.circle")
+                    Label("Session history is off, so nothing is being recorded.", systemImage: "pause.circle")
                         .font(.callout).foregroundStyle(.secondary)
                     Button("Open history settings") { model.openStats() }
                 }
                 if model.activityTrackingEnabled {
-                    Text("Only the app in front counts. Recognized websites can be separated from browser time when access is allowed. Reading still counts; pauses, breaks and sleep do not.")
-                        .font(.callout).foregroundStyle(.secondary)
-                    Toggle("Include document and conversation names", isOn: model.binding(\.activityDocumentTitlesEnabled))
-                    Text("Names may contain private information. Nidus reads selected tab or front-window titles and names explicitly shared by Capsid, never document contents. Names stay in local session history and are included in exports.")
-                        .font(.caption).foregroundStyle(.secondary)
-                    if model.activityDocumentTitlesEnabled {
-                        HStack {
-                            Label(accessibilityGranted ? "Window-title access is allowed" : "Window-title access is needed for Word and Claude", systemImage: accessibilityGranted ? "checkmark.circle" : "lock")
-                                .font(.callout)
-                            Spacer()
-                            Button(accessibilityGranted ? "Review access" : "Allow access") {
-                                if !accessibilityGranted {
-                                    _ = model.controller?.requestActivityAccessibilityAccess()
-                                }
-                                if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
-                                    NSWorkspace.shared.open(url)
-                                }
+                    Toggle("Track all day", isOn: model.binding(\.activityAllDayEnabled))
+                    if model.activityAllDayEnabled {
+                        Picker("Stop counting after", selection: model.binding(\.activityIdleMinutes)) {
+                            ForEach(ActivityChoices.idleMinutes, id: \.self) { minutes in
+                                Text("\(minutes) minutes without input").tag(minutes)
                             }
                         }
-                        Text("Document names: Word, Claude, Google Docs, and Capsid when sharing is enabled in Capsid settings. Claude Science’s local browser interface is recognized as a service; its conversation names are unavailable. Different documents with the same title are combined.")
-                            .font(.caption).foregroundStyle(.secondary)
+                        Picker("Keep daily records for", selection: model.binding(\.activityRetentionDays)) {
+                            ForEach(ActivityChoices.retentionDays, id: \.self) { days in
+                                Text(ActivityChoices.retentionName(days)).tag(days)
+                            }
+                        }
+                    }
+                    Divider()
+                    HStack {
+                        Label(accessibilityGranted ? "Window titles are on" : "Window titles need access",
+                              systemImage: accessibilityGranted ? "checkmark.circle" : "lock")
+                            .font(.callout)
+                        Spacer()
+                        Button(accessibilityGranted ? "Review access" : "Allow access") {
+                            if !accessibilityGranted {
+                                _ = model.controller?.requestActivityAccessibilityAccess()
+                            }
+                            if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        }
                     }
                     ForEach(BrowserProfile.known.filter(\.isInstalled), id: \.bundleID) { browser in
                         HStack {
@@ -118,10 +163,6 @@ struct ActivityTrackingControls: View {
                         Spacer()
                         Button("Add app…", action: chooseExcludedApp)
                     }
-                    if model.activityExcludedApps.isEmpty {
-                        Text("No exclusions. Add an app to leave it out of future activity measurements.")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
                     ForEach(model.activityExcludedApps.sorted(), id: \.self) { bundleID in
                         HStack {
                             Text(appName(bundleID)).font(.callout)
@@ -135,22 +176,12 @@ struct ActivityTrackingControls: View {
                     Button("Export activity…", action: model.exportActivity)
                         .disabled(model.activitySessions.isEmpty)
                     Spacer()
-                    Button("Remove saved names…") { confirmsRemovingTitles = true }
-                        .disabled(!model.hasSavedActivityTitles)
-                        .help("Takes document and conversation names out of your history. Times stay.")
-                    Button("History & deletion") { model.openStats() }
+                    Button("Clear history…") { model.openStats() }
                 }
-                .confirmationDialog("Remove saved names?", isPresented: $confirmsRemovingTitles) {
-                    Button("Remove Names", role: .destructive) { model.removeSavedActivityTitles() }
-                } message: {
-                    Text("Document and conversation names are taken out of every recorded session. Times, apps and websites stay. This can't be undone.")
-                }
-                Text("Kept on this Mac. Changing these settings affects future collection. Remove saved names takes names out of past sessions; Clear history removes everything.")
-                    .font(.caption).foregroundStyle(.secondary)
             }
             .padding(.top, 14)
         } label: {
-            Label("Tracking & privacy", systemImage: "lock.shield")
+            Label("Tracking", systemImage: "slider.horizontal.3")
                 .font(.system(size: 14, weight: .medium))
         }
         .tint(FocusPalette.clay)
@@ -167,7 +198,7 @@ struct ActivityTrackingControls: View {
         model.askBrowserAccess(browser) {
             let error = AppleEventTarget(runningBundleID: browser.bundleID)?.automationPermission(ask: false)
             permissionNotice = error == nil
-                ? "\(browser.name) is ready for website recognition during your next session."
+                ? "\(browser.name) is ready for website recognition."
                 : "Access is not available yet. Review Nidus under Privacy & Security → Automation."
         }
     }

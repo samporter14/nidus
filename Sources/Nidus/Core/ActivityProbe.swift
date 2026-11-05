@@ -2,40 +2,25 @@
 //  ActivityProbe.swift
 //  Nidus
 //
-//  Reads metadata from the foreground app only. A full URL lives only inside
-//  this file: callers receive a recognized service label, the site's domain
-//  and, if requested, a short selected-page/document title. No page or
-//  document text is read.
+//  Reads metadata from the foreground app only: a recognized service label,
+//  the site's domain and address, and the selected tab's or focused window's
+//  title. No page or document text is read.
 //
 
 import AppKit
 import ApplicationServices
 
-/// Whether the front browser window is one the person kept out of history.
-enum ActivityWindowPrivacy: Sendable, Equatable {
-    case normal
-    case privateWindow
-    /// The browser would not say. Nothing about the page may be kept all day.
-    case unknown
-}
-
 struct ActivityDetail: Sendable, Equatable {
     /// A recognized service label, such as Google Docs.
     var site: String?
     var title: String?
-    /// The site's domain, for all-day activity only. A focus session's own
-    /// record never holds one; see `forSession`.
+    /// The site's domain, the key websites are counted under.
     var domain: String? = nil
-    var privacy: ActivityWindowPrivacy = .normal
+    /// The page's address, for reopening it later. See `keptURL`.
+    var url: String? = nil
 
-    /// What a focus session keeps of this: the service label, and a title
-    /// only where one could be kept before domains existed. Nothing at all
-    /// from a private window.
-    var forSession: ActivityDetail? {
-        guard privacy != .privateWindow else { return nil }
-        let unrecognizedPage = site == nil && domain != nil
-        return ActivityDetail(site: site, title: unrecognizedPage ? nil : title)
-    }
+    /// What a focus session keeps of this. Its record has no addresses.
+    var forSession: ActivityDetail { ActivityDetail(site: site ?? domain, title: title) }
 }
 
 enum ActivityProbe {
@@ -46,12 +31,11 @@ enum ActivityProbe {
     static let scienceWebAppID = "com.apple.Safari.WebApp.67246384-D749-4D50-B379-1C4A27B67E88"
     static let previewID = "com.apple.Preview"
     static let acrobatIDs: Set<String> = ["com.adobe.Reader", "com.adobe.Acrobat.Pro"]
-    /// Apps whose focused window title names the document, with names on.
-    private static let windowTitleApps = Set([wordID, claudeID, scienceID, scienceWebAppID, previewID]).union(acrobatIDs)
+    /// Longer than any address worth reopening, and short of a data: blob.
+    static let urlLimit = 2048
 
     static func needsProbe(_ bundleID: String, titles: Bool) -> Bool {
-        if BrowserProfile.known.contains(where: { $0.bundleID == bundleID }) { return true }
-        return titles && (bundleID == capsidID || windowTitleApps.contains(bundleID))
+        titles || BrowserProfile.known.contains(where: { $0.bundleID == bundleID })
     }
 
     /// Safe to call on a utility queue. Apple Events have a short timeout and
@@ -61,31 +45,15 @@ enum ActivityProbe {
             return selectedTab(in: browser, pid: pid, titles: titles)
         }
         if bundleID == capsidID { return titles ? CapsidActivityContext.read(pid: pid) : nil }
-        guard windowTitleApps.contains(bundleID) else { return nil }
         let title = titles ? usefulTitle(documentTitle(windowTitle(pid: pid), bundleID: bundleID)) : nil
         return ActivityDetail(site: nil, title: title)
     }
 
-    /// Chrome and the browsers built on it say so in the window's `mode`.
-    static func privacy(mode: String?) -> ActivityWindowPrivacy {
-        switch mode {
-        case "normal": return .normal
-        case "incognito": return .privateWindow
-        default: return .unknown
-        }
-    }
-
-    /// Safari's scripting does not mention private windows, and hands over
-    /// their URLs like any other. Only the Accessibility title differs: it is
-    /// the tab's name followed by a localized "Private Browsing". So a title
-    /// that extends the tab's name is private in every language, and a title
-    /// that cannot be matched to the tab tells us nothing.
-    static func safariPrivacy(windowTitle: String?, tabName: String?) -> ActivityWindowPrivacy {
-        guard let windowTitle else { return .unknown }
-        if windowTitle.hasSuffix(", Private Browsing") || windowTitle == "Private Browsing" { return .privateWindow }
-        guard let tabName, !tabName.isEmpty else { return .unknown }
-        if windowTitle == tabName { return .normal }
-        return windowTitle.hasPrefix(tabName) ? .privateWindow : .unknown
+    /// An address worth keeping: a web page's, and not an endless one.
+    static func keptURL(_ raw: String?) -> String? {
+        guard let raw, raw.count <= urlLimit, let scheme = URLComponents(string: raw)?.scheme?.lowercased(),
+              scheme == "https" || scheme == "http" else { return nil }
+        return raw
     }
 
     /// Takes off what changes while the same document stays open: Preview's
@@ -146,23 +114,13 @@ enum ActivityProbe {
             guard confirmed == rawURL else { return nil }
             return ActivityDetail(site: "Claude Science", title: nil)
         }
-        let privacy: ActivityWindowPrivacy
-        if browser.bundleID == BrowserProfile.safari.bundleID {
-            let tabName = try? target.get(name, timeout: 0.75).stringValue
-            privacy = safariPrivacy(windowTitle: windowTitle(pid: pid), tabName: tabName)
-        } else {
-            privacy = Self.privacy(mode: try? target.get(ObjectSpecifier.property("mode", of: window), timeout: 0.75).stringValue)
-        }
-        guard privacy != .privateWindow else { return ActivityDetail(site: nil, title: nil, privacy: .privateWindow) }
-        let site = service(for: rawURL)
-        let domain = privacy == .normal ? ActivityDomain.site(from: rawURL) : nil
-        // The selected tab or window may change between two Apple Events.
-        // A title from a different tab must never inherit the first tab's
-        // service, and a domain must never outlive the check of its window.
-        let rawTitle = titles && (site != nil || domain != nil) ? (try? target.get(name, timeout: 0.75).stringValue) : nil
+        let rawTitle = titles ? (try? target.get(name, timeout: 0.75).stringValue) : nil
+        // The selected tab may change between two Apple Events, and a title
+        // from a different tab must not be kept under this one's site.
         let confirmedURL = try? target.get(url, timeout: 0.75).stringValue
         guard confirmedURL == rawURL else { return nil }
-        return ActivityDetail(site: site, title: cleanTitle(rawTitle), domain: domain, privacy: privacy)
+        return ActivityDetail(site: service(for: rawURL), title: cleanTitle(rawTitle),
+                              domain: ActivityDomain.site(from: rawURL), url: keptURL(rawURL))
     }
 
     static func usefulTitle(_ raw: String?) -> String? {

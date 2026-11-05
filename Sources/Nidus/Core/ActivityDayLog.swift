@@ -3,14 +3,15 @@
 //  Nidus
 //
 //  One day of all-day activity, the content of one file: totals, and the
-//  ordered stretches behind them. Like a session's record, this holds apps,
-//  service labels, domains and (with names on) titles, and never a URL.
+//  ordered stretches behind them: apps, service labels, domains, titles, and
+//  on each stretch the page's address. Websites are counted by domain.
 //
 
 import Foundation
 
 extension ActivityTimeline {
-    /// A day file's site: a service label, or a bare domain. Never a URL.
+    /// A site label: a service, or a bare domain. An address is kept apart,
+    /// in a stretch's `url`, so websites group by domain.
     static func safeDaySite(_ site: String?) -> String? {
         guard let site else { return nil }
         return safeSite(site) ?? (ActivityDomain.isDomain(site) ? site : nil)
@@ -56,6 +57,7 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
         credit(stretch)
         if let last = stretches.last, ActivityTimeline.touches(last, stretch), ActivityTimeline.sameContext(last, stretch) {
             stretches[stretches.count - 1].end = stretch.end
+            if let url = stretch.url { stretches[stretches.count - 1].url = url }
         } else {
             stretches.append(stretch)
             if stretches.count > Self.stretchLimit {
@@ -115,6 +117,7 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
             guard stretch.end > stretch.start else { return nil }
             var stretch = stretch
             stretch.site = ActivityTimeline.safeDaySite(stretch.site)
+            stretch.url = ActivityProbe.keptURL(stretch.url)
             return stretch
         }
         return log
