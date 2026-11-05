@@ -204,9 +204,11 @@ struct ActivityProbePureTests {
         #expect(ActivityProbe.keptURL(nil) == nil)
     }
 
-    @Test func withNamesOnEveryAppIsRead() {
-        #expect(ActivityProbe.needsProbe("com.example.anything", titles: true))
-        #expect(!ActivityProbe.needsProbe("com.example.anything", titles: false))
+    @Test func onlyDocumentAppsAndBrowsersAreRead() {
+        #expect(!ActivityProbe.needsProbe("com.apple.finder", titles: true))
+        #expect(!ActivityProbe.needsProbe("com.apple.Terminal", titles: true))
+        #expect(ActivityProbe.needsProbe("com.microsoft.Excel", titles: true))
+        #expect(ActivityProbe.needsProbe(ActivityProbe.capsidID, titles: true))
         #expect(ActivityProbe.needsProbe(BrowserProfile.safari.bundleID, titles: false))
     }
 }

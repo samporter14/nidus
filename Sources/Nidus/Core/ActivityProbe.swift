@@ -31,11 +31,19 @@ enum ActivityProbe {
     static let scienceWebAppID = "com.apple.Safari.WebApp.67246384-D749-4D50-B379-1C4A27B67E88"
     static let previewID = "com.apple.Preview"
     static let acrobatIDs: Set<String> = ["com.adobe.Reader", "com.adobe.Acrobat.Pro"]
+    /// Apps whose focused window title names the document. Elsewhere a title
+    /// is a folder or a shell prompt, and isn't read.
+    static let documentApps: Set<String> = Set([
+        wordID, "com.microsoft.Excel", "com.microsoft.Powerpoint",
+        "com.apple.iWork.Pages", "com.apple.iWork.Numbers", "com.apple.iWork.Keynote", "com.apple.TextEdit",
+        previewID, claudeID, scienceID, scienceWebAppID
+    ]).union(acrobatIDs)
     /// Longer than any address worth reopening, and short of a data: blob.
     static let urlLimit = 2048
 
     static func needsProbe(_ bundleID: String, titles: Bool) -> Bool {
-        titles || BrowserProfile.known.contains(where: { $0.bundleID == bundleID })
+        if BrowserProfile.known.contains(where: { $0.bundleID == bundleID }) { return true }
+        return titles && (bundleID == capsidID || documentApps.contains(bundleID))
     }
 
     /// Safe to call on a utility queue. Apple Events have a short timeout and
@@ -45,6 +53,7 @@ enum ActivityProbe {
             return selectedTab(in: browser, pid: pid, titles: titles)
         }
         if bundleID == capsidID { return titles ? CapsidActivityContext.read(pid: pid) : nil }
+        guard documentApps.contains(bundleID) else { return nil }
         let title = titles ? usefulTitle(documentTitle(windowTitle(pid: pid), bundleID: bundleID)) : nil
         return ActivityDetail(site: nil, title: title)
     }
