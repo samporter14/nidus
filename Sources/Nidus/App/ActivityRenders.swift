@@ -137,6 +137,41 @@ extension RenderSurfaces {
 extension RenderSurfaces {
     /// The popover's two pieces, each state, in light and dark. Empty and off
     /// come first: they need a day with nothing counted.
+    /// The popover's tree built, drawn off-screen and released ten times over
+    /// a seeded day, printing the footprint after each. No window reaches the
+    /// screen, so nothing takes the keyboard.
+    static func measurePopover(model: NidusModel) async {
+        model.seedActivityPreview()
+        model.runHarnessScenario("idle")
+        func footprint() -> Double {
+            var info = task_vm_info_data_t()
+            var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
+            let result = withUnsafeMutablePointer(to: &info) {
+                $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                    task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
+                }
+            }
+            return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+        }
+        print(String(format: "MEMORY before: %.1f MB", footprint()))
+        for cycle in 1...10 {
+            autoreleasepool {
+                let hosting = NSHostingController(rootView: NidusPopover(model: model))
+                hosting.sizingOptions = [.preferredContentSize]
+                let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 440, height: 500),
+                                      styleMask: [.borderless], backing: .buffered, defer: false)
+                window.isReleasedWhenClosed = false
+                window.contentViewController = hosting
+                window.orderBack(nil)
+                window.displayIfNeeded()
+                window.contentViewController = nil
+                window.close()
+            }
+            try? await Task.sleep(for: .milliseconds(400))
+            print(String(format: "MEMORY cycle %d: %.1f MB", cycle, footprint()))
+        }
+    }
+
     static func renderPopoverSurfaces(model: NidusModel, in directory: URL) async {
         // The offscreen window has no popover material, so each theme gets
         // its window color behind the popover.

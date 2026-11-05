@@ -743,13 +743,16 @@ struct ActivityTotals {
             let service = Self.series(site: item.site, appName: item.appName)
             serviceSeconds[service, default: 0] += item.seconds
             serviceSecondsByDay[day, default: [:]][service, default: 0] += item.seconds
-            if let site = item.site, !site.isEmpty {
+            let isDocument = ActivityTimeline.isDocumentService(item.site)
+            if let site = item.site, !site.isEmpty, !isDocument {
                 siteSeconds[site, default: 0] += item.seconds
                 siteApps[site] = (item.appID, item.appName)
             }
-            if let title = item.title, !title.isEmpty {
+            if let title = isDocument ? ActivityTimeline.documentName(title: item.title, site: item.site) : item.title,
+               !title.isEmpty {
                 let key = Self.documentKey(appID: item.appID, site: item.site, title: title)
-                let source = [item.appName, item.site].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                let parts = isDocument ? [item.site, item.appName] : [item.appName, item.site]
+                let source = parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 documentSeconds[key, default: 0] += item.seconds
                 documentTitles[key] = title
                 documentSources[key] = source
@@ -798,7 +801,8 @@ struct ActivityTotals {
         for stretch in stretches {
             guard let url = stretch.url else { continue }
             if let site = stretch.site { bySite[site] = url }
-            if let title = stretch.title {
+            let isDocument = ActivityTimeline.isDocumentService(stretch.site)
+            if let title = isDocument ? ActivityTimeline.documentName(title: stretch.title, site: stretch.site) : stretch.title {
                 byDocument[Self.documentKey(appID: stretch.appID, site: stretch.site, title: title)] = url
             }
         }

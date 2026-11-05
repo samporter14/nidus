@@ -188,3 +188,65 @@ import Testing
         #expect(doc?.appName == "Safari")
     }
 }
+
+@Suite("Web documents")
+struct WebDocumentTests {
+    private let day = Date(timeIntervalSince1970: 1_780_000_000)
+
+    private func stretch(site: String?, title: String?, url: String?, at offset: TimeInterval) -> FocusActivitySegment {
+        FocusActivitySegment(start: day.addingTimeInterval(offset), end: day.addingTimeInterval(offset + 600),
+                             appID: "com.apple.Safari", appName: "Safari", site: site, title: title, url: url)
+    }
+
+    private func totals(_ stretches: [FocusActivitySegment]) -> ActivityTotals {
+        var log = ActivityDayLog(day: "2026-05-28")
+        stretches.forEach { log.add($0) }
+        return ActivityScope(logs: [log], sessions: []).totals
+    }
+
+    @Test("A Google doc is a document, not a website")
+    func googleDocs() throws {
+        let address = "https://docs.google.com/document/d/abc/edit"
+        let totals = totals([stretch(site: "Google Docs", title: "Aims - Google Docs", url: address, at: 0),
+                             stretch(site: "nature.com", title: nil, url: "https://nature.com/a", at: 600)])
+        #expect(totals.sites.map(\.name) == ["nature.com"])
+        let document = try #require(totals.documents.first)
+        #expect(document.name == "Aims")
+        #expect(document.subtitle == "Google Docs · Safari")
+        #expect(document.url == address)
+        #expect(document.reopenTarget == .page(URL(string: address)!))
+    }
+
+    @Test("Word on the web is a document too")
+    func wordOnTheWeb() {
+        let totals = totals([stretch(site: "Microsoft Word", title: "Chapter 3.docx - Word", url: "https://word.cloud.microsoft/x", at: 0)])
+        #expect(totals.sites.isEmpty)
+        #expect(totals.documents.map(\.name) == ["Chapter 3.docx"])
+        #expect(totals.documents.first?.subtitle == "Microsoft Word · Safari")
+    }
+
+    @Test("Without a readable title it stays under the service's name")
+    func untitled() {
+        let totals = totals([stretch(site: "Google Docs", title: nil, url: "https://docs.google.com/document/d/abc", at: 0)])
+        #expect(totals.sites.isEmpty)
+        #expect(totals.documents.map(\.name) == ["Google Docs"])
+    }
+
+    @Test("Other sites keep their title out of it")
+    func otherSites() {
+        #expect(ActivityTimeline.documentName(title: "Aims - Google Docs", site: "Google Docs") == "Aims")
+        #expect(!ActivityTimeline.isDocumentService("Claude"))
+        #expect(!ActivityTimeline.isDocumentService(nil))
+    }
+
+    @Test("The ribbon names the document and colors it by its browser")
+    func ribbon() throws {
+        let doc = stretch(site: "Google Docs", title: "Aims - Google Docs", url: nil, at: 0)
+        let ribbon = ActivityRibbon(stretches: [doc], sessions: [], day: DateInterval(start: day.addingTimeInterval(-3600), duration: 86_400),
+                                    now: day.addingTimeInterval(700))
+        let block = try #require(ribbon.blocks.first)
+        #expect(block.name == "Aims")
+        #expect(block.detail == "Google Docs · Safari")
+        #expect(ribbon.series.map(\.name) == ["Safari"])
+    }
+}

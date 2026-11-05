@@ -199,7 +199,7 @@ private struct TodayContent: View, Equatable {
             } else {
                 ForEach(rows) { row in
                     TodayRankRow(item: row, maximum: overview.maximum(for: kind), tint: kind.tint,
-                                 target: kind == .apps ? row.appID.map(ActivityReopen.app) : row.reopenTarget,
+                                 target: kind == .apps ? .app(row.id) : row.reopenTarget,
                                  close: { model.menuBarItem?.closePopover() })
                         .frame(height: Self.rowHeight)
                         .activityCountAs(model: model, target: ActivityCountTarget(rank: row, kind: kind), counted: counted)

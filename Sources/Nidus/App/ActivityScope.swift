@@ -193,6 +193,11 @@ struct ActivityRibbon {
             }
         }
         blocks = merged.map { stretch in
+            if ActivityTimeline.isDocumentService(stretch.site) {
+                let name = ActivityTimeline.documentName(title: stretch.title, site: stretch.site) ?? stretch.appName
+                return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[seriesKey(of: stretch)] ?? Self.namedSeries,
+                             name: name, detail: [stretch.site, stretch.appName].compactMap { $0 }.joined(separator: " · "))
+            }
             let name = stretch.site ?? stretch.title ?? stretch.appName
             let detail = [stretch.site == nil ? nil : stretch.appName, stretch.site == nil ? nil : stretch.title]
                 .compactMap { $0 }.joined(separator: " · ")

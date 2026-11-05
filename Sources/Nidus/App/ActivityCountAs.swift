@@ -60,9 +60,6 @@ struct ActivityCountAsMenu: View {
             choice(model.workGroup.name, .work, current)
             ForEach(model.categories) { choice($0.name, .category($0.id), current) }
             choice(ActivityCategorizer.uncategorizedName, .uncategorized, current)
-            Divider()
-            Button("Blocking categories also block this in future sessions.") {}
-                .disabled(true)
         }
     }
 
