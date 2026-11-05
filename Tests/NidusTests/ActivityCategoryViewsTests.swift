@@ -250,6 +250,32 @@ struct WebDocumentTests {
         #expect(Set(totals.sites.map(\.name)) == ["target.com", "x.com"])
     }
 
+    @Test("Sheets, Slides, Excel and PowerPoint on the web are documents")
+    func theRestOfTheSuites() {
+        #expect(ActivityTimeline.documentName(title: "Plates - Google Sheets", site: "Google Sheets") == "Plates")
+        #expect(ActivityTimeline.documentName(title: "Lab talk - Google Slides", site: "Google Slides") == "Lab talk")
+        #expect(ActivityTimeline.documentName(title: "Plate.xlsx - Excel", site: "Microsoft Excel") == "Plate.xlsx")
+        #expect(ActivityTimeline.documentName(title: "Talk.pptx - PowerPoint", site: "Microsoft PowerPoint") == "Talk.pptx")
+        let totals = totals([stretch(site: "Google Sheets", title: "Plates - Google Sheets", url: "https://docs.google.com/spreadsheets/d/a", at: 0),
+                             stretch(site: "Microsoft PowerPoint", title: "Talk.pptx - PowerPoint", url: nil, at: 600)])
+        #expect(totals.sites.isEmpty)
+        #expect(Set(totals.documents.map(\.name)) == ["Plates", "Talk.pptx"])
+    }
+
+    @Test("A sheet saved before it had a label reads as a document")
+    func earlierSheets() throws {
+        var old = ActivityDayLog(day: "2026-05-28")
+        old.add(stretch(site: "docs.google.com", title: "Plates - Google Sheets", url: "https://docs.google.com/spreadsheets/d/a", at: 0))
+        old.add(stretch(site: "docs.google.com", title: "Survey", url: "https://docs.google.com/forms/d/b", at: 600))
+        let clean = old.sanitized
+        #expect(clean.stretches.map(\.site) == ["Google Sheets", "docs.google.com"])
+        #expect(clean.seconds == old.seconds)
+        let totals = ActivityScope(logs: [clean], sessions: []).totals
+        #expect(totals.documents.map(\.name) == ["Plates"])
+        #expect(totals.sites.map(\.name) == ["docs.google.com"])
+        #expect(clean.sanitized == clean)
+    }
+
     @Test("A file in a document app stays a document")
     func filesAreDocuments() {
         #expect(ActivityTimeline.documentName(appID: "com.microsoft.Excel", title: "Plate.xlsx", site: nil) == "Plate.xlsx")

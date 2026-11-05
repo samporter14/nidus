@@ -23,7 +23,7 @@
 //
 //  What `site` holds: a stretch's `site` is either a bare domain
 //  (`docs.google.com`, no `www.`, from `ActivityDomain`) or a service label
-//  ("Google Docs", "Claude", "Microsoft Word", "Claude Science", "Capsid"),
+//  ("Google Docs", "Microsoft Word", "Claude", "Capsid", and the like),
 //  never both. A label hides the host and a stretch's `url` has the page's
 //  address, so the address is read first. A `FocusActivity` row has no `url`;
 //  a label there is turned back into a page of that service

@@ -85,9 +85,40 @@ enum ActivityProbe {
         guard let parts = URLComponents(string: rawURL),
               let scheme = parts.scheme?.lowercased(), scheme == "https" || scheme == "http",
               let host = parts.host?.lowercased() else { return nil }
-        if host == "docs.google.com", parts.path.hasPrefix("/document/") { return "Google Docs" }
+        if host == "docs.google.com" {
+            if parts.path.hasPrefix("/document/") { return "Google Docs" }
+            if parts.path.hasPrefix("/spreadsheets/") { return "Google Sheets" }
+            if parts.path.hasPrefix("/presentation/") { return "Google Slides" }
+            return nil
+        }
         if host == "claude.ai" || host == "www.claude.ai" { return "Claude" }
         if host == "word.office.com" || host == "word.cloud.microsoft" { return "Microsoft Word" }
+        if host == "excel.office.com" || host == "excel.cloud.microsoft" { return "Microsoft Excel" }
+        if host == "powerpoint.office.com" || host == "powerpoint.cloud.microsoft" { return "Microsoft PowerPoint" }
+        if host.hasSuffix(".officeapps.live.com") { return officeService(named: host) }
+        if host.hasSuffix(".sharepoint.com") { return sharePointService(path: parts.path, file: parts.queryItems?.first { $0.name == "file" }?.value) }
+        return nil
+    }
+
+    /// Office's editors on word-edit.officeapps.live.com and the like.
+    private static func officeService(named host: String) -> String? {
+        if host.hasPrefix("word") { return "Microsoft Word" }
+        if host.hasPrefix("excel") { return "Microsoft Excel" }
+        if host.hasPrefix("powerpoint") { return "Microsoft PowerPoint" }
+        return nil
+    }
+
+    /// SharePoint and work OneDrive share one host with everything else they
+    /// serve. A file opens under a link that names its kind (`/:x:/`), or
+    /// through the document page with the file's name in its query.
+    private static func sharePointService(path: String, file: String?) -> String? {
+        if path.hasPrefix("/:w:/") { return "Microsoft Word" }
+        if path.hasPrefix("/:x:/") { return "Microsoft Excel" }
+        if path.hasPrefix("/:p:/") { return "Microsoft PowerPoint" }
+        guard path.lowercased().hasSuffix("/_layouts/15/doc.aspx"), let file = file?.lowercased() else { return nil }
+        if file.hasSuffix(".docx") { return "Microsoft Word" }
+        if file.hasSuffix(".xlsx") { return "Microsoft Excel" }
+        if file.hasSuffix(".pptx") { return "Microsoft PowerPoint" }
         return nil
     }
 
@@ -99,7 +130,11 @@ enum ActivityProbe {
         switch label {
         case "Google Docs": page = "docs.google.com/document/"
         case "Claude": page = "claude.ai/"
+        case "Google Sheets": page = "docs.google.com/spreadsheets/"
+        case "Google Slides": page = "docs.google.com/presentation/"
         case "Microsoft Word": page = "word.cloud.microsoft/"
+        case "Microsoft Excel": page = "excel.cloud.microsoft/"
+        case "Microsoft PowerPoint": page = "powerpoint.cloud.microsoft/"
         default: return nil
         }
         return "https://" + page
