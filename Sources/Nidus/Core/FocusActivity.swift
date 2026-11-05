@@ -91,7 +91,15 @@ enum ActivityTimeline {
     }
 
     static func sameContext(_ a: FocusActivitySegment, _ b: FocusActivitySegment) -> Bool {
-        a.appID == b.appID && a.site == b.site && a.title == b.title
+        a.appID == b.appID && a.site == b.site && a.title == b.title && samePage(a.url, b.url)
+    }
+
+    /// Category rules distinguish hosts and paths. Changes to a query or
+    /// fragment do not move time to another page in those rules.
+    static func samePage(_ a: String?, _ b: String?) -> Bool {
+        guard let a, let b else { return a == b }
+        guard let first = WebLocation(a), let second = WebLocation(b) else { return a == b }
+        return first == second
     }
 
     static func touches(_ a: FocusActivitySegment, _ b: FocusActivitySegment) -> Bool {

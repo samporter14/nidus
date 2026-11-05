@@ -19,8 +19,9 @@ extension ActivityTimeline {
 }
 
 struct ActivityDayLog: Codable, Equatable, Sendable {
-    /// A hard day of tab-hopping is a few hundred stretches; this is a wall.
-    static let stretchLimit = 2048
+    /// Four stretches a minute is an ordinary busy day, so this holds a full
+    /// 24 hours at that pace with room to spare. It is a wall, not a target.
+    static let stretchLimit = 8192
     /// Past this many rows, names stop adding rows but the time still counts.
     static let totalsLimit = 1024
 
@@ -31,12 +32,24 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
     var totals: [FocusActivity] = []
     var stretches: [FocusActivitySegment] = []
     var truncated = false
+    /// When the time dropped from `stretches` was counted, so a session can
+    /// still tell it apart from time that never was. nil in a day from before
+    /// this was kept: such a day can't say what it dropped.
+    var evicted: [DateInterval]?
 
     init(day: String) { self.day = day }
 
     var seconds: TimeInterval { totals.reduce(0) { $0 + max(0, $1.seconds) } }
     var isEmpty: Bool { totals.isEmpty && stretches.isEmpty }
     var hasTitles: Bool { ActivityRedaction.hasTitles(totals, stretches) }
+    /// Every counted moment is accounted for by `recordedIntervals`.
+    var knowsCoverage: Bool { !truncated || evicted != nil }
+    /// When the time in `totals` was counted, as far as the day still knows.
+    var recordedIntervals: [DateInterval] {
+        (evicted ?? []) + stretches.compactMap { stretch in
+            stretch.end > stretch.start ? DateInterval(start: stretch.start, end: stretch.end) : nil
+        }
+    }
 
     static func key(for date: Date, calendar: Calendar) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
@@ -61,10 +74,26 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
         } else {
             stretches.append(stretch)
             if stretches.count > Self.stretchLimit {
-                stretches.removeFirst(stretches.count - Self.stretchLimit)
+                let excess = stretches.count - Self.stretchLimit
+                // A day already cut short before this was kept stays unknown.
+                if knowsCoverage { noteEvicted(stretches.prefix(excess)) }
+                stretches.removeFirst(excess)
                 truncated = true
             }
         }
+    }
+
+    /// Merged as it goes, so this grows with the gaps in a day, not its stretches.
+    private mutating func noteEvicted(_ dropped: ArraySlice<FocusActivitySegment>) {
+        var ranges = evicted ?? []
+        for stretch in dropped where stretch.end > stretch.start {
+            if let last = ranges.last, stretch.start <= last.end {
+                ranges[ranges.count - 1] = DateInterval(start: last.start, end: max(last.end, stretch.end))
+            } else {
+                ranges.append(DateInterval(start: stretch.start, end: stretch.end))
+            }
+        }
+        evicted = ranges
     }
 
     private mutating func credit(_ stretch: FocusActivitySegment) {
@@ -82,6 +111,56 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
         } else {
             totals.append(FocusActivity(appID: stretch.appID, appName: stretch.appName, site: stretch.site,
                                         title: title, seconds: stretch.seconds))
+        }
+    }
+
+    /// Retracts recently observed time after an idle boundary. The retained
+    /// stretches tell us exactly what to subtract; older time that has fallen
+    /// outside the timeline limit remains in the totals.
+    @discardableResult
+    mutating func trim(after cutoff: Date, continuityAtLeast floor: Int) -> Bool {
+        var changed = false
+        var kept: [FocusActivitySegment] = []
+        kept.reserveCapacity(stretches.count)
+        for var stretch in stretches {
+            guard stretch.continuity >= floor, stretch.end > cutoff else {
+                kept.append(stretch)
+                continue
+            }
+            let removed = stretch.end.timeIntervalSince(max(stretch.start, cutoff))
+            guard removed > 0 else {
+                kept.append(stretch)
+                continue
+            }
+            changed = true
+            debit(removed, from: stretch)
+            if stretch.start < cutoff {
+                stretch.end = cutoff
+                kept.append(stretch)
+            }
+        }
+        if changed {
+            stretches = kept
+            totals.removeAll { $0.seconds <= 0 }
+        }
+        return changed
+    }
+
+    private mutating func debit(_ seconds: TimeInterval, from stretch: FocusActivitySegment) {
+        func matches(_ row: FocusActivity, title: String?) -> Bool {
+            row.appID == stretch.appID && row.site == stretch.site && row.title == title
+        }
+        var remaining = seconds
+        if let index = totals.firstIndex(where: { matches($0, title: stretch.title) }) {
+            let removed = min(remaining, max(0, totals[index].seconds))
+            totals[index].seconds -= removed
+            remaining -= removed
+        }
+        // New names beyond totalsLimit contribute to the unnamed row, while
+        // the timeline still retains the observed title.
+        if remaining > 0, stretch.title != nil,
+           let index = totals.firstIndex(where: { matches($0, title: nil) }) {
+            totals[index].seconds = max(0, totals[index].seconds - remaining)
         }
     }
 
