@@ -21,6 +21,7 @@ struct FocusWidget: View {
     @FocusState private var phraseFocused: Bool
     @FocusState private var customLengthFocused: Bool
     @State private var todayCache = TodayLineCache()
+    @State private var allDayLine: String?
     static let strictEndPhrase = "stop early"
 
     var body: some View {
@@ -196,10 +197,12 @@ struct FocusWidget: View {
 
             todayFooter
         }
+        // Read when the popover opens; it costs no timer of its own.
+        .onAppear { allDayLine = model.allDayLine }
     }
 
     @ViewBuilder private var todayFooter: some View {
-        let line = todayCache.line(for: model)
+        let line = allDayLine ?? todayCache.line(for: model)
         let week = model.botanicalWeek
         if line != nil || week != nil || nudge == .inbox || nudge == .saveSetup {
             ViewThatFits(in: .horizontal) {

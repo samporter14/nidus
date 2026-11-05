@@ -59,7 +59,7 @@ final class FocusController: ObservableObject {
     /// Demos, renders and tests: whatever the engine says to block, nothing is
     /// quit and no browser is asked. A sample break with rules can be drawn
     /// without touching the Mac it is drawn on.
-    var blocksNothing = false
+    var blocksNothing = false { didSet { applyRecorderSettings() } }
 
     var onBlocked: (BlockedItem) -> Void = { _ in }
     var onSessionEvent: (SessionEvent) -> Void = { _ in }
@@ -92,6 +92,7 @@ final class FocusController: ObservableObject {
         didSet {
             guard oldValue != recordsHistory else { return }
             if !recordsHistory { invalidateActivityProbe(); engine.clearCurrentActivity() }
+            applyRecorderSettings()
         }
     }
     /// Activity is opt-in and stays off in demos and when history is off.
@@ -100,6 +101,7 @@ final class FocusController: ObservableObject {
             guard oldValue != activityTrackingEnabled else { return }
             invalidateActivityProbe()
             if !activityTrackingEnabled { engine.clearCurrentActivity() }
+            applyRecorderSettings()
         }
     }
     var activityDocumentTitlesEnabled = false {
@@ -107,6 +109,7 @@ final class FocusController: ObservableObject {
             guard oldValue != activityDocumentTitlesEnabled else { return }
             invalidateActivityProbe()
             if !activityDocumentTitlesEnabled { engine.removeCurrentActivityTitles() }
+            applyRecorderSettings()
         }
     }
     var activityExcludedApps: Set<String> = [] {
@@ -114,8 +117,19 @@ final class FocusController: ObservableObject {
             guard oldValue != activityExcludedApps else { return }
             invalidateActivityProbe()
             engine.excludeCurrentActivity(appIDs: activityExcludedApps)
+            applyRecorderSettings()
         }
     }
+    /// All-day activity, on top of `activityTrackingEnabled`.
+    var activityAllDayEnabled = false { didSet { applyRecorderSettings() } }
+    var activityIdleCutoff = ActivityRecorder.defaultIdleCutoff { didSet { applyRecorderSettings() } }
+    var activityRetentionDays = ActivityRecorder.defaultRetentionDays { didSet { applyRecorderSettings() } }
+    /// Also holds a running session's activity, so a pause means what it says.
+    var activityPausedUntil: Date? { didSet { applyRecorderSettings() } }
+    /// Bumped when a day's record changes on disk; a page showing it refreshes.
+    @Published private(set) var activityDayVersion = 0
+    func bumpActivityDayVersion() { activityDayVersion += 1 }
+    let activityRecorder: ActivityRecorder
     /// Tells the stats page something was added.
     @Published private(set) var historyVersion = 0
 
@@ -180,6 +194,8 @@ final class FocusController: ObservableObject {
         }
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
+        activityRecorder = ActivityRecorder(store: ActivityDayStore(directory: directory.appendingPathComponent("Activity", isDirectory: true)),
+                                            host: SystemActivityHost(queue: DispatchQueue(label: "focus.activity.day", qos: .utility)))
     }
 
     // MARK: Lifecycle
@@ -191,9 +207,13 @@ final class FocusController: ObservableObject {
         engine.onEvent = { [weak self] event in self?.handle(event) }
         engine.isAway = { [weak self] in self?.isScreenLocked ?? false }
         now = Date()
+        activityRecorder.onSave = { [weak self] in self?.bumpActivityDayVersion() }
         engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
                        allowTitles: activityDocumentTitlesEnabled,
                        excludedApps: activityExcludedApps)
+        applyRecorderSettings()
+        activityRecorder.setFocusRunning(engine.isRunning)
+        activityRecorder.start()
         if FileManager.default.fileExists(atPath: tabsRestoredMarker.path) {
             try? FileManager.default.removeItem(at: tabsRestoredMarker)
             quietsNextSweep = engine.session != nil || engine.isOnBreak
@@ -211,6 +231,7 @@ final class FocusController: ObservableObject {
                 MainActor.assumeIsolated {
                     self?.lastAppActivation = Date()
                     self?.invalidateActivityProbe()
+                    self?.activityRecorder.frontAppDidChange()
                 }
             },
         ]
@@ -225,7 +246,10 @@ final class FocusController: ObservableObject {
         ]
         clockObservers = [
             NotificationCenter.default.addObserver(forName: .NSSystemClockDidChange, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.engine.systemClockDidChange() }
+                MainActor.assumeIsolated {
+                    self?.engine.systemClockDidChange()
+                    self?.activityRecorder.clockDidChange()
+                }
             },
         ]
         applyEnforcement()
@@ -260,6 +284,7 @@ final class FocusController: ObservableObject {
         }
         isStarted = false
         invalidateActivityProbe()
+        activityRecorder.stop()
         updateClock()
         observers.forEach(NSWorkspace.shared.notificationCenter.removeObserver)
         observers.removeAll()
@@ -285,20 +310,26 @@ final class FocusController: ObservableObject {
     // its lock screen is still away until it is unlocked. A pause the user
     // chose is left alone: these only end the pauses they began.
 
-    func systemWillSleep() { engine.systemWillSleep() }
+    func systemWillSleep() {
+        activityRecorder.systemWillSleep()
+        engine.systemWillSleep()
+    }
 
     func systemDidWake() {
+        activityRecorder.systemDidWake()
         guard !isScreenLocked else { return }
         engine.systemDidWake()
     }
 
     func screenDidLock() {
         isScreenLocked = true
+        activityRecorder.screenDidLock()
         engine.systemWillSleep()
     }
 
     func screenDidUnlock() {
         isScreenLocked = false
+        activityRecorder.screenDidUnlock()
         engine.systemDidWake()
     }
     func skipBreak() {
@@ -337,6 +368,7 @@ final class FocusController: ObservableObject {
         history.removeActivityTitles()
         engine.removeCurrentActivityTitles()
         invalidateActivityProbe()
+        activityRecorder.removeTitles()
         historyVersion += 1
     }
 
@@ -344,6 +376,7 @@ final class FocusController: ObservableObject {
         history.clear()
         invalidateActivityProbe()
         engine.clearCurrentActivity()
+        activityRecorder.clear()
         historyVersion += 1
     }
 
@@ -431,6 +464,10 @@ final class FocusController: ObservableObject {
     /// longer than a few seconds (a sleep, a stall) is not counted.
     private func creditForeground(since previous: Date) {
         guard recordsHistory, activityTrackingEnabled, !blocksNothing, engine.isRunning else { return }
+        if activityRecorder.isPaused(at: now) {
+            engine.breakActivityContinuity(at: now)
+            return
+        }
         var seconds = now.timeIntervalSince(previous)
         if let lastAppActivation { seconds = min(seconds, max(0, now.timeIntervalSince(lastAppActivation))) }
         guard seconds > 0, seconds < 5,
@@ -442,18 +479,31 @@ final class FocusController: ObservableObject {
         }
         let name = app.localizedName ?? bundleID
         engine.initializeActivity()
-        if ActivityProbe.needsProbe(bundleID, titles: activityDocumentTitlesEnabled) { probeActivity(for: app, id: bundleID) }
-        let detail: ActivityDetail?
-        if let cached = activityDetailApp, cached.id == bundleID, cached.pid == app.processIdentifier,
+        // All day, the recorder is already reading this window.
+        let sharedRead = activityRecorder.isRecording
+        if !sharedRead, ActivityProbe.needsProbe(bundleID, titles: activityDocumentTitlesEnabled) {
+            probeActivity(for: app, id: bundleID)
+        }
+        var detail: ActivityDetail?
+        if sharedRead {
+            detail = activityRecorder.detail(forApp: bundleID, pid: app.processIdentifier)
+        } else if let cached = activityDetailApp, cached.id == bundleID, cached.pid == app.processIdentifier,
            let at = activityDetailAt, now.timeIntervalSince(at) < 5 {
             detail = activityDetail
-        } else {
-            detail = nil
         }
+        detail = detail?.forSession
         engine.recordActivity(appID: bundleID, appName: name,
                               site: detail?.site,
                               title: activityDocumentTitlesEnabled ? detail?.title : nil,
                               seconds: seconds, sampledAt: now)
+    }
+
+    private func applyRecorderSettings() {
+        activityRecorder.apply(ActivityRecorderSettings(
+            enabled: recordsHistory && activityTrackingEnabled && activityAllDayEnabled && !blocksNothing,
+            titles: activityDocumentTitlesEnabled, excluded: activityExcludedApps,
+            idleCutoff: activityIdleCutoff, retentionDays: activityRetentionDays,
+            pausedUntil: activityPausedUntil))
     }
 
     private func invalidateActivityProbe() {
@@ -504,6 +554,7 @@ final class FocusController: ObservableObject {
         case .started, .ended, .paused, .resumed, .undone: invalidateActivityProbe()
         default: break
         }
+        activityRecorder.setFocusRunning(engine.isRunning)
         var opened: (WorkspaceReport, SessionPlan)?
         switch event {
         case .started:

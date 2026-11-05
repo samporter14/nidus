@@ -747,7 +747,7 @@ final class SessionEngine {
         // Bound the number and length of distinct names retained per session.
         let safeTitle = title.flatMap(ActivityProbe.cleanTitle)
         let rowTitle = rows.count < 120 ? safeTitle : nil
-        let rowSite = rows.count < 200 ? ActivityTimeline.safeSite(site) : nil
+        let rowSite = rows.count < 200 ? ActivityTimeline.safeDaySite(site) : nil
         if let index = rows.firstIndex(where: { $0.appID == appID && $0.site == rowSite && $0.title == rowTitle }) {
             rows[index].seconds += amount
             rows[index].appName = appName

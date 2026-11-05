@@ -287,7 +287,7 @@ struct ActivityTests {
                                                             title: "+Draft, one", seconds: 20)])
         let empty = SessionEntry(start: start, end: start.addingTimeInterval(60), focused: 60,
                                  planned: 60, outcome: .completed, foreground: ["app.empty": 10], activity: [])
-        let csv = ActivityExport.csv(sessions: [legacy, tracked, empty])
+        let csv = ActivityExport.csv(logs: [], sessions: [legacy, tracked, empty])
         #expect(csv.contains("Old App"))
         #expect(csv.contains("New App"))
         #expect(!csv.contains("app.empty"))

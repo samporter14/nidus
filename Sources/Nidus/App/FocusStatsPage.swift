@@ -35,7 +35,7 @@ struct FocusStatsPage: View {
     }
 
     /// What Clear history says it clears.
-    static let clearHistoryMessage = "Every recorded session, the stats worked out from them (each project\u{2019}s time and unfinished goals too), app activity and document names, your recent goals and your resume notes are removed from this Mac. Your projects stay."
+    static let clearHistoryMessage = "Every recorded session, the stats worked out from them (each project\u{2019}s time and unfinished goals too), all-day activity, app activity and document names, your recent goals and your resume notes are removed from this Mac. Your projects stay."
 
     /// With nothing recorded there is nothing to count: one line, not a page
     /// of empty rows. History's own controls stay below it.

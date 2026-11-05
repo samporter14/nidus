@@ -107,6 +107,18 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
 }
 
 extension SessionEntry {
+    /// This session as the views show it, without the apps.
+    func hiding(_ apps: Set<String>) -> SessionEntry {
+        guard !apps.isEmpty else { return self }
+        var entry = self
+        entry.activity = activity?.filter { !apps.contains($0.appID) }
+        entry.activitySegments = activitySegments?.filter { !apps.contains($0.appID) }
+        entry.foreground = foreground.filter { !apps.contains($0.key) }
+        return entry
+    }
+}
+
+extension SessionEntry {
     enum CodingKeys: String, CodingKey {
         case id, start, end, focused, planned, outcome, goal, blocks, quits, foreground, activity, activitySegments, activityTimelineTruncated, names, finished
         case projectID, projectName, setupID, sequenceStep
