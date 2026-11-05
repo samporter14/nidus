@@ -14,6 +14,9 @@ import SwiftUI
 @MainActor
 final class NidusModel: NSObject, ObservableObject {
     private(set) var host: NidusHost?
+    /// Tests give the model a suite of its own, so it needs no host and never
+    /// reads or writes the real preferences.
+    var preferencesOverride: NidusHost.Preferences?
     private(set) var controller: FocusController?
     private var subscriptions: Set<AnyCancellable> = []
     private var menuBar: FocusMenuBar?
@@ -665,6 +668,8 @@ final class NidusModel: NSObject, ObservableObject {
 extension NidusModel {
     enum Key {
         static let categories = "categories"
+        static let workGroup = "workGroup"
+        static let activityOverrides = "activityOverrides"
         static let selection = "selectedCategories"
         static let durationMinutes = "durationMinutes"
         static let mode = "mode"
@@ -691,24 +696,91 @@ extension NidusModel {
     /// 0 means no break.
     static let breakChoices = [0, 5, 10, 15]
 
+    private var preferences: NidusHost.Preferences? { preferencesOverride ?? host?.preferences }
+
     func preference<Value: Codable>(_ key: String, default value: Value) -> Value {
-        host?.preferences.value(forKey: key, default: value) ?? value
+        preferences?.value(forKey: key, default: value) ?? value
     }
 
     /// A saved list, keeping every element that still decodes. For every
     /// list of things the user made (setups, schedules, projects, sequences).
     func preferenceList<Element: Codable>(_ key: String, default value: [Element] = []) -> [Element] {
-        host?.preferences.list(forKey: key, default: value) ?? value
+        preferences?.list(forKey: key, default: value) ?? value
     }
 
     func setPreference<Value: Codable>(_ value: Value, _ key: String) {
-        host?.preferences.setValue(value, forKey: key)
+        preferences?.setValue(value, forKey: key)
         objectWillChange.send()
     }
 
     var categories: [FocusCategory] {
         get { preferenceList(Key.categories, default: FocusCategory.presets) }
         set { setPreference(newValue, Key.categories) }
+    }
+
+    /// What counts as Work in Activity. Kept apart from `categories` so no
+    /// code that builds a session, a setup or the composer's list can reach
+    /// it: it is never blocked or offered. An older preferences file has none
+    /// and gets the empty group.
+    var workGroup: FocusCategory {
+        get {
+            var group = preference(Key.workGroup, default: FocusCategory.workSeed)
+            group.id = ActivityCategorizer.workID
+            return group
+        }
+        set { setPreference(newValue, Key.workGroup) }
+    }
+
+    func updateWorkGroup(_ change: (inout FocusCategory) -> Void) {
+        var group = workGroup
+        change(&group)
+        workGroup = group
+    }
+
+    /// "Count as" choices, kept apart from the blocking lists. An older
+    /// preferences file has none, and a damaged one reads as none.
+    var activityOverrides: ActivityOverrides {
+        get { preference(Key.activityOverrides, default: ActivityOverrides()) }
+        set { setPreference(newValue, Key.activityOverrides) }
+    }
+
+    /// The categorizer for the groups and overrides as they are now.
+    var activityCategorizer: ActivityCategorizer {
+        ActivityCategorizer(categories: categories, work: workGroup, overrides: activityOverrides)
+    }
+
+    /// Where an app or website counts now. Pass the page's `url` when there
+    /// is one: it is read in preference to `site`.
+    func activityAssignment(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {
+        activityCategorizer.group(appID: appID, site: site, url: url)
+    }
+
+    /// Makes an app or website count as Work, a category or Uncategorized in
+    /// Activity. It stores an override and nothing else: no category, no
+    /// Work list and no blocking plan changes. A category that does not exist
+    /// changes nothing.
+    func countActivity(appID: String?, appName: String? = nil, site: String?, url: String? = nil,
+                       as target: ActivityGroup) {
+        if case .category(let id) = target, id != ActivityCategorizer.workID, !categories.contains(where: { $0.id == id }) {
+            return
+        }
+        var overrides = activityOverrides
+        let name = appName ?? appID.flatMap(Self.installedAppName)
+        guard overrides.set(target, appID: appID, appName: name, site: site, url: url) else { return }
+        activityOverrides = overrides
+    }
+
+    func removeActivityOverride(_ subject: ActivityOverrides.Subject) {
+        var overrides = activityOverrides
+        overrides.remove(subject)
+        activityOverrides = overrides
+    }
+
+    private static func installedAppName(_ bundleID: String) -> String? {
+        NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).map {
+            let name = FileManager.default.displayName(atPath: $0.path)
+            return name.hasSuffix(".app") ? String(name.dropLast(4)) : name
+        }
     }
 
     var selectedCategoryIDs: [String] {

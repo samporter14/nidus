@@ -75,12 +75,6 @@ import Testing
         #expect(ActivityRank(id: "x", name: "x", seconds: 1).reopenTarget == nil)
     }
 
-    @Test func thePopoverLineNamesTheDayAndItsLead() {
-        #expect(ActivityDayLine.text(log([stretch(9, 13, app: "Word"), stretch(13, 14.2, app: "Mail")])) == "Today 5h 12m · mostly Word")
-        #expect(ActivityDayLine.text(log([stretch(9, 9.5, app: "Mail")])) == "Today 30m · mostly Mail")
-        #expect(ActivityDayLine.text(log([])) == nil)
-    }
-
     @Test func seriesKeepAServiceAndFoldADomainIntoItsBrowser() {
         #expect(ActivityTotals.series(site: "Claude", appName: "Safari") == "Claude")
         #expect(ActivityTotals.series(site: "nature.com", appName: "Safari") == "Safari")

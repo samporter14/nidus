@@ -18,7 +18,7 @@ enum RenderSurfaces {
     private static let arguments = ProcessInfo.processInfo.arguments
 
     static var directory: URL? {
-        guard let index = arguments.firstIndex(where: { $0 == "--render-surfaces" || $0 == "--render-brick-surfaces" || $0 == "--render-activity-surfaces" || $0 == "--render-polish-surfaces" }),
+        guard let index = arguments.firstIndex(where: { $0 == "--render-surfaces" || $0 == "--render-brick-surfaces" || $0 == "--render-activity-surfaces" || $0 == "--render-polish-surfaces" || $0 == "--render-popover-surfaces" }),
               index + 1 < arguments.count else { return nil }
         return URL(fileURLWithPath: arguments[index + 1], isDirectory: true)
     }
@@ -27,7 +27,8 @@ enum RenderSurfaces {
         ProcessInfo.processInfo.arguments.contains("--render-surfaces") ||
         ProcessInfo.processInfo.arguments.contains("--render-polish-surfaces") ||
         ProcessInfo.processInfo.arguments.contains("--render-brick-surfaces") ||
-        ProcessInfo.processInfo.arguments.contains("--render-activity-surfaces")
+        ProcessInfo.processInfo.arguments.contains("--render-activity-surfaces") ||
+        ProcessInfo.processInfo.arguments.contains("--render-popover-surfaces")
     }
 
     static func run() {
@@ -43,6 +44,21 @@ enum RenderSurfaces {
         if arguments.contains("--render-polish-surfaces") {
             Task { @MainActor in
                 await renderNextPolish(model: model, settings: settings, in: directory)
+                model.deactivate()
+                NSApp.terminate(nil)
+            }
+            return
+        }
+
+        if arguments.contains("--render-popover-surfaces") {
+            Task { @MainActor in
+                if arguments.contains("--measure-popover") {
+                    await measurePopover(model: model)
+                    model.deactivate()
+                    NSApp.terminate(nil)
+                    return
+                }
+                await renderPopoverSurfaces(model: model, in: directory)
                 model.deactivate()
                 NSApp.terminate(nil)
             }

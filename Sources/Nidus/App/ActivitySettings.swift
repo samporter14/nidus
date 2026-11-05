@@ -10,6 +10,7 @@ extension NidusModel.Key {
     static let activityIdleMinutes = "activityIdleMinutes"
     static let activityRetentionDays = "activityRetentionDays"
     static let activityPausedUntil = "activityPausedUntil"
+    static let activityRibbonCategory = "activityRibbonByCategory"
 }
 
 /// The choices Activity settings offers, in minutes and in days (0: forever).
@@ -32,10 +33,31 @@ extension NidusModel {
         return (controller?.history.sessions ?? []).map { $0.hiding(excluded) }
     }
 
-    /// "Today 5h 12m · mostly Word" while no session runs, all day being on.
-    var allDayLine: String? {
-        guard recordsHistory, activityTrackingEnabled, activityAllDayEnabled, let controller, !controller.engine.isRunning else { return nil }
-        return ActivityDayLine.text(controller.activityRecorder.today().hiding(activityExcludedApps))
+    /// Today for the popover: the day's record, today's sessions and the
+    /// session running now. Reads what the recorder already holds.
+    func todayOverview(now: Date = Date()) -> TodayOverview? {
+        guard let controller else { return nil }
+        let recorder = controller.activityRecorder
+        var log = recorder.today()
+        // The recorder is off in Demo mode, so show the day seeded on disk.
+        if Demo.isActive, let seeded = recorder.store.load(day: ActivityDayLog.key(for: now, calendar: .current)) { log = seeded }
+        var live: ActivityRibbon.Focus?
+        var liveFocused: TimeInterval = 0
+        if controller.engine.isRunning, let session = controller.engine.session, session.startedAt < now {
+            live = ActivityRibbon.Focus(id: "live", sessionID: nil, start: session.startedAt, end: now,
+                                        name: session.plan.goal.isEmpty ? "Focus" : session.plan.goal)
+            // Pauses are already out of `elapsed`.
+            liveFocused = controller.engine.elapsed ?? 0
+        }
+        return TodayOverview(log: log.hiding(activityExcludedApps), sessions: activitySessions, live: live, liveFocused: liveFocused,
+                             tracking: recordsHistory && activityTrackingEnabled && activityAllDayEnabled, now: now,
+                             categorizer: activityCategorizer)
+    }
+
+    /// Whether the day's ribbon is colored by category rather than by app.
+    var activityRibbonByCategory: Bool {
+        get { preference(Key.activityRibbonCategory, default: false) }
+        set { setPreference(newValue, Key.activityRibbonCategory) }
     }
 
     var activityTrackingEnabled: Bool {

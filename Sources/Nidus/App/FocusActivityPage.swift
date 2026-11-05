@@ -18,12 +18,15 @@ struct FocusActivityPage: View {
     var initialSessionID: UUID? = nil
 
     init(model: NidusModel, now: Date? = nil, calendar: Calendar = .current,
-         initialSessionID: UUID? = nil, initialPeriod: ActivityPeriod = .today) {
+         initialSessionID: UUID? = nil, initialPeriod: ActivityPeriod = .today,
+         initialListKind: ActivityListKind = .apps, initialCategoryFilter: String? = nil) {
         self.model = model
         self.now = now
         self.calendar = calendar
         self.initialSessionID = initialSessionID
         _period = State(initialValue: initialPeriod)
+        _listKind = State(initialValue: initialListKind)
+        _categoryFilter = State(initialValue: initialCategoryFilter)
     }
 
     @State private var period: ActivityPeriod = .today
@@ -40,6 +43,12 @@ struct FocusActivityPage: View {
     @State private var displayedLoadKey: ActivityCacheKey?
     @State private var displayedProjects: [ActivityProjectChoice] = []
     @State private var displayedProjectsVersion = -1
+    /// A group's id (Uncategorized's included): the ranked lists count only its time.
+    @State private var categoryFilter: String?
+    // Worked out in `reload`, with the scope, so a body pass reads them.
+    @State private var displayedCategorizer = ActivityCategorizer(categories: [], work: FocusCategory.workSeed)
+    @State private var displayedCategories: [ActivityCategoryTotal] = []
+    @State private var displayedFiltered: ActivityTotals?
 
     private var sessions: [SessionEntry] { model.activitySessions }
     private var effectiveNow: Date { now ?? Date() }
@@ -51,7 +60,8 @@ struct FocusActivityPage: View {
         let interval = requestedInterval
         return ActivityCacheKey(version: model.controller?.historyVersion ?? 0, dayVersion: model.controller?.activityDayVersion ?? 0,
                                 start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly,
-                                excluded: model.activityExcludedApps)
+                                excluded: model.activityExcludedApps, work: model.workGroup, categories: model.categories,
+                                categoryFilter: categoryFilter)
     }
     /// The session running now, for the ribbon and focus-only views.
     private var liveFocus: ActivityRibbon.Focus? {
@@ -76,7 +86,7 @@ struct FocusActivityPage: View {
                 } else {
                     dailyPattern(scope.totals, sessions: rangeSessions)
                 }
-                rankedList(scope.totals)
+                rankedList(displayedFiltered ?? scope.totals)
                 projectInsights
                 sessionList(rangeSessions)
             }
@@ -217,9 +227,27 @@ struct FocusActivityPage: View {
     private func dayRibbon(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
         let interval = requestedInterval
         let live = liveFocus.flatMap { interval.intersects(DateInterval(start: $0.start, end: $0.end)) ? $0 : nil }
+        let byCategory = model.activityRibbonByCategory
         let ribbon = ActivityRibbon(stretches: scope.stretches, sessions: sessions, live: live, day: interval,
-                                    now: effectiveNow, calendar: calendar)
+                                    now: effectiveNow, colorBy: byCategory ? .category(displayedCategorizer) : .app,
+                                    calendar: calendar)
         return NidusSettingsCard {
+            HStack(spacing: 6) {
+                Spacer(minLength: 0)
+                Text("Color by")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.secondary)
+                Picker("Color by", selection: Binding(get: { byCategory }, set: { model.activityRibbonByCategory = $0 })) {
+                    Text("App").tag(false)
+                    Text("Category").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .controlSize(.mini)
+                .labelsHidden()
+                .fixedSize()
+                .accessibilityLabel("Color the day by")
+            }
+            .padding(.top, 8)
             ActivityDayRibbon(ribbon: ribbon, calendar: calendar) { id in
                 selectedSession = sessions.first { $0.id == id }
             }
@@ -318,9 +346,13 @@ struct FocusActivityPage: View {
         case .apps: rows = totals.apps
         case .websites: rows = totals.sites
         case .documents: rows = totals.documents
+        case .categories: rows = []
         }
-        let visible = expandedList ? rows : Array(rows.prefix(5))
+        let categories = displayedCategories
+        let count = listKind == .categories ? categories.count : rows.count
+        let limit = expandedList ? count : 5
         return NidusSettingsCard {
+            if let categoryFilter { filterChip(categoryFilter) }
             Picker("Show", selection: $listKind) {
                 ForEach(ActivityListKind.allCases) { kind in Text(kind.title).tag(kind) }
             }
@@ -329,19 +361,29 @@ struct FocusActivityPage: View {
             .accessibilityLabel("Rank activity by")
             .onChange(of: listKind) { _, _ in expandedList = false }
             .padding(.vertical, 6)
-            if rows.isEmpty {
+            if count == 0 {
                 Text(listKind.emptyNote)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 6)
             }
-            ForEach(Array(visible.enumerated()), id: \.element.id) { index, row in
-                ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint,
-                                reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { reopen(target) } })
+            if listKind == .categories {
+                ForEach(Array(categories.prefix(limit))) { item in
+                    ActivityCategoryRow(item: item, selected: item.id == categoryFilter) {
+                        categoryFilter = item.id
+                        listKind = .apps
+                    }
+                }
+            } else {
+                ForEach(Array(rows.prefix(limit).enumerated()), id: \.element.id) { index, row in
+                    ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint,
+                                    reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { target.perform() } })
+                        .activityCountAs(model: model, target: ActivityCountTarget(rank: row, kind: listKind))
+                }
             }
-            if rows.count > 5 {
-                Button(expandedList ? "Show less" : "Show all \(rows.count)") {
+            if count > 5 {
+                Button(expandedList ? "Show less" : "Show all \(count)") {
                     if reduceMotion { expandedList.toggle() }
                     else { withAnimation(.easeInOut(duration: 0.2)) { expandedList.toggle() } }
                 }
@@ -353,6 +395,37 @@ struct FocusActivityPage: View {
                 .accessibilityHint("Expands the ranked list")
             }
         }
+    }
+
+    /// What the lists are cut to, and the way back.
+    private func filterChip(_ id: String) -> some View {
+        let label = displayedCategorizer.label(of: id == ActivityCategorizer.uncategorizedID ? nil : id)
+        return HStack(spacing: 6) {
+            Image(systemName: label.symbol)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(ActivityInk.clay)
+                .accessibilityHidden(true)
+            Text(verbatim: "Only \(label.name)")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(ActivityInk.clay)
+                .lineLimit(1)
+            Button {
+                categoryFilter = nil
+            } label: {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
+            .help("Show everything again")
+            .accessibilityLabel("Clear the \(label.name) filter")
+            Text("Figures above cover everything.")
+                .font(.system(size: 10))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.tail)
+        }
+        .padding(.top, 6)
     }
 
     private func sessionList(_ scoped: [SessionEntry]) -> some View {
@@ -402,19 +475,6 @@ struct FocusActivityPage: View {
         selectedSession = entry
     }
 
-    private func reopen(_ target: ActivityReopen) {
-        switch target {
-        case .page(let url):
-            NSWorkspace.shared.open(url)
-        case .app(let id):
-            if let app = NSRunningApplication.runningApplications(withBundleIdentifier: id).first {
-                app.activate()
-            } else if let url = NSWorkspace.shared.urlForApplication(withBundleIdentifier: id) {
-                NSWorkspace.shared.openApplication(at: url, configuration: NSWorkspace.OpenConfiguration())
-            }
-        }
-    }
-
     private func refreshProjects() {
         let version = model.controller?.historyVersion ?? 0
         guard displayedProjectsVersion != version else { return }
@@ -447,9 +507,18 @@ struct FocusActivityPage: View {
             }
         }
         let live = liveFocus.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
+        let scope = ActivityScope(logs: logs, sessions: inRange, narrowed: key.focusOnly || key.projectID != nil,
+                                  live: key.projectID == nil ? live : nil, calendar: calendar)
+        let categorizer = ActivityCategorizer(categories: key.categories, work: key.work)
+        // A filter on a category that has since been deleted is dropped.
+        let known = [ActivityCategorizer.workID, ActivityCategorizer.uncategorizedID] + key.categories.map(\.id)
+        let filter = key.categoryFilter.flatMap { known.contains($0) ? $0 : nil }
         displayedSessions = inRange
-        displayedScope = ActivityScope(logs: logs, sessions: inRange, narrowed: key.focusOnly || key.projectID != nil,
-                                       live: key.projectID == nil ? live : nil, calendar: calendar)
+        displayedScope = scope
+        displayedCategorizer = categorizer
+        displayedCategories = scope.categoryTotals(using: categorizer)
+        displayedFiltered = filter.map { scope.totals(in: $0, using: categorizer, calendar: calendar) }
+        if filter != key.categoryFilter { categoryFilter = nil }
         displayedLoadKey = key
     }
 
@@ -484,19 +553,26 @@ private struct ActivityCacheKey: Hashable {
     let projectID: UUID?
     let focusOnly: Bool
     let excluded: Set<String>
+    /// What the groups hold, so editing one (or "Count as") reads back.
+    let work: FocusCategory
+    let categories: [FocusCategory]
+    let categoryFilter: String?
 }
 
 /// The one ranked list's three views of the same seconds, which is why they
 /// never add up to each other.
 enum ActivityListKind: String, CaseIterable, Identifiable {
-    case apps, websites, documents
+    case apps, websites, documents, categories
     var id: String { rawValue }
     var title: String { rawValue.capitalized }
+    /// The popover ranks these; categories are a line there, not a list.
+    static let popoverKinds: [ActivityListKind] = [.apps, .websites, .documents]
     var tint: Color {
         switch self {
         case .apps: return ActivityInk.blue
         case .websites: return ActivityInk.sage
         case .documents: return ActivityInk.clay
+        case .categories: return ActivityInk.series(4)
         }
     }
     var emptyNote: String {
@@ -504,6 +580,7 @@ enum ActivityListKind: String, CaseIterable, Identifiable {
         case .apps: return "No apps were counted here."
         case .websites: return "No websites here. Allow website access browser by browser under Tracking."
         case .documents: return "No page or window names here. Allow window-title access under Tracking."
+        case .categories: return "Nothing to sort into categories here."
         }
     }
 }
@@ -653,6 +730,9 @@ struct ActivityTotals {
         var documentTitles: [String: String] = [:]
         var documentSources: [String: String] = [:]
         var documentApps: [String: String] = [:]
+        var documentSites: [String: String] = [:]
+        var documentAppNames: [String: String] = [:]
+        var siteApps: [String: (id: String, name: String)] = [:]
         var appNames: [String: String] = [:]
         var serviceSeconds: [String: TimeInterval] = [:]
         var serviceSecondsByDay: [Date: [String: TimeInterval]] = [:]
@@ -663,21 +743,34 @@ struct ActivityTotals {
             let service = Self.series(site: item.site, appName: item.appName)
             serviceSeconds[service, default: 0] += item.seconds
             serviceSecondsByDay[day, default: [:]][service, default: 0] += item.seconds
-            if let site = item.site, !site.isEmpty { siteSeconds[site, default: 0] += item.seconds }
-            if let title = item.title, !title.isEmpty {
+            let isDocument = ActivityTimeline.isDocumentService(item.site)
+            if let site = item.site, !site.isEmpty, !isDocument {
+                siteSeconds[site, default: 0] += item.seconds
+                siteApps[site] = (item.appID, item.appName)
+            }
+            if let title = isDocument ? ActivityTimeline.documentName(title: item.title, site: item.site) : item.title,
+               !title.isEmpty {
                 let key = Self.documentKey(appID: item.appID, site: item.site, title: title)
-                let source = [item.appName, item.site].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                let parts = isDocument ? [item.site, item.appName] : [item.appName, item.site]
+                let source = parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 documentSeconds[key, default: 0] += item.seconds
                 documentTitles[key] = title
                 documentSources[key] = source
                 documentApps[key] = item.appID
+                documentAppNames[key] = item.appName
+                documentSites[key] = item.site
             }
         }
         apps = Self.ranked(appSeconds, names: appNames)
-        sites = Self.ranked(siteSeconds)
+        sites = Self.ranked(siteSeconds).map { rank in
+            var rank = rank
+            rank.sourceAppID = siteApps[rank.id]?.id
+            rank.sourceAppName = siteApps[rank.id]?.name
+            return rank
+        }
         documents = documentSeconds.map { key, seconds in
             ActivityRank(id: key, name: documentTitles[key] ?? key, seconds: seconds, subtitle: documentSources[key],
-                         appID: documentApps[key])
+                         appID: documentApps[key], site: documentSites[key], appName: documentAppNames[key])
         }.sorted { $0.seconds > $1.seconds }
         let rankedServices = Self.ranked(serviceSeconds)
         if rankedServices.count > 4 {
@@ -708,7 +801,8 @@ struct ActivityTotals {
         for stretch in stretches {
             guard let url = stretch.url else { continue }
             if let site = stretch.site { bySite[site] = url }
-            if let title = stretch.title {
+            let isDocument = ActivityTimeline.isDocumentService(stretch.site)
+            if let title = isDocument ? ActivityTimeline.documentName(title: stretch.title, site: stretch.site) : stretch.title {
                 byDocument[Self.documentKey(appID: stretch.appID, site: stretch.site, title: title)] = url
             }
         }
@@ -731,6 +825,75 @@ struct ActivityRank: Identifiable {
     var appID: String? = nil
     /// The address it was last seen at.
     var url: String? = nil
+    /// A document's site, when it was a page.
+    var site: String? = nil
+    /// A document's app, by name.
+    var appName: String? = nil
+    /// The app a website was last seen in. Not a place to reopen it: it is
+    /// what "Count as" falls back on for a site that is only a label.
+    var sourceAppID: String? = nil
+    var sourceAppName: String? = nil
+}
+
+extension ActivityCategoryTotal {
+    /// "42%"; "<1%" for a sliver, so a row never reads 0%.
+    var percentText: String {
+        let percent = Int((share * 100).rounded())
+        return percent == 0 && seconds > 0 ? "<1%" : "\(percent)%"
+    }
+}
+
+/// A group, its time and its share of all the time counted. Choosing it
+/// cuts the lists to it.
+private struct ActivityCategoryRow: View {
+    let item: ActivityCategoryTotal
+    let selected: Bool
+    let choose: () -> Void
+
+    var body: some View {
+        Button(action: choose) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 9) {
+                    Image(systemName: item.symbol)
+                        .font(.system(size: 11))
+                        .foregroundStyle(selected ? ActivityInk.clay : .secondary)
+                        .frame(width: 22, alignment: .leading)
+                        .accessibilityHidden(true)
+                    Text(verbatim: item.name)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Text(item.percentText)
+                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .foregroundStyle(.tertiary)
+                        .monospacedDigit()
+                    Text(ActivityDuration.string(item.seconds))
+                        .font(.system(size: 11, weight: .medium, design: .rounded))
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .frame(minWidth: 52, alignment: .trailing)
+                }
+                GeometryReader { proxy in
+                    Capsule().fill(Color.primary.opacity(0.055))
+                        .overlay(alignment: .leading) {
+                            Capsule().fill(ActivityListKind.categories.tint.opacity(0.85))
+                                .frame(width: Swift.max(4, proxy.size.width * min(1, item.share)))
+                        }
+                }
+                .frame(height: 4)
+                .padding(.leading, 31)
+            }
+            .padding(.vertical, 5)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Show only \(item.name) in the lists")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(item.name), \(ActivityDuration.string(item.seconds)), \(item.percentText)")
+        .accessibilityHint("Shows only this category in the lists")
+    }
 }
 
 private struct ActivityDay: Identifiable {

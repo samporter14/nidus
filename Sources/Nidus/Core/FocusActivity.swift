@@ -72,6 +72,24 @@ enum ActivityTimeline {
         return labels.contains(site) ? site : nil
     }
 
+    /// Web apps whose pages are documents: ranked by document, not as websites.
+    static let documentServices: Set<String> = ["Google Docs", "Microsoft Word"]
+
+    static func isDocumentService(_ site: String?) -> Bool {
+        site.map(documentServices.contains) ?? false
+    }
+
+    /// A web document's name: its tab title without the app's own suffix, or
+    /// the service when the title couldn't be read.
+    static func documentName(title: String?, site: String?) -> String? {
+        guard let title, !title.isEmpty else { return site }
+        for suffix in [site, "Word"].compactMap({ $0 }).map({ " - " + $0 }) where title.hasSuffix(suffix) {
+            let name = String(title.dropLast(suffix.count))
+            return name.isEmpty ? site : name
+        }
+        return title
+    }
+
     static func sameContext(_ a: FocusActivitySegment, _ b: FocusActivitySegment) -> Bool {
         a.appID == b.appID && a.site == b.site && a.title == b.title
     }

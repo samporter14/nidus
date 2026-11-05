@@ -50,9 +50,9 @@ struct ActivityPresentationTests {
 
     @Test func dimensionsAreNotAddedTogetherAndSameTitlesKeepTheirSource() {
         let rows = [
-            FocusActivity(appID: "browser", appName: "Browser", site: "Google Docs", title: "Draft", seconds: 120),
+            FocusActivity(appID: "browser", appName: "Browser", site: "overleaf.com", title: "Draft", seconds: 120),
             FocusActivity(appID: "word", appName: "Word", title: "Draft", seconds: 60),
-            FocusActivity(appID: "browser", appName: "Browser", site: "Google Docs", title: "Draft", seconds: 30)
+            FocusActivity(appID: "browser", appName: "Browser", site: "overleaf.com", title: "Draft", seconds: 30)
         ]
         let totals = ActivityTotals(sessions: [entry(rows)])
         #expect(totals.observed == 210)

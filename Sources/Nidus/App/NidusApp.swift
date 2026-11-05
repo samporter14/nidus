@@ -174,17 +174,27 @@ extension NidusModel {
     func showPopover() { menuBarItem?.showPopover() }
 }
 
-/// The popover under the menu bar item.
+/// The popover under the menu bar item: a small place to start a session,
+/// and today at a glance under it.
 struct NidusPopover: View {
     @ObservedObject var model: NidusModel
+    /// Opens the Focus piece's More section (the render harness).
+    var moreOpen = false
 
     var body: some View {
-        FocusWidget(model: model)
-            .padding(.horizontal, 20)
-            .padding(.top, 16)
-            .padding(.bottom, 20)
-            .frame(width: 440)
-            .fixedSize(horizontal: false, vertical: true)
+        VStack(spacing: 0) {
+            FocusWidget(model: model, moreOpen: moreOpen)
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
+                .padding(.bottom, 16)
+            Rectangle().fill(Solanum.hairline).frame(height: 1)
+            TodayPopoverPiece(model: model)
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+        }
+        .frame(width: 440)
+        .fixedSize(horizontal: false, vertical: true)
     }
 }
 

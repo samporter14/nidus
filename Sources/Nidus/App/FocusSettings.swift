@@ -44,6 +44,8 @@ extension NidusModel {
         case _ where id.hasPrefix(Self.sequencePagePrefix): return makeSequencePage(id: id)
         default: break
         }
+        if id == Self.activityOverridesPageID { return AnyView(ActivityOverridesPage(model: self)) }
+        if id == Self.workPageID { return AnyView(FocusCategoryPage(model: self, categoryID: ActivityCategorizer.workID, isWork: true)) }
         guard id.hasPrefix(Self.categoryPagePrefix) else { return nil }
         let categoryID = String(id.dropFirst(Self.categoryPagePrefix.count))
         guard categories.contains(where: { $0.id == categoryID }) else { return nil }
@@ -52,6 +54,11 @@ extension NidusModel {
 
     nonisolated static let categoryPagePrefix = "category:"
     nonisolated static let launchAppsPageID = "launch-apps"
+    /// Inside the category pages' prefix, so it opens in the Blocking tab.
+    nonisolated static let workPageID = categoryPagePrefix + ActivityCategorizer.workID
+    /// Also inside the prefix. No category id is this (they are UUIDs or the
+    /// preset words).
+    nonisolated static let activityOverridesPageID = categoryPagePrefix + "activity-categories"
 
     func openCategoryPage(_ category: FocusCategory) {
         host?.workspace.openSettingsPage(Self.categoryPagePrefix + category.id, title: category.name)
@@ -74,6 +81,7 @@ extension NidusModel {
     func deleteCategory(_ id: String) {
         categories.removeAll { $0.id == id }
         selectedCategoryIDs.removeAll { $0 == id }
+        pruneActivityOverrides(of: id)
         host?.workspace.goBackInSettings()
     }
 
@@ -102,8 +110,18 @@ extension NidusModel {
             updated.categoryIDs = remap(schedule.categoryIDs)
             return updated
         }
+        var overrides = activityOverrides
+        overrides.moveCategory(id, to: target.id)
+        if overrides != activityOverrides { activityOverrides = overrides }
         categories.removeAll { $0.id == id }
         host?.workspace.goBackInSettings()
+    }
+
+    /// A deleted category's "Count as" choices go with it.
+    private func pruneActivityOverrides(of id: String) {
+        var overrides = activityOverrides
+        overrides.removeCategory(id)
+        if overrides != activityOverrides { activityOverrides = overrides }
     }
 }
 
@@ -362,6 +380,24 @@ struct FocusBlockingPage: View {
                         .buttonStyle(.bordered)
                 }
             }
+            NidusSettingsCard {
+                NidusSettingsPageLink(
+                    model.workGroup.name,
+                    subtitle: "For counting time in Activity. Never blocked. " + model.workGroup.coverageSummary,
+                    page: NidusModel.workPageID
+                ) {
+                    CategoryTile(symbol: model.workGroup.symbol)
+                }
+                NidusSettingsPageLink(
+                    "Activity categories",
+                    subtitle: model.activityOverrides.isEmpty
+                        ? "Count an app or website differently in Activity."
+                        : "\(model.activityOverrides.items.count) counted differently. Never changes what is blocked.",
+                    page: NidusModel.activityOverridesPageID
+                ) {
+                    CategoryTile(symbol: "arrow.triangle.branch")
+                }
+            }
             if !FocusCategory.suggested(in: model.categories).isEmpty {
                 DisclosureGroup("Suggested categories", isExpanded: $showsSuggested) {
                     if showsSuggested {
@@ -540,16 +576,28 @@ struct BrowserAccessRow: View {
 struct FocusCategoryPage: View {
     @ObservedObject var model: NidusModel
     let categoryID: String
+    /// Work counts time in Activity and is never blocked, so the controls
+    /// that only matter for blocking are left out.
+    var isWork = false
     @State private var newWebsite = ""
     @State private var confirmsMerge = false
 
     private var category: FocusCategory? {
-        model.categories.first { $0.id == categoryID }
+        isWork ? model.workGroup : model.categories.first { $0.id == categoryID }
+    }
+
+    private func update(_ change: (inout FocusCategory) -> Void) {
+        if isWork { model.updateWorkGroup(change) } else { model.updateCategory(categoryID, change) }
     }
 
     var body: some View {
         NidusSettingsPage {
             if let category {
+                if isWork {
+                    Text("Work is for counting time. It is never blocked and never offered when you start a session.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
                 NidusSettingsCard {
                     NidusControlRow(title: "Name") {
                         TextField("Name", text: nameBinding)
@@ -562,7 +610,7 @@ struct FocusCategoryPage: View {
                     }
                 }
 
-                if let target = category.mergeTarget(in: model.categories) {
+                if !isWork, let target = category.mergeTarget(in: model.categories) {
                     NidusSettingsCard {
                         NidusControlRow(title: "Already covered by \(target.name)",
                                         infoTip: "Every app, website and exception here is in the built-in category.") {
@@ -585,7 +633,7 @@ struct FocusCategoryPage: View {
                         ForEach(category.apps) { app in
                             NidusControlRow(title: app.name) {
                                 removeButton("Remove \(app.name)") {
-                                    model.updateCategory(categoryID) { $0.apps.removeAll { $0.bundleID == app.bundleID } }
+                                    update { $0.apps.removeAll { $0.bundleID == app.bundleID } }
                                 }
                             }
                         }
@@ -599,7 +647,9 @@ struct FocusCategoryPage: View {
                 NidusSettingsSection {
                     VStack(alignment: .leading, spacing: 2) {
                         settingsSectionHeader("Websites")
-                        Text("Each one also covers its subdomains, so youtube.com includes m.youtube.com. Add a path, like youtube.com/shorts, to block only that part of it.")
+                        Text(isWork
+                             ? "Each one also covers its subdomains, so github.com includes gist.github.com. Add a path, like github.com/my-lab, to count only that part of it."
+                             : "Each one also covers its subdomains, so youtube.com includes m.youtube.com. Add a path, like youtube.com/shorts, to block only that part of it.")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
@@ -608,7 +658,7 @@ struct FocusCategoryPage: View {
                         ForEach(category.websites, id: \.self) { site in
                             NidusControlRow(title: site) {
                                 removeButton("Remove \(site)") {
-                                    model.updateCategory(categoryID) { $0.websites.removeAll { $0 == site } }
+                                    update { $0.websites.removeAll { $0 == site } }
                                 }
                             }
                         }
@@ -630,13 +680,17 @@ struct FocusCategoryPage: View {
                 // Only a category with websites has anything to make an exception to.
                 if !category.websites.isEmpty {
                     WebsiteExceptionsEditor(exceptions: exceptionsBinding, websites: category.websites,
-                                            sessionIsRunning: model.isActive)
+                                            sessionIsRunning: !isWork && model.isActive,
+                                            blurb: isWork ? "Pages that do not count as Work although a website above covers them."
+                                                          : WebsiteExceptionsEditor.defaultBlurb)
                 }
 
-                NidusSettingsCard {
-                    NidusControlRow(title: "Delete this category") {
-                        Button("Delete", role: .destructive) { model.deleteCategory(categoryID) }
-                            .buttonStyle(.bordered)
+                if !isWork {
+                    NidusSettingsCard {
+                        NidusControlRow(title: "Delete this category") {
+                            Button("Delete", role: .destructive) { model.deleteCategory(categoryID) }
+                                .buttonStyle(.bordered)
+                        }
                     }
                 }
             }
@@ -646,19 +700,19 @@ struct FocusCategoryPage: View {
     private var nameBinding: Binding<String> {
         Binding(
             get: { category?.name ?? "" },
-            set: { name in model.updateCategory(categoryID) { $0.name = name } }
+            set: { name in update { $0.name = name } }
         )
     }
 
     private var symbolBinding: Binding<String> {
         Binding(get: { category?.symbol ?? "square.grid.2x2" },
-                set: { symbol in model.updateCategory(categoryID) { $0.symbol = symbol } })
+                set: { symbol in update { $0.symbol = symbol } })
     }
 
     private var exceptionsBinding: Binding<[WebsiteException]> {
         Binding(
             get: { category?.websiteExceptions ?? [] },
-            set: { exceptions in model.updateCategory(categoryID) { $0.websiteExceptions = exceptions } }
+            set: { exceptions in update { $0.websiteExceptions = exceptions } }
         )
     }
 
@@ -673,15 +727,15 @@ struct FocusCategoryPage: View {
 
     private func addWebsite() {
         guard let domain = FocusCategory.domain(from: newWebsite) else { return }
-        model.updateCategory(categoryID) { category in
+        update { category in
             if !category.websites.contains(domain) { category.websites.append(domain) }
         }
         newWebsite = ""
     }
 
     private func chooseApps() {
-        let apps = AppChooser.choose(title: "Choose apps to block")
-        model.updateCategory(categoryID) { category in
+        let apps = AppChooser.choose(title: isWork ? "Choose apps to count as Work" : "Choose apps to block")
+        update { category in
             for app in apps where !category.apps.contains(where: { $0.bundleID == app.bundleID }) {
                 category.apps.append(app)
             }
@@ -850,5 +904,44 @@ struct FocusShortcutRows: View {
     private func choose(_ focus: FocusShortcuts.AppleFocus) {
         model.startShortcut = focus.onShortcut
         model.endShortcut = focus.offShortcut
+    }
+}
+
+// MARK: - Activity categories
+
+/// The "Count as" choices, apart from blocking. Removing one puts the item
+/// back under the category that lists it, if any.
+struct ActivityOverridesPage: View {
+    @ObservedObject var model: NidusModel
+
+    private func groupName(_ group: ActivityGroup) -> String {
+        switch group {
+        case .work: return model.workGroup.name
+        case .uncategorized: return ActivityCategorizer.uncategorizedName
+        case .category(let id): return model.categories.first { $0.id == id }?.name ?? "A removed category"
+        }
+    }
+
+    var body: some View {
+        NidusSettingsPage {
+            Text("Choose \"Count as\" on an app or website in Activity. It changes how time is counted, never what a session blocks.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            let items = model.activityOverrides.items
+            NidusSettingsCard {
+                if items.isEmpty {
+                    Text("Nothing is counted differently.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(items, id: \.subject) { item in
+                        NidusControlRow(title: "\(item.entry.name) \u{2192} \(groupName(item.entry.group))") {
+                            Button("Remove") { model.removeActivityOverride(item.subject) }
+                                .buttonStyle(.bordered)
+                        }
+                    }
+                }
+            }
+        }
     }
 }

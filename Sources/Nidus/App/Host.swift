@@ -33,11 +33,16 @@ final class NidusHost {
         let didChange = PassthroughSubject<String, Never>()
         /// The demo keeps its own, emptied at each launch, so it never
         /// touches yours.
-        private let defaults: UserDefaults = {
-            guard Demo.isActive, let demo = UserDefaults(suiteName: "local.sam.nidus.demo") else { return .standard }
-            demo.removePersistentDomain(forName: "local.sam.nidus.demo")
-            return demo
-        }()
+        private let defaults: UserDefaults
+
+        /// `defaults` is for tests, which keep to a suite of their own.
+        init(defaults: UserDefaults? = nil) {
+            self.defaults = defaults ?? {
+                guard Demo.isActive, let demo = UserDefaults(suiteName: "local.sam.nidus.demo") else { return .standard }
+                demo.removePersistentDomain(forName: "local.sam.nidus.demo")
+                return demo
+            }()
+        }
 
         func value<Value: Codable>(forKey key: String, default value: Value) -> Value {
             guard let data = defaults.data(forKey: key),

@@ -24,6 +24,9 @@ struct WebsiteExceptionsEditor: View {
     /// True while a session is running: it keeps the exceptions it started
     /// with, so the section says that changes wait for the next one.
     var sessionIsRunning = false
+    static let defaultBlurb = "Let one page through while the rest of a blocked website stays blocked."
+    /// The line under the heading; Work words it for counting, not blocking.
+    var blurb = WebsiteExceptionsEditor.defaultBlurb
     /// Only the rows, with no section or heading of their own, for a page
     /// that puts the editor under a disclosure of its own.
     var isEmbedded = false
@@ -33,10 +36,11 @@ struct WebsiteExceptionsEditor: View {
     @FocusState private var addressFocused: Bool
 
     init(exceptions: Binding<[WebsiteException]>, websites: [String], sessionIsRunning: Bool = false,
-         embedded: Bool = false, address: String = "", kind: WebsiteException.Kind = .exact) {
+         blurb: String = WebsiteExceptionsEditor.defaultBlurb, embedded: Bool = false, address: String = "", kind: WebsiteException.Kind = .exact) {
         _exceptions = exceptions
         self.websites = websites
         self.sessionIsRunning = sessionIsRunning
+        self.blurb = blurb
         isEmbedded = embedded
         _address = State(initialValue: address)
         _kind = State(initialValue: kind)
@@ -53,7 +57,7 @@ struct WebsiteExceptionsEditor: View {
             NidusSettingsSection {
                 VStack(alignment: .leading, spacing: 2) {
                     settingsSectionHeader("Exceptions")
-                    Text("Let one page through while the rest of a blocked website stays blocked.")
+                    Text(blurb)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
                 }
