@@ -61,7 +61,7 @@ struct FocusActivityPage: View {
         return ActivityCacheKey(version: model.controller?.historyVersion ?? 0, dayVersion: model.controller?.activityDayVersion ?? 0,
                                 start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly,
                                 excluded: model.activityExcludedApps, work: model.workGroup, categories: model.categories,
-                                categoryFilter: categoryFilter)
+                                overrides: model.activityOverrides, categoryFilter: categoryFilter)
     }
     /// The session running now, for the ribbon and focus-only views.
     private var liveFocus: ActivityRibbon.Focus? {
@@ -509,7 +509,7 @@ struct FocusActivityPage: View {
         let live = liveFocus.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
         let scope = ActivityScope(logs: logs, sessions: inRange, narrowed: key.focusOnly || key.projectID != nil,
                                   live: key.projectID == nil ? live : nil, calendar: calendar)
-        let categorizer = ActivityCategorizer(categories: key.categories, work: key.work)
+        let categorizer = key.categorizer
         // A filter on a category that has since been deleted is dropped.
         let known = [ActivityCategorizer.workID, ActivityCategorizer.uncategorizedID] + key.categories.map(\.id)
         let filter = key.categoryFilter.flatMap { known.contains($0) ? $0 : nil }
@@ -545,7 +545,7 @@ struct FocusActivityPage: View {
     }
 }
 
-private struct ActivityCacheKey: Hashable {
+struct ActivityCacheKey: Equatable {
     let version: Int
     let dayVersion: Int
     let start: Date
@@ -556,7 +556,13 @@ private struct ActivityCacheKey: Hashable {
     /// What the groups hold, so editing one (or "Count as") reads back.
     let work: FocusCategory
     let categories: [FocusCategory]
+    let overrides: ActivityOverrides
     let categoryFilter: String?
+
+    /// The groups as the popover has them, "Count as" included.
+    var categorizer: ActivityCategorizer {
+        ActivityCategorizer(categories: categories, work: work, overrides: overrides)
+    }
 }
 
 /// The one ranked list's three views of the same seconds, which is why they

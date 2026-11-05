@@ -50,10 +50,26 @@ struct ActivityScope {
                 if log.truncated { unsegmented += log.totals.map { (day, $0) } } else { exact += log.stretches }
             }
         }
-        let recorded = days.flatMap(\.stretches)
+        let recorded = sessions.isEmpty ? nil : ActivityCoverage(intervals: days.lazy.flatMap(\.recordedIntervals))
         for session in sessions {
             let range = DateInterval(start: session.start, end: max(session.start, session.end))
-            guard !recorded.contains(where: { $0.end > range.start && $0.start < range.end }) else { continue }
+            if let recorded, recorded.overlaps(range) {
+                // Part of this session is in the daily record. Its own timeline
+                // shows what isn't. Without one, or on an older day that lost
+                // track of what it dropped, adding any of it could count it twice.
+                guard let segments = session.activitySegments, session.activityTimelineTruncated != true,
+                      !days.contains(where: { !$0.knowsCoverage && Self.day($0.day, calendar: calendar, touches: range) }) else { continue }
+                // The two clocks disagree by moments at each edge; that isn't missing time.
+                let missing = recorded.uncovered(segments).filter { $0.seconds >= ActivityRecorder.shortestStretch }
+                kept += missing
+                exact += missing
+                rows += missing.map { segment in
+                    (calendar.startOfDay(for: segment.start),
+                     FocusActivity(appID: segment.appID, appName: segment.appName, site: segment.site, title: segment.title,
+                                   seconds: segment.seconds))
+                }
+                continue
+            }
             let day = calendar.startOfDay(for: session.start)
             let own = ActivityTotals.rows(of: session).map { (day, $0) }
             rows += own
@@ -100,6 +116,11 @@ struct ActivityScope {
         var result = ActivityTotals(rows: rows, focused: totals.focused)
         result.noteAddresses(from: stretches)
         return result
+    }
+
+    private static func day(_ key: String, calendar: Calendar, touches range: DateInterval) -> Bool {
+        guard let day = calendar.dateInterval(of: .day, for: date(of: key, calendar: calendar)) else { return false }
+        return day.end > range.start && day.start < range.end
     }
 
     private static func date(of key: String, calendar: Calendar) -> Date {

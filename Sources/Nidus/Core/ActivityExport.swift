@@ -62,7 +62,8 @@ enum ActivityExport {
     private static func field(_ text: String) -> String {
         let first = text.drop(while: { $0.isWhitespace }).first
         let safe = first.map({ "=+-@".contains($0) }) == true ? "'" + text : text
-        if safe.contains(",") || safe.contains("\"") || safe.contains("\n") || safe.contains("\r") {
+        // By byte: CRLF is one Character, equal to neither "\n" nor "\r".
+        if safe.utf8.contains(where: { $0 == 0x2C || $0 == 0x22 || $0 == 0x0A || $0 == 0x0D }) {
             return "\"" + safe.replacingOccurrences(of: "\"", with: "\"\"") + "\""
         }
         return safe

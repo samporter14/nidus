@@ -625,3 +625,295 @@ struct ActivitySystemIdleTests {
         #expect(CGEventType(rawValue: ~0) != nil)
     }
 }
+
+@MainActor
+extension ActivityRecorderTests {
+    @Test func resumingFocusAfterSleepNeverBackdatesAcrossSleep() {
+        let rig = Rig()
+        rig.recorder.setFocusRunning(true)
+        rig.start()
+        rig.leave(60)
+        rig.recorder.systemWillSleep()
+        rig.recorder.setFocusRunning(false)
+        rig.clock.advance(3600)
+        rig.host.idle += 3600
+        rig.recorder.systemDidWake()
+        rig.recorder.setFocusRunning(true)
+        rig.leave(10)
+        #expect(rig.total == 70)
+    }
+
+    @Test func startingFocusAfterIdleCountsOnlyTheNewSession() {
+        let rig = Rig()
+        rig.start()
+        rig.leave(300)
+        rig.recorder.setFocusRunning(true)
+        rig.leave(10)
+        #expect(rig.total == 10)
+    }
+
+    @Test func idleCorrectsPeriodicSnapshotsOnDiskImmediately() {
+        let rig = Rig()
+        rig.start()
+        rig.leave(120)
+        rig.leave(120)
+        #expect(rig.day("2026-11-04")?.seconds == 240)
+        rig.leave(60)
+        #expect(rig.total == 0)
+        #expect(rig.day("2026-11-04")?.seconds ?? 0 == 0)
+        rig.recorder.stop()
+        #expect(rig.day("2026-11-04")?.seconds ?? 0 == 0)
+    }
+
+    @Test func idleRetractsThePreviousDaysProvisionalTail() {
+        let rig = Rig(at: "2026-11-04T23:57:00Z")
+        rig.start()
+        rig.work(60)
+        rig.leave(120)
+        rig.leave(120)
+        rig.leave(60)
+        rig.recorder.stop()
+        #expect(rig.day("2026-11-04")?.seconds == 60)
+        #expect(rig.total == 0)
+    }
+
+    @Test func idleRetractsAlreadyClosedContextChanges() {
+        let rig = Rig()
+        rig.start()
+        rig.work(10)
+        rig.leave(120)
+        rig.switchTo(Rig.mail)
+        rig.leave(180)
+        #expect(rig.total == 10)
+        #expect(rig.day("2026-11-04")?.seconds == 10)
+    }
+
+    @Test func aPendingProbeDoesNotScheduleOneSecondWakeups() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.work(4)
+        #expect(rig.host.probes == 1)
+        #expect(rig.host.armed == 116)
+    }
+
+    @Test func aReadHeldAcrossLockCannotNameTheReopenedWindow() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.clock.advance(1)
+        rig.recorder.screenDidLock()
+        rig.clock.advance(1)
+        rig.recorder.screenDidUnlock()
+        rig.host.answer(page("old.example"))
+        rig.clock.advance(1)
+        #expect(rig.stretches.allSatisfy { $0.site == nil })
+        #expect(rig.recorder.detail(forApp: Rig.safari.id, pid: Rig.safari.pid) == nil)
+    }
+
+    @Test func aSlowReadCannotBecomeFreshWhenItFinallyAnswers() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.clock.advance(30)
+        rig.host.answer(page("old.example"))
+        #expect(rig.recorder.detail(forApp: Rig.safari.id, pid: Rig.safari.pid) == nil)
+        #expect(rig.stretches.allSatisfy { $0.site == nil })
+    }
+
+    @Test func aProbeAtTheIdleBoundaryCannotFileIdleTime() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.host.answer(page("first.example"))
+        rig.leave(299)
+        rig.clock.advance(1)
+        rig.host.idle += 1
+        rig.host.answer(page("second.example"))
+        #expect(rig.total == 0)
+        #expect(rig.recorder.isIdle)
+    }
+
+    @Test func settingTheClockBackResetsProbeAndSaveDeadlines() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.host.answer(page("first.example"))
+        rig.clock.advance(-3600)
+        rig.recorder.clockDidChange()
+        #expect(rig.recorder.detail(forApp: Rig.safari.id, pid: Rig.safari.pid) == nil)
+        #expect(rig.host.probes == 2)
+        if rig.host.probes == 2 { rig.host.answer(page("second.example")) }
+        rig.work(120)
+        #expect(rig.day("2026-11-04")?.seconds == 120)
+    }
+
+    @Test func differentPagePathsKeepTheirOwnRecordedTime() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.host.answer(ActivityDetail(site: nil, title: nil, domain: "example.com", url: "https://example.com/work"))
+        rig.work(4)
+        rig.host.answer(ActivityDetail(site: nil, title: nil, domain: "example.com", url: "https://example.com/play"))
+        rig.clock.advance(4)
+        #expect(rig.stretches.map(\.url) == ["https://example.com/work", "https://example.com/play"])
+        #expect(rig.stretches.map(\.seconds) == [4, 4])
+    }
+
+    @Test func queryOnlyPageChangesStillCoalesce() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.host.answer(ActivityDetail(site: nil, title: nil, domain: "example.com", url: "https://example.com/work?q=1"))
+        rig.work(4)
+        rig.host.answer(ActivityDetail(site: nil, title: nil, domain: "example.com", url: "https://example.com/work?q=2"))
+        rig.clock.advance(4)
+        #expect(rig.stretches.count == 1)
+        #expect(rig.total == 8)
+    }
+
+    @Test func turningOffRetractsTheSavedOpenStretch() {
+        let rig = Rig()
+        rig.start()
+        rig.work(120)
+        #expect(rig.day("2026-11-04")?.seconds == 120)
+        var settings = rig.recorder.settings
+        settings.enabled = false
+        rig.recorder.apply(settings)
+        #expect(rig.day("2026-11-04")?.seconds ?? 0 == 0)
+    }
+
+    @Test func sleepFlushesTheFinalSecondsWithoutWaitingForAnotherTimer() {
+        let rig = Rig()
+        rig.start()
+        rig.work(120)
+        rig.clock.advance(30)
+        rig.recorder.systemWillSleep()
+        #expect(rig.day("2026-11-04")?.seconds == 150)
+        #expect(rig.host.armed == nil)
+    }
+
+    @Test func idleCorrectionPreservesLoadedHistoryAndSessionTime() {
+        let rig = Rig()
+        var old = ActivityDayLog(day: "2026-11-04")
+        old.add(FocusActivitySegment(start: rig.clock.now, end: rig.clock.now.addingTimeInterval(40), appID: Rig.mail.id, appName: "Mail"))
+        rig.store.enqueue(.write(old))
+        rig.recorder.setFocusRunning(true)
+        rig.start()
+        rig.leave(120)
+        rig.recorder.setFocusRunning(false)
+        rig.switchTo(Rig.mail)
+        rig.leave(180)
+        #expect(rig.total == 160)
+        #expect(rig.day("2026-11-04")?.seconds == 160)
+    }
+
+    @Test func idleCorrectionPreservesTotalsBeyondTheTimelineCap() {
+        let rig = Rig()
+        rig.start()
+        let worked = ActivityDayLog.stretchLimit + 5
+        for index in 0..<worked {
+            rig.clock.advance(1)
+            rig.switchTo(index.isMultiple(of: 2) ? Rig.mail : Rig.word)
+        }
+        #expect(rig.recorder.today().truncated)
+        rig.leave(120)
+        rig.switchTo(Rig.mail)
+        rig.leave(180)
+        #expect(rig.total == TimeInterval(worked))
+        #expect(rig.day("2026-11-04")?.seconds == TimeInterval(worked))
+        #expect(rig.stretches.count <= ActivityDayLog.stretchLimit)
+    }
+
+    @Test func idleCorrectionNeverRecreatesARetentionPrunedDay() {
+        let rig = Rig(settings: ActivityRecorderSettings(enabled: true, retentionDays: 1), at: "2026-11-04T23:57:00Z")
+        rig.start()
+        rig.work(60)
+        rig.leave(120)
+        #expect(rig.day("2026-11-04") == nil)
+        rig.leave(180)
+        rig.recorder.stop()
+        #expect(rig.day("2026-11-04") == nil)
+        #expect(rig.total == 0)
+    }
+
+    @Test func elapsedPauseDoesNotRetractTimeBeforeThePause() {
+        let rig = Rig()
+        rig.start()
+        rig.leave(30)
+        var settings = rig.recorder.settings
+        settings.pausedUntil = rig.clock.now.addingTimeInterval(3600)
+        rig.recorder.apply(settings)
+        rig.leave(3600)
+        #expect(rig.total == 30)
+        #expect(rig.day("2026-11-04")?.seconds == 30)
+    }
+
+    @Test func idlePollingDoesNotKeepRewritingTheCorrectedDay() {
+        let rig = Rig()
+        var saves = 0
+        rig.recorder.onSave = { saves += 1 }
+        rig.start()
+        rig.leave(120)
+        rig.leave(180)
+        let settled = saves
+        for _ in 0..<10 { rig.leave(10) }
+        #expect(saves == settled)
+        #expect(rig.host.armed == ActivityRecorder.idlePollInterval)
+    }
+
+    @Test func repeatedStartStopKeepsSeparateStretchesAndFreshProbes() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.host.answer(page("first.example"))
+        rig.clock.advance(10)
+        rig.recorder.stop()
+        rig.clock.advance(100)
+        rig.recorder.start()
+        #expect(rig.host.probes == 2)
+        if rig.host.probes == 2 { rig.host.answer(page("second.example")) }
+        rig.clock.advance(10)
+        #expect(rig.total == 20)
+        #expect(rig.stretches.map(\.site) == ["first.example", "second.example"])
+        #expect(!ActivityTimeline.touches(rig.stretches[0], rig.stretches[1]))
+    }
+
+    @Test func repeatedSlowReadFailuresStillClearTheRecordedSite() {
+        let rig = Rig()
+        rig.start(Rig.safari)
+        rig.host.answer(page("old.example"))
+        for _ in 0..<2 {
+            rig.work(4)
+            rig.clock.advance(6)
+            rig.host.answer(nil)
+        }
+        rig.clock.advance(4)
+        #expect(rig.stretches.map(\.site) == ["old.example", nil])
+    }
+
+    @Test func removingTitlesKeepsLoadedHistoryOutsideIdleCorrection() {
+        let rig = Rig()
+        var old = ActivityDayLog(day: "2026-11-04")
+        for index in 0..<2 {
+            let start = rig.clock.now.addingTimeInterval(Double(index * 20))
+            old.add(FocusActivitySegment(start: start, end: start.addingTimeInterval(20), appID: Rig.mail.id,
+                                         appName: "Mail", title: "Old \(index)"))
+        }
+        rig.store.enqueue(.write(old))
+        rig.start()
+        rig.leave(120)
+        rig.recorder.removeTitles()
+        rig.leave(180)
+        #expect(rig.total == 40)
+        #expect(rig.day("2026-11-04")?.seconds == 40)
+        #expect(!rig.recorder.today().hasTitles)
+    }
+
+    @Test func idleWhileDisabledDoesNotRetractFinishedHistory() {
+        let rig = Rig()
+        rig.start()
+        rig.leave(30)
+        rig.switchTo(Rig.mail)
+        var settings = rig.recorder.settings
+        settings.enabled = false
+        rig.recorder.apply(settings)
+        rig.clock.advance(600)
+        rig.host.idle += 600
+        #expect(rig.total == 30)
+        rig.recorder.stop()
+        #expect(rig.day("2026-11-04")?.seconds == 30)
+    }
+}
