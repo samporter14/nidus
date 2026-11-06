@@ -14,9 +14,9 @@ struct ActivityDriftChain: Equatable, Sendable, Identifiable {
     /// The app or site that took the most of each side, never a title.
     let origin: String
     let target: String
-    /// The group that took the most of the distracting time.
-    var category: String
-    /// Whether Work took the most of the time before it.
+    /// Distracting seconds by group, kept so a range's top group is the true one.
+    var groups: [String: TimeInterval]
+    /// Whether Work took the most of the time before it, on any day.
     var fromWork: Bool
     var count = 1
     /// The distracting time, without what interrupted it.
@@ -24,17 +24,17 @@ struct ActivityDriftChain: Equatable, Sendable, Identifiable {
 
     var id: String { origin + "\u{1}" + target }
 
-    /// The bigger side names the category. Days go in date order, so a range
-    /// always adds up the same.
+    /// The group that took the most of the distracting time.
+    var category: String { ActivityDrift.top(groups) ?? ActivityCategorizer.uncategorizedID }
+
     mutating func add(_ other: ActivityDriftChain) {
-        if other.seconds > seconds { category = other.category }
+        groups.merge(other.groups, uniquingKeysWith: +)
         fromWork = fromWork || other.fromWork
         count += other.count
         seconds += other.seconds
     }
 
     var times: String { count == 1 ? "once" : "\(count) times" }
-    var sentence: String { "\(origin) \u{2192} \(target), \(times), \(ActivityDuration.string(seconds))" }
 }
 
 enum ActivityDrift {
@@ -86,7 +86,7 @@ enum ActivityDrift {
         }
     }
 
-    private static func top(_ values: [String: TimeInterval]) -> String? {
+    fileprivate static func top(_ values: [String: TimeInterval]) -> String? {
         values.min { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }?.key
     }
 
@@ -98,8 +98,8 @@ enum ActivityDrift {
         for (origin, run) in zip(found, found.dropFirst())
         where run.distracting && !origin.distracting && origin.seconds >= shortest && run.seconds >= shortest
             && run.follows(origin, within: reach) {
-            guard let from = top(origin.labels), let to = top(run.labels), let category = top(run.groups) else { continue }
-            chains.append(ActivityDriftChain(origin: from, target: to, category: category,
+            guard let from = top(origin.labels), let to = top(run.labels) else { continue }
+            chains.append(ActivityDriftChain(origin: from, target: to, groups: run.groups,
                                              fromWork: top(origin.groups) == ActivityCategorizer.workID, seconds: run.seconds))
         }
         return chains

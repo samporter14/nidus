@@ -158,7 +158,7 @@ import Testing
     // MARK: Order
 
     private func chain(_ origin: String, _ target: String, work: Bool = false, count: Int = 1, seconds: TimeInterval = 300) -> ActivityDriftChain {
-        ActivityDriftChain(origin: origin, target: target, category: "social", fromWork: work, count: count, seconds: seconds)
+        ActivityDriftChain(origin: origin, target: target, groups: ["social": seconds], fromWork: work, count: count, seconds: seconds)
     }
 
     @Test func workComesFirstThenCountThenTime() {
@@ -173,7 +173,8 @@ import Testing
     }
 
     @Test func aChainReadsPlainly() {
-        #expect(chain("Chrome", "x.com", count: 3, seconds: 1500).sentence == "Chrome \u{2192} x.com, 3 times, 25 min")
+        #expect(chain("Chrome", "x.com", count: 3, seconds: 1500).times == "3 times")
+        #expect(ActivityDuration.string(1500) == "25 min")
         #expect(chain("Chrome", "x.com").times == "once")
     }
 
@@ -243,13 +244,19 @@ import Testing
         #expect(first == second)
     }
 
-    @Test func aMergeKeepsTheBiggerSidesCategoryAndAnyWork() {
-        var first = ActivityDriftChain(origin: "A", target: "x", category: "social", fromWork: false, seconds: 200)
-        first.add(ActivityDriftChain(origin: "A", target: "x", category: "chat", fromWork: true, seconds: 300))
-        #expect(first.category == "chat")
-        #expect(first.fromWork)
-        #expect(first.count == 2)
-        #expect(first.seconds == 500)
+    @Test func aMergeNamesTheCategoryWithTheMostTimeAndKeepsAnyWork() {
+        func day(_ group: String, _ seconds: TimeInterval, work: Bool = false) -> ActivityDriftChain {
+            ActivityDriftChain(origin: "A", target: "x", groups: [group: seconds], fromWork: work, seconds: seconds)
+        }
+        var total = day("social", 200)
+        total.add(day("chat", 300, work: true))
+        #expect(total.category == "chat")
+        #expect(total.fromWork)
+        #expect(total.count == 2)
+        #expect(total.seconds == 500)
+        // No single day outweighs the rest, and the total still decides.
+        total.add(day("social", 250))
+        #expect(total.category == "social")
     }
 
     // MARK: Hour detail
