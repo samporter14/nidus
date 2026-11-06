@@ -335,21 +335,27 @@ struct FocusActivityPage: View {
     }
 
     /// Reads only the files that can hold the hour, away from the main actor.
+    /// Finished days are read once for a selection; a save rereads only today.
     private func hourDetail(_ slot: ActivityHourSlot) async -> ActivityHourDetail? {
         guard let recorder = model.controller?.activityRecorder else { return nil }
         let interval = heatmapInterval, excluded = model.activityExcludedApps, calendar = calendar
         let days = ActivityHourDetail.days(of: slot, from: interval.start, to: interval.end, calendar: calendar)
         let today = ActivityDayLog.key(for: Date(), calendar: calendar)
-        var logs = await recorder.store.load(days: days.filter { $0 != today })
-        if days.contains(today), recorder.isRecording {
-            logs.append(recorder.today())
-        } else if days.contains(today) {
-            logs += await recorder.store.load(days: [today])
+        let past = days.filter { $0 != today }
+        let finished = await digestCache.pastHour(slot, days: past, signature: digestRequest.signature) {
+            let logs = await recorder.store.load(days: past)
+            return await Task.detached(priority: .utility) {
+                var detail = ActivityHourDetail(slot: slot)
+                for log in logs { detail.add(log.hiding(excluded).stretches, calendar: calendar) }
+                return detail
+            }.value
         }
-        let read = logs
+        guard days.contains(today) else { return finished }
+        let written = recorder.isRecording ? recorder.today() : await recorder.store.load(days: [today]).first
+        guard let written else { return finished }
         return await Task.detached(priority: .utility) {
-            var detail = ActivityHourDetail(slot: slot)
-            for log in read { detail.add(log.hiding(excluded).stretches, calendar: calendar) }
+            var detail = finished
+            detail.add(written.hiding(excluded).stretches, calendar: calendar)
             return detail
         }.value
     }

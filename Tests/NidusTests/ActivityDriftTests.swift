@@ -161,9 +161,10 @@ import Testing
         ActivityDriftChain(origin: origin, target: target, groups: ["social": seconds], fromWork: work, count: count, seconds: seconds)
     }
 
-    @Test func workComesFirstThenCountThenTime() {
-        let top = ActivityDrift.top([chain("A", "x", count: 9), chain("B", "x", work: true), chain("C", "x", count: 2, seconds: 200), chain("D", "x", count: 2, seconds: 400)])
-        #expect(top.map(\.origin) == ["B", "A", "D", "C"])
+    @Test func theMostOftenComesFirstThenTheLongestAndWorkBreaksATie() {
+        let top = ActivityDrift.top([chain("A", "x", count: 9), chain("B", "x", work: true), chain("C", "x", count: 2, seconds: 200),
+                                     chain("D", "x", count: 2, seconds: 400), chain("E", "x", work: true, count: 2, seconds: 200)])
+        #expect(top.map(\.origin) == ["A", "D", "E", "C", "B"])
     }
 
     @Test func onlyTheTopFiveShow() {

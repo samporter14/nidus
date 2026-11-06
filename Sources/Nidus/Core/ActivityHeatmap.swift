@@ -226,6 +226,7 @@ actor ActivityDigestCache {
         if signature != self.signature {
             self.signature = signature
             days.removeAll()
+            pastHour = nil
         }
         let gridDays = Set(grid)
         let driftDays = Set(chains)
@@ -253,6 +254,23 @@ actor ActivityDigestCache {
                        grid: gridDays.contains(today), drift: driftDays.contains(today))
         }
         return result
+    }
+
+    private var pastHour: (slot: ActivityHourSlot, days: [String], detail: ActivityHourDetail)?
+
+    /// One selected hour across finished days, which won't change, so that a
+    /// save only needs today read again.
+    func pastHour(_ slot: ActivityHourSlot, days: [String], signature: ActivityDigestSignature,
+                  build: @Sendable () async -> ActivityHourDetail) async -> ActivityHourDetail {
+        if signature != self.signature {
+            self.signature = signature
+            self.days.removeAll()
+            pastHour = nil
+        }
+        if let pastHour, pastHour.slot == slot, pastHour.days == days { return pastHour.detail }
+        let detail = await build()
+        if signature == self.signature { pastHour = (slot, days, detail) }
+        return detail
     }
 
     var cachedDays: Int { days.count }

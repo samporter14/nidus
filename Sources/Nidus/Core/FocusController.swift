@@ -374,11 +374,15 @@ final class FocusController: ObservableObject {
         historyVersion += 1
     }
 
+    /// Moves only when the record is wiped, unlike `historyVersion`.
+    private(set) var historyClears = 0
+
     func clearHistory() {
         history.clear()
         invalidateActivityProbe()
         engine.clearCurrentActivity()
         activityRecorder.clear()
+        historyClears += 1
         historyVersion += 1
     }
 

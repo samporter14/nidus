@@ -141,13 +141,13 @@ enum ActivityDrift {
         return joined
     }
 
-    /// Chains out of Work first, then the most often, then the longest. Time
-    /// out of anything else still counts: a Work group can be empty.
+    /// The most often, then the longest. Coming out of Work only breaks a tie:
+    /// a Work group can be empty, and one Work chain shouldn't hide ten others.
     static func top(_ chains: some Sequence<ActivityDriftChain>, limit: Int = shown) -> [ActivityDriftChain] {
         Array(chains.sorted { a, b in
-            if a.fromWork != b.fromWork { return a.fromWork }
             if a.count != b.count { return a.count > b.count }
             if a.seconds != b.seconds { return a.seconds > b.seconds }
+            if a.fromWork != b.fromWork { return a.fromWork }
             return a.id < b.id
         }.prefix(limit))
     }

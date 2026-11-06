@@ -70,12 +70,22 @@ extension NidusModel {
         }
     }
 
+    /// What the last run left, if it's about today, so that launching doesn't
+    /// blank the widget until the first summary lands.
+    func restoreWidgetToday(now: Date = Date()) {
+        guard !Demo.isActive, let directory = containerDirectory,
+              let data = try? Data(contentsOf: directory.appendingPathComponent(WidgetSnapshot.fileName)),
+              let today = try? JSONDecoder().decode(WidgetSnapshot.self, from: data).today,
+              today.day == WidgetToday.key(for: now) else { return }
+        widgetToday = today
+    }
+
     /// A save landed. Worked out only when the throttle says so; the latest
     /// call wins, so two saves can't finish out of order.
     func refreshWidgetToday(now: Date = Date()) {
         guard !Demo.isActive, let controller else { return }
         let day = WidgetToday.key(for: now)
-        let source = WidgetTodayThrottle.Source(version: controller.historyVersion, excluded: controller.activityExcludedApps)
+        let source = WidgetTodayThrottle.Source(version: controller.historyClears, excluded: controller.activityExcludedApps)
         guard widgetTodayThrottle.isDue(day: day, source: source, now: now) else { return }
         widgetTodayThrottle.source = source
         widgetTodayTask?.cancel()

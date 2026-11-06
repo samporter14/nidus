@@ -189,6 +189,7 @@ final class NidusModel: NSObject, ObservableObject {
         keepStrictSessionAlive()
         presentSessionFileProblemIfAny()
         brickCompanion.activate(self)
+        restoreWidgetToday()
         publishFocus()
         refreshWidgetToday()
         startWeeklyRecap()
