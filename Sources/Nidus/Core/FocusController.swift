@@ -43,6 +43,8 @@ final class FocusController: ObservableObject {
     /// Ticks once a second while there is a session; views that show a
     /// countdown read it. Between sessions it stands still.
     @Published private(set) var now = Date()
+    /// While `now` moves only because a second passed.
+    private(set) var isTicking = false
     /// Browsers Nidus may not script, so Settings can say so.
     @Published private(set) var browserAccess: [String: AppleEventError] = [:]
 
@@ -420,11 +422,16 @@ final class FocusController: ObservableObject {
 
     // MARK: Private
 
-    private func tick() {
+    func tick() {
         let previous = now
+        let before = (engine.session != nil, engine.isRunning, engine.isOnBreak)
+        isTicking = true
         now = Date()
+        isTicking = false
         creditForeground(since: previous)
         engine.tick()
+        // A surface that skips the plain second still hears a session end.
+        if before != (engine.session != nil, engine.isRunning, engine.isOnBreak) { objectWillChange.send() }
         warnAboutEndingSnoozes()
         warnAboutEndingBreak()
         if enforcing != nil { sweepBrowsers() }

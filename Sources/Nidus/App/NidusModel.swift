@@ -106,6 +106,7 @@ final class NidusModel: NSObject, ObservableObject {
     var inboxURLOpener: (URL) -> Void = { _ = NSWorkspace.shared.open($0) }
     /// Opt-in local request receiver; it never starts a session itself.
     let brickCompanion = BrickCompanion()
+    var shownWindows: () -> [NSWindow] = { NSApp?.windows.filter(\.isVisible) ?? [] }
     @Published var brickOffer: BrickPendingOffer?
     @Published var brickFileName = ""
     @Published var brickFileStatus = "No file selected."
@@ -143,9 +144,7 @@ final class NidusModel: NSObject, ObservableObject {
         }
         // Views observe the model; forward the controller's once-a-second
         // clock and the preferences, so one object drives every surface.
-        controller.objectWillChange
-            .sink { [weak self] _ in self?.objectWillChange.send() }
-            .store(in: &subscriptions)
+        forwardChanges(of: controller)
         controller.$now
             // @Published sends before the value changes; wait a turn so
             // what the menu bar reads is the new second, as the views do.
@@ -407,6 +406,26 @@ final class NidusModel: NSObject, ObservableObject {
     /// Tests only: gives a model that was never activated (activating needs a
     /// host, which writes real preferences) a controller to run a session on.
     func adoptForTesting(controller: FocusController) { self.controller = controller }
+
+    func forwardChanges(of controller: FocusController) {
+        controller.objectWillChange
+            .sink { [weak self, weak controller] _ in
+                guard let self else { return }
+                if controller?.isTicking == true, Self.onlySettingsIsShowing(self.shownWindows()) { return }
+                self.objectWillChange.send()
+            }
+            .store(in: &subscriptions)
+    }
+
+    /// Nothing in Settings moves by the second, and redrawing an open page
+    /// costs memory until its window closes: SwiftUI keeps an observation
+    /// for the page's menus from every pass. So a plain second is passed on
+    /// only when something else is up to show it. The status item's own
+    /// window isn't one; the menu bar follows the clock by itself.
+    static func onlySettingsIsShowing(_ windows: [NSWindow]) -> Bool {
+        let others = windows.filter { !($0 is SettingsWindow) && !$0.className.contains("StatusBar") }
+        return others.isEmpty && windows.contains { $0 is SettingsWindow }
+    }
 
     func openSettings() { host?.workspace.openSettings() }
 

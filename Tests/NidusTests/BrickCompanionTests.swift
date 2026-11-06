@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import Testing
 @testable import Nidus
@@ -9,6 +10,26 @@ struct BrickCompanionTests {
         BrickSignal(version: 1, id: id,
                     timestamp: ISO8601DateFormatter().string(from: date ?? now),
                     event: BrickSignal.kind)
+    }
+
+    @MainActor @Test func anUnchangedReadTellsNothingToRedraw() {
+        let model = NidusModel()
+        var sent = 0
+        let watching = model.objectWillChange.sink { sent += 1 }
+        defer { watching.cancel() }
+
+        model.noteBrickFile(name: "brick.json", status: "Reading")
+        #expect(sent == 2)
+        #expect(model.brickFileName == "brick.json")
+        #expect(model.brickFileStatus == "Reading")
+
+        sent = 0
+        for _ in 0..<5 { model.noteBrickFile(name: "brick.json", status: "Reading") }
+        #expect(sent == 0)
+
+        model.noteBrickFile(name: "brick.json", status: "File access expired.")
+        #expect(sent == 1)
+        #expect(model.brickFileStatus == "File access expired.")
     }
 
     @Test func fileAndLinkUseTheSameEvent() throws {
