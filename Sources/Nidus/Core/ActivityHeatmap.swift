@@ -230,7 +230,9 @@ actor ActivityDigestCache {
         let gridDays = Set(grid)
         let driftDays = Set(chains)
         let wanted = gridDays.union(week).union(driftDays)
-        let missing = wanted.filter { $0 != today && days[$0] == nil }.sorted()
+        // A day to come isn't finished: remembering it as empty would hide it
+        // once it had passed.
+        let missing = wanted.filter { $0 < today && days[$0] == nil }.sorted()
         if !missing.isEmpty {
             let logs = await load(missing)
             guard signature == self.signature else { return ActivityDayDigest() }
