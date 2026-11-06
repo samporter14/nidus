@@ -160,6 +160,12 @@ struct ActivityCategorizer: Sendable {
         return totals(items)
     }
 
+    /// Work first, then the categories as they're listed: a group's place,
+    /// which unlike its rank doesn't change from day to day.
+    func order(of id: String) -> Int? {
+        groups.firstIndex { $0.id == id }
+    }
+
     /// The name and symbol of a group by its id; nil is Uncategorized.
     func label(of id: String?) -> (name: String, symbol: String) {
         if let group = groups.first(where: { $0.id == id }) { return (group.name, group.symbol) }

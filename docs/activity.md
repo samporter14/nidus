@@ -18,6 +18,10 @@ App and title rankings show seconds below one minute and readable minute/hour la
 
 New recaps show observed intervals, known document switches, context switches, and the longest observed same-context stretch. Pauses, sleep, relaunch, excluded apps and skipped samples break continuity. The timeline retains at most 512 segments; when capped, the UI explicitly labels metrics as applying to retained observations. Older sessions have no invented timeline or retrospective switch metrics. Project insight cards summarize observed time and leading apps/services by the session's assigned Nidus project.
 
+- **Day by category.** Colored by category, the day's ribbon joins runs of one category and folds short interruptions into what they interrupted. Hovering a block names what's inside it and the time actually counted there.
+- **Hour by hour.** Weekdays by hours, over the last four weeks from Today or the selected range from Week and Month. An hour takes the color of whatever filled most of it: Work, a category, or everything else. Finished days are worked out once, off the main thread, and kept until the window closes.
+- **Inside an app.** In the Apps list, a row with anything named inside it opens in place: a browser to its sites and their pages, a document app to its files.
+
 ## Tracking and access
 
 Activity, all-day tracking and titles are on by default; **Track activity** and **Track all day** under Tracking are the off switches. Record sessions must also be on. Titles need Accessibility access and websites need Automation access per browser, each asked for from a button there. Nothing leaves this Mac.

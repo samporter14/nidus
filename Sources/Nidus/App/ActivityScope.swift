@@ -143,7 +143,10 @@ struct ActivityRibbon {
         let name: String
         /// The app behind a site, or the document name.
         let detail: String?
-        var seconds: TimeInterval { end.timeIntervalSince(start) }
+        /// Time counted inside a block merged from several; it can be less
+        /// than its span, which runs across small gaps.
+        var counted: TimeInterval? = nil
+        var seconds: TimeInterval { counted ?? end.timeIntervalSince(start) }
     }
 
     struct Focus: Identifiable, Equatable {
@@ -169,7 +172,14 @@ struct ActivityRibbon {
     var blocks: [Block]
     var focus: [Focus]
     var series: [ActivityRank]
+    /// A color for each entry of `series`, and one past the end for Other. A
+    /// category keeps its color from day to day, whatever its rank.
+    private var tints: [Int] = []
     var isEmpty: Bool { blocks.isEmpty && focus.isEmpty }
+
+    func tint(ofSeries index: Int) -> Int {
+        tints.indices.contains(index) ? tints[index] : index
+    }
 
     init(stretches: [FocusActivitySegment], sessions: [SessionEntry], live: Focus? = nil, day: DateInterval, now: Date,
          colorBy: Coloring = .app, calendar: Calendar = .current) {
@@ -224,6 +234,11 @@ struct ActivityRibbon {
                 .compactMap { $0 }.joined(separator: " · ")
             return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[seriesKey(of: stretch)] ?? Self.namedSeries,
                          name: name, detail: detail.isEmpty ? (stretch.title == nil ? nil : stretch.appName) : detail)
+        }
+        if case .category(let categorizer) = colorBy {
+            tints = series.map { $0.id == Self.otherID ? ActivityInk.quietTint : (categorizer.order(of: $0.id) ?? ActivityInk.quietTint) }
+            let names = series.map(\.name)
+            blocks = ActivityRibbonBands.merged(blocks) { index in names.indices.contains(index) ? names[index] : "Other" }
         }
         focus = sessions.filter { $0.end > $0.start }.sorted { $0.start < $1.start }.map { entry in
             Focus(id: entry.id.uuidString, sessionID: entry.id, start: entry.start, end: entry.end,
