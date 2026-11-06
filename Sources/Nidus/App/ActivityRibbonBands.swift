@@ -4,8 +4,9 @@
 //
 //  A day by category reads as a few blocks, not hundreds of slivers. Runs of
 //  one category join across small gaps, and a short interruption goes into
-//  what it interrupted. What a block holds stays in its detail, and each
-//  block keeps the time actually counted inside it.
+//  what it interrupted. What a block holds stays in its detail, each block
+//  keeps the time actually counted inside it, and what it took from another
+//  category stays visible as strips along its bottom edge.
 //
 
 import Foundation
@@ -17,6 +18,11 @@ enum ActivityRibbonBands {
     /// neighbor is itself judged.
     static let steps: [TimeInterval] = [60, 3 * 60, 5 * 60, 10 * 60]
     private static let namesShown = 3
+    /// The longest strips a block draws. A busy block can hold hundreds of
+    /// slivers, and that many would read as a solid bar. The rest stay in words.
+    static let stripLimit = 12
+    /// Strips of one category this close together are one strip.
+    private static let touching: TimeInterval = 2
 
     private struct Band {
         var first: ActivityRibbon.Block
@@ -24,6 +30,8 @@ enum ActivityRibbonBands {
         var series: Int
         /// Seconds by name, across everything inside.
         var parts: [String: TimeInterval]
+        /// Every block inside, for what came from another series.
+        var blocks: [ActivityRibbon.Block]
         var seconds: TimeInterval { parts.values.reduce(0, +) }
         var start: Date { first.start }
 
@@ -32,12 +40,14 @@ enum ActivityRibbonBands {
             end = block.end
             series = block.series
             parts = [block.name: block.seconds]
+            blocks = [block]
         }
 
         mutating func take(_ other: Band) {
             if other.start < start { first = other.first }
             end = max(end, other.end)
             parts.merge(other.parts, uniquingKeysWith: +)
+            blocks += other.blocks
         }
     }
 
@@ -50,11 +60,40 @@ enum ActivityRibbonBands {
             let named = band.parts.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
             let shown = named.prefix(namesShown).map(\.key).joined(separator: ", ")
             let rest = named.count - namesShown
+            let taken = band.blocks.filter { $0.series != band.series }
             return ActivityRibbon.Block(id: band.first.id, start: band.start, end: band.end, series: band.series,
                                         name: seriesName(band.series),
                                         detail: rest > 0 ? "\(shown) and \(rest) more" : shown,
-                                        counted: band.seconds)
+                                        counted: band.seconds,
+                                        absorbed: strips(taken),
+                                        absorbedNote: note(taken))
         }
+    }
+
+    /// In time order, one category's touching pieces joined, at most `stripLimit`.
+    private static func strips(_ taken: [ActivityRibbon.Block]) -> [ActivityRibbon.Absorbed] {
+        var joined: [ActivityRibbon.Absorbed] = []
+        for block in taken.sorted(by: { $0.start < $1.start }) {
+            if let last = joined.last, last.series == block.series, block.start.timeIntervalSince(last.end) <= touching {
+                joined[joined.count - 1].end = max(last.end, block.end)
+            } else {
+                joined.append(ActivityRibbon.Absorbed(start: block.start, end: block.end, series: block.series))
+            }
+        }
+        guard joined.count > stripLimit else { return joined }
+        return joined.sorted { $0.seconds == $1.seconds ? $0.start < $1.start : $0.seconds > $1.seconds }
+            .prefix(stripLimit)
+            .sorted { $0.start < $1.start }
+    }
+
+    private static func note(_ taken: [ActivityRibbon.Block]) -> String? {
+        guard !taken.isEmpty else { return nil }
+        var seconds: [String: TimeInterval] = [:]
+        for block in taken { seconds[block.name, default: 0] += block.seconds }
+        let named = seconds.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }
+        let shown = named.prefix(namesShown).map { "\($0.key) \(ActivityDuration.string($0.value))" }.joined(separator: ", ")
+        let rest = named.count - namesShown
+        return "including " + (rest > 0 ? "\(shown) and \(rest) more" : shown)
     }
 
     private static func coalesced(_ bands: [Band]) -> [Band] {

@@ -4,8 +4,10 @@
 //
 //  The desktop widget (small and medium): the goal and the time left while a
 //  session runs, the break while one runs, and the setups to start when
-//  nothing does. And two Control Center controls: Start Nidus (the first
-//  setup, or the popover when there is none) and End Nidus Session.
+//  nothing does. Nidus Today (small and medium): today's Work, distracting
+//  and other time, with the day as a ribbon on medium. And two Control Center
+//  controls: Start Nidus (the first setup, or the popover when there is none)
+//  and End Nidus Session.
 //
 //  The extension is sandboxed and reads one file, widget.json in Nidus's
 //  folder (WidgetSnapshot), through a read-only exception for that folder:
@@ -178,6 +180,174 @@ struct NidusStatusWidget: Widget {
     }
 }
 
+// MARK: - Nidus Today
+
+struct NidusTodayProvider: TimelineProvider {
+    func placeholder(in context: Context) -> NidusEntry {
+        let bands = [WidgetToday.Band(startMinute: 540, endMinute: 690, kind: .work),
+                     WidgetToday.Band(startMinute: 690, endMinute: 720, kind: .distracting),
+                     WidgetToday.Band(startMinute: 780, endMinute: 900, kind: .work),
+                     WidgetToday.Band(startMinute: 900, endMinute: 960, kind: .other)]
+        let today = WidgetToday(day: WidgetToday.key(for: .now), work: 16_200, distracting: 1800, other: 3600, bands: bands)
+        return NidusEntry(date: .now, snapshot: WidgetSnapshot(today: today))
+    }
+
+    func getSnapshot(in context: Context, completion: @escaping (NidusEntry) -> Void) {
+        completion(context.isPreview ? placeholder(in: context) : NidusEntry(date: .now, snapshot: WidgetFile.read()))
+    }
+
+    /// Midnight is the one change Nidus can't announce, so the timeline ends
+    /// there: the view shows a snapshot only on the day it's about, and the
+    /// last entry is the new day.
+    func getTimeline(in context: Context, completion: @escaping (Timeline<NidusEntry>) -> Void) {
+        let snapshot = WidgetFile.read()
+        var entries = [NidusEntry(date: .now, snapshot: snapshot)]
+        if let midnight = Calendar.current.dateInterval(of: .day, for: .now)?.end {
+            entries.append(NidusEntry(date: midnight, snapshot: snapshot))
+        }
+        completion(Timeline(entries: entries, policy: .never))
+    }
+}
+
+struct NidusTodayView: View {
+    let entry: NidusEntry
+    @Environment(\.widgetFamily) private var family
+    @Environment(\.widgetRenderingMode) private var renderingMode
+
+    /// The hour grid's sage and clay, without its asset-backed palette.
+    private func ink(_ kind: WidgetToday.Kind) -> Color {
+        guard renderingMode == .fullColor else {
+            // A tinted desktop keeps one color: strength tells them apart.
+            switch kind {
+            case .work: return .primary
+            case .distracting: return .primary.opacity(0.6)
+            case .other: return .primary.opacity(0.3)
+            }
+        }
+        switch kind {
+        case .work: return Color(.sRGB, red: 0.48, green: 0.62, blue: 0.52, opacity: 1)
+        case .distracting: return Color(.sRGB, red: 217 / 255, green: 119 / 255, blue: 87 / 255, opacity: 1)
+        case .other: return .secondary.opacity(0.5)
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Today", systemImage: "chart.bar.fill")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+            if let today = entry.snapshot.today(at: entry.date) {
+                Spacer(minLength: 0)
+                if family == .systemSmall {
+                    small(today)
+                } else {
+                    medium(today)
+                }
+            } else {
+                Spacer(minLength: 0)
+                Text("Nothing counted yet")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .containerBackground(.fill.tertiary, for: .widget)
+        .widgetURL(WidgetSnapshot.popoverURL)
+    }
+
+    @ViewBuilder private func small(_ today: WidgetToday) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            row("Work", today.work, .work)
+            row("Distracting", today.distracting, .distracting)
+            row("Other", today.other, .other)
+        }
+        Spacer(minLength: 0)
+        Strip(parts: shares(today).map { ($0.start, $0.end, ink($0.kind)) })
+    }
+
+    @ViewBuilder private func medium(_ today: WidgetToday) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 20) {
+            column("Work", today.work, .work)
+            column("Distracting", today.distracting, .distracting)
+            column("Other", today.other, .other)
+        }
+        Spacer(minLength: 0)
+        // A clock change makes a day of 25 hours.
+        let minutes = Double(max(1440, today.bands.map(\.endMinute).max() ?? 0))
+        Strip(parts: today.bands.map { (Double($0.startMinute) / minutes, Double($0.endMinute) / minutes, ink($0.kind)) })
+    }
+
+    private func row(_ title: LocalizedStringKey, _ seconds: Int, _ kind: WidgetToday.Kind) -> some View {
+        HStack(spacing: 6) {
+            Circle().fill(ink(kind)).frame(width: 7, height: 7)
+            Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 4)
+            Text(verbatim: Self.time(seconds)).font(.subheadline.monospacedDigit().weight(.medium)).lineLimit(1)
+        }
+    }
+
+    private func column(_ title: LocalizedStringKey, _ seconds: Int, _ kind: WidgetToday.Kind) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: Self.time(seconds)).font(.system(.title3, design: .rounded).monospacedDigit().weight(.medium)).lineLimit(1)
+            HStack(spacing: 5) {
+                Circle().fill(ink(kind)).frame(width: 7, height: 7)
+                Text(title).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+    }
+
+    /// Each part's place along the bar, in the order the rows give them.
+    private func shares(_ today: WidgetToday) -> [(start: Double, end: Double, kind: WidgetToday.Kind)] {
+        let total = Double(max(1, today.total))
+        var start = 0.0
+        return [(today.work, WidgetToday.Kind.work), (today.distracting, .distracting), (today.other, .other)].map { seconds, kind in
+            defer { start += Double(seconds) / total }
+            return (start, start + Double(seconds) / total, kind)
+        }
+    }
+
+    /// "1h 20m", "45m". Nothing here needs a formatter's weight.
+    static func time(_ seconds: Int) -> String {
+        let minutes = (seconds + 30) / 60
+        return minutes < 60 ? "\(minutes)m" : "\(minutes / 60)h \(minutes % 60)m"
+    }
+}
+
+/// A thin bar with parts along it, from 0 to 1. At least a point wide, so a
+/// short part still shows.
+private struct Strip: View {
+    let parts: [(start: Double, end: Double, color: Color)]
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .leading) {
+                Rectangle().fill(.quaternary)
+                ForEach(parts.indices, id: \.self) { index in
+                    let part = parts[index]
+                    Rectangle()
+                        .fill(part.color)
+                        .frame(width: max(1, (part.end - part.start) * proxy.size.width))
+                        .offset(x: part.start * proxy.size.width)
+                }
+            }
+        }
+        .frame(height: 8)
+        .clipShape(.capsule)
+        .accessibilityHidden(true)
+    }
+}
+
+struct NidusTodayWidget: Widget {
+    var body: some WidgetConfiguration {
+        StaticConfiguration(kind: WidgetSnapshot.todayKind, provider: NidusTodayProvider()) { entry in
+            NidusTodayView(entry: entry)
+        }
+        .configurationDisplayName("Nidus Today")
+        .description("Today's Work, distracting and other time.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
 // MARK: - Control Center
 
 struct StartNidusControl: ControlWidget {
@@ -210,6 +380,7 @@ struct EndNidusControl: ControlWidget {
 struct NidusWidgets: WidgetBundle {
     var body: some Widget {
         NidusStatusWidget()
+        NidusTodayWidget()
         StartNidusControl()
         EndNidusControl()
     }

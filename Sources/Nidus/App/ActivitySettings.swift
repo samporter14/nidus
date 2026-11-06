@@ -50,8 +50,19 @@ extension NidusModel {
             liveFocused = controller.engine.elapsed ?? 0
         }
         return TodayOverview(log: log.hiding(activityExcludedApps), sessions: activitySessions, live: live, liveFocused: liveFocused,
-                             tracking: recordsHistory && activityTrackingEnabled && activityAllDayEnabled, now: now,
+                             tracking: tracksActivityAllDay, now: now,
                              categorizer: activityCategorizer)
+    }
+
+    /// Everything all-day tracking needs is on.
+    var tracksActivityAllDay: Bool { recordsHistory && activityTrackingEnabled && activityAllDayEnabled }
+
+    /// Something can count as Work: a listed app or website, or a "Count as".
+    var workHasItems: Bool {
+        let group = workGroup
+        let overrides = activityOverrides
+        return !group.apps.isEmpty || !group.websites.isEmpty
+            || overrides.apps.values.contains { $0.group == .work } || overrides.sites.values.contains { $0.group == .work }
     }
 
     /// Whether the day's ribbon is colored by category rather than by app.

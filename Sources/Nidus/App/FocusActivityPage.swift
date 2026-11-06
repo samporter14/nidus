@@ -52,6 +52,7 @@ struct FocusActivityPage: View {
     @State private var digestCache = ActivityDigestCache()
     @State private var displayedHeatmap = ActivityHeatmap()
     @State private var displayedWeek: ActivityWeek?
+    @State private var displayedChains: [ActivityDriftChain]?
     /// Open rows of the ranked list: app ids, and app and site together.
     @State private var openRows: Set<String> = []
 
@@ -93,6 +94,7 @@ struct FocusActivityPage: View {
                 }
                 weekGlance
                 hourHeatmap
+                drift
                 rankedList(displayedFiltered ?? scope.totals)
                 projectInsights
                 sessionList(rangeSessions)
@@ -141,10 +143,16 @@ struct FocusActivityPage: View {
     private func filters(_ scope: ActivityScope) -> some View {
         NidusSettingsCard {
             HStack(spacing: 10) {
-                Picker("Time range", selection: $period) {
+                // Reset here, not on a change of `period`: opening a day from
+                // the week sets the period and its offset together.
+                Picker("Time range", selection: Binding(get: { period }, set: { value in
+                    guard value != period else { return }
+                    period = value
+                    periodOffset = 0
+                    selectedDay = nil
+                })) {
                     ForEach(ActivityPeriod.allCases) { value in Text(value.title).tag(value) }
                 }
-                .onChange(of: period) { _, _ in periodOffset = 0; selectedDay = nil }
                 .pickerStyle(.segmented)
                 .labelsHidden()
                 .accessibilityLabel("Activity time range")
@@ -284,7 +292,8 @@ struct FocusActivityPage: View {
                                                       work: model.workGroup, categories: model.categories,
                                                       overrides: model.activityOverrides),
                                      dayVersion: model.controller?.activityDayVersion ?? 0,
-                                     start: interval.start, end: interval.end, weekEnd: weekEnd)
+                                     start: interval.start, end: interval.end, shownStart: requestedInterval.start,
+                                     weekEnd: weekEnd)
     }
 
     @ViewBuilder
@@ -298,10 +307,17 @@ struct FocusActivityPage: View {
                         .foregroundStyle(.secondary)
                 }
             } content: {
-                ActivityWeekGlance(week: displayedWeek)
+                ActivityWeekGlance(week: displayedWeek, calendar: calendar, openDay: open(day:))
                     .padding(.vertical, 8)
             }
         }
+    }
+
+    private func open(day: Date) {
+        let offset = ActivityPeriod.dayOffset(of: day, from: effectiveNow, calendar: calendar)
+        if period != .today { period = .today }
+        if periodOffset != offset { periodOffset = offset }
+        if selectedDay != nil { selectedDay = nil }
     }
 
     private var hourHeatmap: some View {
@@ -313,8 +329,51 @@ struct FocusActivityPage: View {
                     .foregroundStyle(.secondary)
             }
         } content: {
-            ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar)
+            ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar, loadDetail: hourDetail)
                 .padding(.vertical, 8)
+        }
+    }
+
+    /// Reads only the files that can hold the hour, away from the main actor.
+    /// Finished days are read once for a selection; a save rereads only today.
+    private func hourDetail(_ slot: ActivityHourSlot) async -> ActivityHourDetail? {
+        guard let recorder = model.controller?.activityRecorder else { return nil }
+        let interval = heatmapInterval, excluded = model.activityExcludedApps, calendar = calendar
+        let days = ActivityHourDetail.days(of: slot, from: interval.start, to: interval.end, calendar: calendar)
+        let today = ActivityDayLog.key(for: Date(), calendar: calendar)
+        let past = days.filter { $0 != today }
+        let finished = await digestCache.pastHour(slot, days: past, signature: digestRequest.signature) {
+            let logs = await recorder.store.load(days: past)
+            return await Task.detached(priority: .utility) {
+                var detail = ActivityHourDetail(slot: slot)
+                for log in logs { detail.add(log.hiding(excluded).stretches, calendar: calendar) }
+                return detail
+            }.value
+        }
+        guard days.contains(today) else { return finished }
+        let written = recorder.isRecording ? recorder.today() : await recorder.store.load(days: [today]).first
+        guard let written else { return finished }
+        return await Task.detached(priority: .utility) {
+            var detail = finished
+            detail.add(written.hiding(excluded).stretches, calendar: calendar)
+            return detail
+        }.value
+    }
+
+    @ViewBuilder
+    private var drift: some View {
+        if let displayedChains {
+            NidusSettingsSection {
+                VStack(alignment: .leading, spacing: 3) {
+                    settingsSectionHeader("Drift")
+                    Text("Three minutes or more on one thing, then as long on a distraction straight after.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            } content: {
+                ActivityDriftList(chains: displayedChains, categorizer: displayedCategorizer)
+                    .padding(.vertical, 8)
+            }
         }
     }
 
@@ -322,13 +381,14 @@ struct FocusActivityPage: View {
         guard let recorder = model.controller?.activityRecorder else { return }
         let grid = dayKeys(from: request.start, to: request.end)
         let week = ActivityWeek.keys(ending: request.weekEnd, calendar: calendar)
+        let shownDays = dayKeys(from: request.shownStart, to: request.end)
         let today = ActivityDayLog.key(for: Date(), calendar: calendar)
         // Today is still being written, and the recorder has the latest of it.
         let written = recorder.isRecording ? recorder.today() : await recorder.store.load(days: [today]).first
         let excluded = request.signature.excluded
         let categorizer = ActivityCategorizer(categories: request.signature.categories, work: request.signature.work,
                                               overrides: request.signature.overrides)
-        let digest = await digestCache.digest(grid: grid, week: week, today: today, live: written?.hiding(excluded),
+        let digest = await digestCache.digest(grid: grid, week: week, chains: shownDays, today: today, live: written?.hiding(excluded),
                                               signature: request.signature, categorizer: categorizer, calendar: calendar) { missing in
             await recorder.store.load(days: missing).map { $0.hiding(excluded) }
         }
@@ -336,6 +396,8 @@ struct FocusActivityPage: View {
         if digest.heatmap != displayedHeatmap { displayedHeatmap = digest.heatmap }
         let shown = ActivityWeek(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
         if shown != displayedWeek { displayedWeek = shown }
+        let chains = ActivityDrift.top(digest.chains.values)
+        if chains != displayedChains { displayedChains = chains }
     }
 
     private func dailyPattern(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
@@ -749,6 +811,12 @@ enum ActivityPeriod: String, CaseIterable, Identifiable {
         case .month:
             return calendar.dateInterval(of: .month, for: now) ?? DateInterval(start: calendar.startOfDay(for: now), duration: 31 * 86_400)
         }
+    }
+
+    /// The Today offset that shows `day`. Never ahead of today.
+    static func dayOffset(of day: Date, from now: Date, calendar: Calendar = .current) -> Int {
+        let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: day)).day
+        return min(0, days ?? 0)
     }
 
     func contains(_ date: Date, offset: Int = 0, now: Date = Date(), calendar: Calendar = .current) -> Bool {

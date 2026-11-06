@@ -27,6 +27,7 @@ struct ActivityDayRibbon: View {
     /// Narrower than this, a focus bar has no room for its name.
     private let nameWidth: CGFloat = 58
     private let barHeight: CGFloat = 5
+    private var stripHeight: CGFloat { compact ? 2 : 3 }
 
     var body: some View {
         if compact { compactBody } else { fullBody }
@@ -104,7 +105,8 @@ struct ActivityDayRibbon: View {
 
     static func description(of block: ActivityRibbon.Block) -> String {
         let times = block.start.formatted(date: .omitted, time: .shortened) + "–" + block.end.formatted(date: .omitted, time: .shortened)
-        return ([times, block.name, block.detail].compactMap { $0 } + [ActivityDuration.string(block.seconds)]).joined(separator: " · ")
+        return ([times, block.name, block.detail].compactMap { $0 } + [ActivityDuration.string(block.seconds), block.absorbedNote].compactMap { $0 })
+            .joined(separator: " · ")
     }
 
     private var focusBars: some View {
@@ -150,6 +152,14 @@ struct ActivityDayRibbon: View {
                     let rect = frame(of: block, in: size)
                     context.fill(Path(rect), with: .color(ActivityInk.series(ribbon.tint(ofSeries: block.series))))
                 }
+                for block in ribbon.blocks {
+                    for strip in block.absorbed {
+                        let rect = frame(of: strip, in: size)
+                        // A hairline over it, so a color shared with the block still shows.
+                        context.fill(Path(rect.insetBy(dx: 0, dy: -0.5).offsetBy(dx: 0, dy: -0.5)), with: .color(Color(nsColor: .windowBackgroundColor)))
+                        context.fill(Path(rect), with: .color(ActivityInk.series(ribbon.tint(ofSeries: strip.series))))
+                    }
+                }
                 if let hovered {
                     let rect = frame(of: hovered, in: size)
                     context.fill(Path(rect), with: .color(.primary.opacity(0.18)))
@@ -180,6 +190,12 @@ struct ActivityDayRibbon: View {
         let x = size.width * ribbon.position(of: block.start)
         let end = size.width * ribbon.position(of: block.end)
         return CGRect(x: x, y: 0, width: max(1, end - x), height: size.height)
+    }
+
+    private func frame(of strip: ActivityRibbon.Absorbed, in size: CGSize) -> CGRect {
+        let x = size.width * ribbon.position(of: strip.start)
+        let end = size.width * ribbon.position(of: strip.end)
+        return CGRect(x: x, y: size.height - stripHeight, width: max(1, end - x), height: stripHeight)
     }
 
     private var axis: some View {

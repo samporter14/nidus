@@ -28,7 +28,7 @@ full workspace.
 
 ## Shortcuts actions
 
-Nidus adds six actions to the Shortcuts app. Search for "Nidus" or "Focus" in
+Nidus adds eight actions to the Shortcuts app. Search for "Nidus" or "Focus" in
 a shortcut's action list.
 
 | Action | Fields | What it does |
@@ -38,6 +38,8 @@ a shortcut's action list.
 | Get Focus Status | None | Says where things stand, and returns the fields below. Changes nothing. |
 | End Focus | None | Ends the session, or the break after it. A strict session can't be ended. |
 | Toggle Focus | None | Ends a session that's on. Otherwise starts the last one again. |
+| Get Today's Activity | None | Says how today has gone: time in Work, distracting and everything else, and returns that as text. Changes nothing. |
+| How Much Work Today | None | Returns the minutes counted in Work today, as a number. If the Work group is empty the number is 0 and the dialog says why. Changes nothing. |
 | Run Nidus Command | Request (JSON text) | For scripts and assistants. See [The JSON command](#the-json-command). |
 
 **Start Focus.** Every field is optional. What you leave out comes from the
@@ -701,8 +703,8 @@ checked: unit tests with fake sessions, the build, and the Shortcuts metadata
 in the built app. Work down the list in order.
 
 1. Open Shortcuts and search for "Nidus". Start Focus, Add Focus Time, Get
-   Focus Status, End Focus, Toggle Focus and Run Nidus Command should all be
-   there after install.
+   Focus Status, End Focus, Toggle Focus, Get Today's Activity, How Much Work
+   Today and Run Nidus Command should all be there after install.
 2. Make the wrapper. Run `nidus-focus check`, which should say ready. Then
    run `nidus-focus status`. It only reads, so it's the first live test.
 3. A cold launch: quit Nidus, then run `nidus-focus status`. It should

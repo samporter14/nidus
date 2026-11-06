@@ -133,6 +133,14 @@ struct ActivityScope {
 /// One day drawn to clock scale: blocks for the time in front, and bars for
 /// the focus sessions over them. Worked out here, and drawn by the view.
 struct ActivityRibbon {
+    /// Time a block took from another series, where it happened.
+    struct Absorbed: Equatable {
+        let start: Date
+        var end: Date
+        let series: Int
+        var seconds: TimeInterval { end.timeIntervalSince(start) }
+    }
+
     struct Block: Identifiable, Equatable {
         let id: String
         let start: Date
@@ -146,6 +154,10 @@ struct ActivityRibbon {
         /// Time counted inside a block merged from several; it can be less
         /// than its span, which runs across small gaps.
         var counted: TimeInterval? = nil
+        /// Only a merged block has these: drawn as strips.
+        var absorbed: [Absorbed] = []
+        /// The same in words, with time.
+        var absorbedNote: String? = nil
         var seconds: TimeInterval { counted ?? end.timeIntervalSince(start) }
     }
 

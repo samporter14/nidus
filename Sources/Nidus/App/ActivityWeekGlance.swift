@@ -4,7 +4,7 @@
 //
 //  A stacked bar per day, then each category's week against the one before.
 //  Drawn in one Canvas, with an entry per day for VoiceOver. It changes only
-//  when a saved day does.
+//  when a saved day does. Clicking a day opens it.
 //
 
 import SwiftUI
@@ -12,6 +12,7 @@ import SwiftUI
 struct ActivityWeekGlance: View {
     let week: ActivityWeek
     var calendar: Calendar = .current
+    let openDay: (Date) -> Void
 
     @State private var hovered: Int?
 
@@ -67,11 +68,14 @@ struct ActivityWeekGlance: View {
             .onContinuousHover { phase in
                 switch phase {
                 case .active(let point):
-                    let index = Int(point.x / max(1, proxy.size.width / CGFloat(week.days.count)))
-                    hovered = week.days.indices.contains(index) ? index : nil
+                    let index = dayIndex(at: point, width: proxy.size.width)
+                    if index != hovered { hovered = index }
                 case .ended:
-                    hovered = nil
+                    if hovered != nil { hovered = nil }
                 }
+            }
+            .onTapGesture { point in
+                if let index = dayIndex(at: point, width: proxy.size.width) { openDay(week.days[index].date) }
             }
         }
         .frame(height: chartHeight)
@@ -79,9 +83,18 @@ struct ActivityWeekGlance: View {
         .accessibilityLabel("Time by day and category")
         .accessibilityChildren {
             ForEach(week.days) { day in
-                Rectangle().accessibilityLabel(summary(of: day))
+                Rectangle()
+                    .accessibilityLabel(summary(of: day))
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityHint("Opens this day")
+                    .accessibilityAction { openDay(day.date) }
             }
         }
+    }
+
+    private func dayIndex(at point: CGPoint, width: CGFloat) -> Int? {
+        let index = Int(point.x / max(1, width / CGFloat(week.days.count)))
+        return week.days.indices.contains(index) ? index : nil
     }
 
     private var labels: some View {
@@ -140,7 +153,7 @@ struct ActivityWeekGlance: View {
     }
 
     private var readout: String {
-        guard let hovered, week.days.indices.contains(hovered) else { return "Hover a day for what filled it." }
+        guard let hovered, week.days.indices.contains(hovered) else { return "Hover a day for what filled it. Click to open it." }
         let day = week.days[hovered]
         guard !day.parts.isEmpty else { return "\(day.date.formatted(date: .abbreviated, time: .omitted)) · Nothing counted" }
         return ([day.date.formatted(date: .abbreviated, time: .omitted)] + Self.parts(of: day)).joined(separator: " · ")

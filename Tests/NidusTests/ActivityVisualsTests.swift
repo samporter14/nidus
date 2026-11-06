@@ -227,6 +227,33 @@ import Testing
         #expect(await loads.asked.isEmpty)
     }
 
+    @Test func aDayStillToComeIsNotRememberedAsEmpty() async {
+        let cache = ActivityDigestCache(), loads = Loads(), sorter = categorizer, cal = calendar
+        _ = await cache.digest(grid: ["2026-11-20"], week: [], today: "2026-11-05", live: nil, signature: signature(), categorizer: sorter,
+                               calendar: cal) { missing in
+            await loads.note(missing)
+            return []
+        }
+        #expect(await cache.cachedDays == 0)
+        #expect(await loads.asked.isEmpty)
+    }
+
+    @Test func aSelectedHourReadsFinishedDaysOnce() async {
+        let cache = ActivityDigestCache(), loads = Loads()
+        let slot = ActivityHourSlot(weekday: 3, hour: 9), days = ["2026-10-28", "2026-11-04"]
+        let build: @Sendable () async -> ActivityHourDetail = {
+            await loads.note(days)
+            return ActivityHourDetail(slot: slot)
+        }
+        _ = await cache.pastHour(slot, days: days, signature: signature(), build: build)
+        _ = await cache.pastHour(slot, days: days, signature: signature(), build: build)
+        #expect(await loads.asked.count == 1)
+        _ = await cache.pastHour(ActivityHourSlot(weekday: 3, hour: 10), days: days, signature: signature(), build: build)
+        #expect(await loads.asked.count == 2)
+        _ = await cache.pastHour(ActivityHourSlot(weekday: 3, hour: 10), days: days, signature: signature(1), build: build)
+        #expect(await loads.asked.count == 3)
+    }
+
     @Test func aChangedRuleStartsOver() async {
         let cache = ActivityDigestCache(), loads = Loads(), sorter = categorizer, cal = calendar
         let logs = [dayLog("2026-11-03", 3)]
