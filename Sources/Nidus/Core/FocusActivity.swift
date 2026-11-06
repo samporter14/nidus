@@ -68,12 +68,13 @@ enum ActivityTimeline {
     /// The labels the local probe emits for a recognized service.
     static func safeSite(_ site: String?) -> String? {
         guard let site else { return nil }
-        let labels: Set<String> = ["Google Docs", "Claude", "Microsoft Word", "Claude Science", "Capsid"]
+        let labels = documentServices.union(["Claude", "Claude Science", "Capsid"])
         return labels.contains(site) ? site : nil
     }
 
     /// Web apps whose pages are documents: ranked by document, not as websites.
-    static let documentServices: Set<String> = ["Google Docs", "Microsoft Word"]
+    static let documentServices: Set<String> = ["Google Docs", "Google Sheets", "Google Slides", "Microsoft Word",
+                                                "Microsoft Excel", "Microsoft PowerPoint"]
 
     static func isDocumentService(_ site: String?) -> Bool {
         site.map(documentServices.contains) ?? false
@@ -83,10 +84,21 @@ enum ActivityTimeline {
     /// the service when the title couldn't be read.
     static func documentName(title: String?, site: String?) -> String? {
         guard let title, !title.isEmpty else { return site }
-        for suffix in [site, "Word"].compactMap({ $0 }).map({ " - " + $0 }) where title.hasSuffix(suffix) {
+        let office = site?.hasPrefix("Microsoft ") == true ? site?.split(separator: " ").last.map(String.init) : nil
+        for suffix in [site, office].compactMap({ $0 }).map({ " - " + $0 }) where title.hasSuffix(suffix) {
             let name = String(title.dropLast(suffix.count))
             return name.isEmpty ? site : name
         }
+        return title
+    }
+
+    /// What a titled stretch counts as in a list of documents, or nil when it
+    /// isn't one. A browser's title names a web page, which counts under its
+    /// site, unless the page is itself a document.
+    static func documentName(appID: String, title: String?, site: String?) -> String? {
+        if isDocumentService(site) { return documentName(title: title, site: site) }
+        guard let title, !title.isEmpty, site?.isEmpty ?? true,
+              !BrowserProfile.known.contains(where: { $0.bundleID == appID }) else { return nil }
         return title
     }
 

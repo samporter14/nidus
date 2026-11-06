@@ -585,7 +585,7 @@ enum ActivityListKind: String, CaseIterable, Identifiable {
         switch self {
         case .apps: return "No apps were counted here."
         case .websites: return "No websites here. Allow website access browser by browser under Tracking."
-        case .documents: return "No page or window names here. Allow window-title access under Tracking."
+        case .documents: return "No documents here. Allow window-title access under Tracking."
         case .categories: return "Nothing to sort into categories here."
         }
     }
@@ -754,11 +754,10 @@ struct ActivityTotals {
                 siteSeconds[site, default: 0] += item.seconds
                 siteApps[site] = (item.appID, item.appName)
             }
-            if let title = isDocument ? ActivityTimeline.documentName(title: item.title, site: item.site) : item.title,
+            if let title = ActivityTimeline.documentName(appID: item.appID, title: item.title, site: item.site),
                !title.isEmpty {
                 let key = Self.documentKey(appID: item.appID, site: item.site, title: title)
-                let parts = isDocument ? [item.site, item.appName] : [item.appName, item.site]
-                let source = parts.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                let source = [item.site, item.appName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 documentSeconds[key, default: 0] += item.seconds
                 documentTitles[key] = title
                 documentSources[key] = source
@@ -807,8 +806,7 @@ struct ActivityTotals {
         for stretch in stretches {
             guard let url = stretch.url else { continue }
             if let site = stretch.site { bySite[site] = url }
-            let isDocument = ActivityTimeline.isDocumentService(stretch.site)
-            if let title = isDocument ? ActivityTimeline.documentName(title: stretch.title, site: stretch.site) : stretch.title {
+            if let title = ActivityTimeline.documentName(appID: stretch.appID, title: stretch.title, site: stretch.site) {
                 byDocument[Self.documentKey(appID: stretch.appID, site: stretch.site, title: title)] = url
             }
         }
@@ -1255,7 +1253,7 @@ struct ActivitySessionRecap: View {
         VStack(alignment: .leading, spacing: 12) {
             recapGroup("Apps", rows: apps)
             if !sites.isEmpty { recapGroup("Websites", rows: sites) }
-            if !documents.isEmpty { recapGroup("Titles", rows: documents) }
+            if !documents.isEmpty { recapGroup("Documents", rows: documents) }
             if activity.isEmpty {
                 Text("No activity details were observed during this session.")
                     .font(.system(size: 12)).foregroundStyle(.secondary)
@@ -1293,11 +1291,12 @@ struct ActivitySessionRecap: View {
         var titles: [String: String] = [:]
         var sources: [String: String] = [:]
         for item in activity {
-            guard let title = item.title, !title.isEmpty else { continue }
+            guard let title = ActivityTimeline.documentName(appID: item.appID, title: item.title, site: item.site),
+                  !title.isEmpty else { continue }
             let key = "\(item.appID)\u{1F}\(item.site ?? "")\u{1F}\(title)"
             secondsByKey[key, default: 0] += max(0, item.seconds)
             titles[key] = title
-            sources[key] = [item.appName, item.site].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+            sources[key] = [item.site, item.appName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
         }
         return secondsByKey.map { key, seconds in
             ActivityRank(id: key, name: titles[key] ?? key, seconds: seconds, subtitle: sources[key])

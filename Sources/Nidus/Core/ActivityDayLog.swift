@@ -207,7 +207,23 @@ struct ActivityDayLog: Codable, Equatable, Sendable {
             stretch.url = ActivityProbe.keptURL(stretch.url)
             return stretch
         }
+        log.labelServices()
         return log
+    }
+
+    /// A stretch recorded before its service had a label holds the service's
+    /// domain. Its address says which service it was, so its time moves to
+    /// the label, where the lists look for it.
+    private mutating func labelServices() {
+        for index in stretches.indices {
+            let stretch = stretches[index]
+            guard let site = stretch.site, ActivityDomain.isDomain(site), let url = stretch.url,
+                  let service = ActivityProbe.service(for: url) else { continue }
+            debit(stretch.seconds, from: stretch)
+            stretches[index].site = service
+            credit(stretches[index])
+        }
+        totals.removeAll { $0.seconds <= 0 }
     }
 
     /// The part of a stretch on each calendar day it touches, in order.

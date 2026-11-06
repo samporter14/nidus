@@ -70,7 +70,7 @@ import Testing
         let word = stretch(12, 13, app: "Word", title: "Aims")
         let totals = ActivityScope(logs: [log([first, second, word])], sessions: [], calendar: calendar).totals
         #expect(totals.sites.first?.reopenTarget == .page(URL(string: "https://nature.com/b")!))
-        #expect(totals.documents.first { $0.name == "A" }?.reopenTarget == .page(URL(string: "https://nature.com/a")!))
+        #expect(!totals.documents.contains { $0.name == "A" })
         #expect(totals.documents.first { $0.name == "Aims" }?.reopenTarget == .app("id.Word"))
         #expect(ActivityRank(id: "x", name: "x", seconds: 1).reopenTarget == nil)
     }

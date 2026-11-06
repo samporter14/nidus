@@ -48,7 +48,7 @@ struct ActivityPresentationTests {
                      foreground: foreground, names: ["browser": "Browser"], activity: rows)
     }
 
-    @Test func dimensionsAreNotAddedTogetherAndSameTitlesKeepTheirSource() {
+    @Test func dimensionsAreNotAddedTogetherAndAPageIsNotADocument() {
         let rows = [
             FocusActivity(appID: "browser", appName: "Browser", site: "overleaf.com", title: "Draft", seconds: 120),
             FocusActivity(appID: "word", appName: "Word", title: "Draft", seconds: 60),
@@ -60,8 +60,7 @@ struct ActivityPresentationTests {
         #expect(totals.apps.reduce(0) { $0 + $1.seconds } == 210)
         #expect(totals.services.reduce(0) { $0 + $1.seconds } == 210)
         #expect(totals.sites.first?.seconds == 150)
-        #expect(totals.documents.count == 2)
-        #expect(totals.documents.map(\.id).count == Set(totals.documents.map(\.id)).count)
+        #expect(totals.documents.map(\.subtitle) == ["Word"])
     }
 
     @Test func legacyFallbackDoesNotRestoreIntentionallyEmptyDetails() {
