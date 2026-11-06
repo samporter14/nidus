@@ -137,13 +137,17 @@ extension RenderSurfaces {
 extension RenderSurfaces {
     /// The popover's two pieces, each state, in light and dark. Empty and off
     /// come first: they need a day with nothing counted.
-    /// The popover's tree built, drawn off-screen and released ten times over
-    /// a seeded day, printing the footprint after each. No window reaches the
-    /// screen, so nothing takes the keyboard.
-    static func measurePopover(model: NidusModel) async {
+    /// The real popover, shown from a window off-screen, ten times over a
+    /// seeded day, printing the footprint after each step. Nothing takes the
+    /// keyboard. The first second after any window appears includes about
+    /// 65 MB of graphics memory macOS frees by itself, so `--measure-hold`
+    /// stays open long enough to read the steady number. `--measure-settings`
+    /// opens and closes Activity instead.
+    static func measurePopover(model: NidusModel, settings: SettingsWindowController) async {
+        let arguments = ProcessInfo.processInfo.arguments
         model.seedActivityPreview()
         model.runHarnessScenario("idle")
-        func footprint() -> Double {
+        func report(_ step: String) {
             var info = task_vm_info_data_t()
             var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
             let result = withUnsafeMutablePointer(to: &info) {
@@ -151,25 +155,47 @@ extension RenderSurfaces {
                     task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count)
                 }
             }
-            return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+            guard result == KERN_SUCCESS else { return }
+            let megabytes = { (bytes: UInt64) in Double(bytes) / 1_048_576 }
+            print(String(format: "MEMORY %@: %.1f MB, peak %.1f MB", step, megabytes(info.phys_footprint),
+                         megabytes(UInt64(info.ledger_phys_footprint_peak))))
         }
-        print(String(format: "MEMORY before: %.1f MB", footprint()))
+        try? await Task.sleep(for: .seconds(1))
+        report("before")
+        if arguments.contains("--measure-settings") {
+            let window = settings.showOffscreen(page: "activity", title: "Activity")
+            try? await Task.sleep(for: .seconds(3))
+            report("Activity open")
+            window?.close()
+            try? await Task.sleep(for: .seconds(1))
+            report("Activity closed 1s")
+            try? await Task.sleep(for: .seconds(3))
+            report("Activity closed 4s")
+            return
+        }
+        let anchor = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 40, height: 40),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        anchor.isReleasedWhenClosed = false
+        anchor.orderBack(nil)
+        let presentation = FocusPopoverPresentation()
         for cycle in 1...10 {
-            autoreleasepool {
-                let hosting = NSHostingController(rootView: NidusPopover(model: model))
-                hosting.sizingOptions = [.preferredContentSize]
-                let window = NSWindow(contentRect: NSRect(x: -4000, y: -4000, width: 440, height: 500),
-                                      styleMask: [.borderless], backing: .buffered, defer: false)
-                window.isReleasedWhenClosed = false
-                window.contentViewController = hosting
-                window.orderBack(nil)
-                window.displayIfNeeded()
-                window.contentViewController = nil
-                window.close()
+            let popover = presentation.prepare(model: model)
+            if let view = anchor.contentView { popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY) }
+            try? await Task.sleep(for: .milliseconds(500))
+            report("cycle \(cycle) open")
+            if cycle == 1, arguments.contains("--measure-hold") {
+                for second in 1...14 {
+                    try? await Task.sleep(for: .seconds(1))
+                    report("held \(second)s")
+                }
             }
-            try? await Task.sleep(for: .milliseconds(400))
-            print(String(format: "MEMORY cycle %d: %.1f MB", cycle, footprint()))
+            presentation.close()
+            try? await Task.sleep(for: .milliseconds(500))
+            report("cycle \(cycle) closed")
         }
+        anchor.close()
+        try? await Task.sleep(for: .seconds(4))
+        report("settled")
     }
 
     static func renderPopoverSurfaces(model: NidusModel, in directory: URL) async {
