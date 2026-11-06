@@ -330,7 +330,8 @@ any blocked page is.
 ## Start it from anywhere
 
 **Shortcuts.** Nidus adds Start Focus (with a setup, if you like), Add Focus
-Time, Get Focus Status, End Focus and Toggle Focus to the Shortcuts app. For a
+Time, Get Focus Status, End Focus, Toggle Focus, Get Today's Activity and How
+Much Work Today to the Shortcuts app. For a
 keyboard shortcut, make a shortcut that runs Start Focus or Toggle Focus and
 give it a key in its details.
 
@@ -342,10 +343,13 @@ never ended by a Focus.
 
 **Widgets and Control Center.** Add the Nidus widget to the desktop or
 Notification Center: it shows your goal and the time left, the break, or your
-first setups to start. In Control Center, Start Nidus starts your first setup
-(or opens the popover when you have none) and End Nidus Session ends one that
-isn't strict. They read one file, `widget.json` in Nidus's folder, and their
-buttons are `nidus://` links, so the same rules apply.
+first setups to start. Nidus Today shows today's Work, distracting and other
+time, with the day as a ribbon on the medium size. It catches up every 15
+minutes or so and goes blank at midnight. In Control Center, Start Nidus starts
+your first setup (or opens the popover when you have none) and End Nidus
+Session ends one that isn't strict. They read one file, `widget.json` in
+Nidus's folder, and their buttons are `nidus://` links, so the same rules
+apply. For Nidus Today that file holds times and totals, never an app or site.
 
 **Links.** Any app, script or launcher can open these:
 

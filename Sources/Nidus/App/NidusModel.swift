@@ -27,6 +27,11 @@ final class NidusModel: NSObject, ObservableObject {
     var historySummaryCache = HistorySummaryCache()
     /// A widget only needs a few setup labels, not decoded workspaces per tick.
     var widgetSetupCache = WidgetSetupCache()
+    /// Today for the widget, and when it was last worked out (WidgetBridge.swift).
+    /// Not published: a save must not redraw Settings.
+    var widgetToday: WidgetToday?
+    var widgetTodayThrottle = WidgetTodayThrottle()
+    var widgetTodayTask: Task<Void, Never>?
     /// Writes what Plaque may show, when that is turned on (PlaqueBridge.swift).
     var plaqueBridge: PlaqueBridge?
 
@@ -156,6 +161,11 @@ final class NidusModel: NSObject, ObservableObject {
                 self?.publishFocus()
             }
             .store(in: &subscriptions)
+        controller.$activityDayVersion
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.refreshWidgetToday() }
+            .store(in: &subscriptions)
         controller.$browserAccess
             .receive(on: DispatchQueue.main)
             .sink { [weak self] access in self?.browserAccessDidChange(access) }
@@ -180,6 +190,7 @@ final class NidusModel: NSObject, ObservableObject {
         presentSessionFileProblemIfAny()
         brickCompanion.activate(self)
         publishFocus()
+        refreshWidgetToday()
         startWeeklyRecap()
 
         let menuBar = FocusMenuBar(model: self)
@@ -226,6 +237,9 @@ final class NidusModel: NSObject, ObservableObject {
         host = nil
         clearPresentationCaches()
         widgetSetupCache.invalidate()
+        widgetTodayTask?.cancel()
+        widgetToday = nil
+        widgetTodayThrottle = WidgetTodayThrottle()
     }
 
     // MARK: Session commands

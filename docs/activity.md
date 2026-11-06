@@ -24,6 +24,12 @@ New recaps show observed intervals, known document switches, context switches, a
 - **Drift.** The top five chains in the shown range: three minutes or more on something, then, within two minutes and with nothing breaking the record between them, three minutes or more in a distracting category, as "Chrome → x.com, 3 times, 25 min". A chain out of Work comes first; one out of Uncategorized time still counts. A chain stays inside one day's file, and a day that dropped its start has none. Session recaps leave chains out: distractions are blocked there.
 - **Inside an app.** In the Apps list, a row with anything named inside it opens in place: a browser to its sites and their pages, a document app to its files.
 
+## Widget and Shortcuts
+
+Nidus Today, a small or medium widget, shows today's Work, distracting and other time, split as Hour by hour splits it. The medium size adds the day as a ribbon of at most 24 bands. Each stretch is classified before anything is merged, so the bands are of those three kinds, and the totals are counted from the stretches rather than the bands. Excluded apps stay out. `widget.json` gets the summary when a save lands, at most every 15 minutes, at once for a new day, a cleared record or a newly excluded app, and only if it changed; that reloads this widget alone. It holds seconds and times of day, never a name. Past midnight the widget shows nothing until the new day has something to show.
+
+Get Today's Activity and How Much Work Today work the same split out when they are run, so they are always current.
+
 ## Tracking and access
 
 Activity, all-day tracking and titles are on by default; **Track activity** and **Track all day** under Tracking are the off switches. Record sessions must also be on. Titles need Accessibility access and websites need Automation access per browser, each asked for from a button there. Nothing leaves this Mac.
