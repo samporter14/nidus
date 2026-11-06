@@ -49,8 +49,9 @@ struct FocusActivityPage: View {
     @State private var displayedCategorizer = ActivityCategorizer(categories: [], work: FocusCategory.workSeed)
     @State private var displayedCategories: [ActivityCategoryTotal] = []
     @State private var displayedFiltered: ActivityTotals?
-    @State private var heatmapCache = ActivityHeatmapCache()
+    @State private var digestCache = ActivityDigestCache()
     @State private var displayedHeatmap = ActivityHeatmap()
+    @State private var displayedWeek: ActivityWeek?
     /// Open rows of the ranked list: app ids, and app and site together.
     @State private var openRows: Set<String> = []
 
@@ -90,6 +91,7 @@ struct FocusActivityPage: View {
                 } else {
                     dailyPattern(scope.totals, sessions: rangeSessions)
                 }
+                weekGlance
                 hourHeatmap
                 rankedList(displayedFiltered ?? scope.totals)
                 projectInsights
@@ -103,7 +105,7 @@ struct FocusActivityPage: View {
         }
         .onAppear { refreshProjects(); openInitialSession() }
         .task(id: requestedCacheKey) { await reload(requestedCacheKey) }
-        .task(id: heatmapRequest) { await reloadHeatmap(heatmapRequest) }
+        .task(id: digestRequest) { await reloadDigest(digestRequest) }
     }
 
     private var hero: some View {
@@ -270,13 +272,36 @@ struct FocusActivityPage: View {
         return DateInterval(start: start, end: shown.end)
     }
 
-    private var heatmapRequest: ActivityHeatmapRequest {
+    /// The last day of the shown range, or today if the range isn't over.
+    private var weekEnd: Date {
+        let last = requestedInterval.end.addingTimeInterval(-1)
+        return calendar.startOfDay(for: min(last, effectiveNow))
+    }
+
+    private var digestRequest: ActivityDigestRequest {
         let interval = heatmapInterval
-        return ActivityHeatmapRequest(signature: .init(version: model.controller?.historyVersion ?? 0, excluded: model.activityExcludedApps,
-                                                       work: model.workGroup, categories: model.categories,
-                                                       overrides: model.activityOverrides),
-                                      dayVersion: model.controller?.activityDayVersion ?? 0,
-                                      start: interval.start, end: interval.end)
+        return ActivityDigestRequest(signature: .init(version: model.controller?.historyVersion ?? 0, excluded: model.activityExcludedApps,
+                                                      work: model.workGroup, categories: model.categories,
+                                                      overrides: model.activityOverrides),
+                                     dayVersion: model.controller?.activityDayVersion ?? 0,
+                                     start: interval.start, end: interval.end, weekEnd: weekEnd)
+    }
+
+    @ViewBuilder
+    private var weekGlance: some View {
+        if let displayedWeek {
+            NidusSettingsSection {
+                VStack(alignment: .leading, spacing: 3) {
+                    settingsSectionHeader("Week at a glance")
+                    Text("Seven days by category, against the seven before.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            } content: {
+                ActivityWeekGlance(week: displayedWeek)
+                    .padding(.vertical, 8)
+            }
+        }
     }
 
     private var hourHeatmap: some View {
@@ -293,21 +318,24 @@ struct FocusActivityPage: View {
         }
     }
 
-    private func reloadHeatmap(_ request: ActivityHeatmapRequest) async {
+    private func reloadDigest(_ request: ActivityDigestRequest) async {
         guard let recorder = model.controller?.activityRecorder else { return }
-        let keys = dayKeys(from: request.start, to: request.end)
+        let grid = dayKeys(from: request.start, to: request.end)
+        let week = ActivityWeek.keys(ending: request.weekEnd, calendar: calendar)
         let today = ActivityDayLog.key(for: Date(), calendar: calendar)
         // Today is still being written, and the recorder has the latest of it.
         let written = recorder.isRecording ? recorder.today() : await recorder.store.load(days: [today]).first
         let excluded = request.signature.excluded
         let categorizer = ActivityCategorizer(categories: request.signature.categories, work: request.signature.work,
                                               overrides: request.signature.overrides)
-        let map = await heatmapCache.heatmap(days: keys, today: today, live: written?.hiding(excluded),
-                                             signature: request.signature, categorizer: categorizer, calendar: calendar) { missing in
+        let digest = await digestCache.digest(grid: grid, week: week, today: today, live: written?.hiding(excluded),
+                                              signature: request.signature, categorizer: categorizer, calendar: calendar) { missing in
             await recorder.store.load(days: missing).map { $0.hiding(excluded) }
         }
-        guard !Task.isCancelled, map != displayedHeatmap else { return }
-        displayedHeatmap = map
+        guard !Task.isCancelled else { return }
+        if digest.heatmap != displayedHeatmap { displayedHeatmap = digest.heatmap }
+        let shown = ActivityWeek(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
+        if shown != displayedWeek { displayedWeek = shown }
     }
 
     private func dailyPattern(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {

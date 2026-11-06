@@ -174,8 +174,8 @@ import Testing
 
     // MARK: Hour grid cache
 
-    private func signature(_ version: Int = 0) -> ActivityHeatmapSignature {
-        ActivityHeatmapSignature(version: version, excluded: [], work: work, categories: [], overrides: ActivityOverrides())
+    private func signature(_ version: Int = 0) -> ActivityDigestSignature {
+        ActivityDigestSignature(version: version, excluded: [], work: work, categories: [], overrides: ActivityOverrides())
     }
     private func dayLog(_ key: String, _ day: Int) -> ActivityDayLog {
         var log = ActivityDayLog(day: key)
@@ -188,55 +188,160 @@ import Testing
     }
 
     @Test func aFinishedDayIsReadOnce() async {
-        let cache = ActivityHeatmapCache(), loads = Loads(), sorter = categorizer, cal = calendar
+        let cache = ActivityDigestCache(), loads = Loads(), sorter = categorizer, cal = calendar
         let logs = [dayLog("2026-11-03", 3)]
         let keys = ["2026-11-02", "2026-11-03"]
         let load: @Sendable ([String]) async -> [ActivityDayLog] = { missing in
             await loads.note(missing)
             return logs.filter { missing.contains($0.day) }
         }
-        let first = await cache.heatmap(days: keys, today: "2026-11-09", live: nil, signature: signature(), categorizer: sorter, calendar: cal, load: load)
-        let second = await cache.heatmap(days: keys, today: "2026-11-09", live: nil, signature: signature(), categorizer: sorter, calendar: cal, load: load)
+        let first = await cache.digest(grid: keys, week: [], today: "2026-11-09", live: nil, signature: signature(), categorizer: sorter, calendar: cal, load: load)
+        let second = await cache.digest(grid: keys, week: [], today: "2026-11-09", live: nil, signature: signature(), categorizer: sorter, calendar: cal, load: load)
         #expect(first == second)
-        #expect(first.maximum == 3600)
+        #expect(first.heatmap.maximum == 3600)
         // Including the day with no file.
         #expect(await loads.asked == [keys])
     }
 
     @Test func todayIsAddedFreshAndNeverKept() async {
-        let cache = ActivityHeatmapCache(), sorter = categorizer, cal = calendar
+        let cache = ActivityDigestCache(), sorter = categorizer, cal = calendar
         var today = dayLog("2026-11-04", 4)
-        let once = await cache.heatmap(days: ["2026-11-04"], today: "2026-11-04", live: today, signature: signature(), categorizer: sorter, calendar: cal) { _ in [] }
-        #expect(once.maximum == 3600)
+        let once = await cache.digest(grid: ["2026-11-04"], week: [], today: "2026-11-04", live: today, signature: signature(), categorizer: sorter, calendar: cal) { _ in [] }
+        #expect(once.heatmap.maximum == 3600)
         #expect(await cache.cachedDays == 0)
         today.add(stretch(date(4, 9), date(4, 10).addingTimeInterval(-1800)))
         today.add(stretch(date(4, 11), date(4, 12)))
-        let twice = await cache.heatmap(days: ["2026-11-04"], today: "2026-11-04", live: today, signature: signature(), categorizer: sorter, calendar: cal) { _ in [] }
+        let twice = await cache.digest(grid: ["2026-11-04"], week: [], today: "2026-11-04", live: today, signature: signature(), categorizer: sorter, calendar: cal) { _ in [] }
         #expect(twice != once)
     }
 
     @Test func todayWithNothingWrittenYetIsNotRememberedAsEmpty() async {
-        let cache = ActivityHeatmapCache(), loads = Loads(), sorter = categorizer, cal = calendar
-        let map = await cache.heatmap(days: ["2026-11-04"], today: "2026-11-04", live: nil, signature: signature(), categorizer: sorter,
+        let cache = ActivityDigestCache(), loads = Loads(), sorter = categorizer, cal = calendar
+        let map = await cache.digest(grid: ["2026-11-04"], week: [], today: "2026-11-04", live: nil, signature: signature(), categorizer: sorter,
                                       calendar: cal) { missing in
             await loads.note(missing)
             return []
         }
-        #expect(map.isEmpty)
+        #expect(map.heatmap.isEmpty)
         #expect(await cache.cachedDays == 0)
         #expect(await loads.asked.isEmpty)
     }
 
     @Test func aChangedRuleStartsOver() async {
-        let cache = ActivityHeatmapCache(), loads = Loads(), sorter = categorizer, cal = calendar
+        let cache = ActivityDigestCache(), loads = Loads(), sorter = categorizer, cal = calendar
         let logs = [dayLog("2026-11-03", 3)]
         let load: @Sendable ([String]) async -> [ActivityDayLog] = { missing in
             await loads.note(missing)
             return logs
         }
-        _ = await cache.heatmap(days: ["2026-11-03"], today: "2026-11-09", live: nil, signature: signature(1), categorizer: sorter, calendar: cal, load: load)
-        _ = await cache.heatmap(days: ["2026-11-03"], today: "2026-11-09", live: nil, signature: signature(2), categorizer: sorter, calendar: cal, load: load)
+        _ = await cache.digest(grid: ["2026-11-03"], week: [], today: "2026-11-09", live: nil, signature: signature(1), categorizer: sorter, calendar: cal, load: load)
+        _ = await cache.digest(grid: ["2026-11-03"], week: [], today: "2026-11-09", live: nil, signature: signature(2), categorizer: sorter, calendar: cal, load: load)
         #expect(await loads.asked.count == 2)
+    }
+
+    // MARK: Week at a glance
+
+    private func week(ending day: Int, month: Int = 11, _ stretches: [FocusActivitySegment]) -> ActivityWeek {
+        let digest = ActivityDayDigest(stretches: stretches, categorizer: categorizer, calendar: calendar)
+        return ActivityWeek(ending: date(day, month: month), byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
+    }
+
+    @Test func theWeekIsSevenDaysEndingOnTheLast() {
+        let shown = week(ending: 5, [stretch(date(5, 9), date(5, 10))])
+        #expect(shown.days.map(\.key) == ["2026-10-30", "2026-10-31", "2026-11-01", "2026-11-02", "2026-11-03", "2026-11-04", "2026-11-05"])
+        #expect(shown.days.last?.seconds == 3600)
+    }
+
+    @Test func aMissingDayStaysAnEmptyBar() {
+        let shown = week(ending: 5, [stretch(date(5, 9), date(5, 10))])
+        #expect(shown.days.count == 7)
+        #expect(shown.days[0].parts.isEmpty)
+        #expect(shown.days[0].seconds == 0)
+    }
+
+    @Test func aDayStacksWorkFirstAndUncategorizedLast() {
+        let shown = week(ending: 5, [stretch(date(5, 9), date(5, 10), "Finder"), stretch(date(5, 10), date(5, 11), "Slack"),
+                                     stretch(date(5, 11), date(5, 12), "Feed"), stretch(date(5, 12), date(5, 13))])
+        #expect(shown.days.last?.parts.map(\.name) == ["Work", "Social", "Messaging", "Uncategorized"])
+        #expect(shown.days.last?.parts.last?.tint == ActivityInk.quietTint)
+    }
+
+    @Test func theSeventhDayBackIsLastWeek() {
+        let shown = week(ending: 5, [stretch(date(4, 9), date(4, 10)), stretch(date(29, month: 10, 9), date(29, month: 10, 10.5)),
+                                     stretch(date(30, month: 10, 9), date(30, month: 10, 9.5))])
+        // Oct 30 is the first day of this week, Oct 29 the last of the one before.
+        let work = shown.deltas.first { $0.id == ActivityCategorizer.workID }
+        #expect(work?.thisWeek == 5400)
+        #expect(work?.lastWeek == 5400)
+        #expect(work?.change == 0)
+    }
+
+    @Test func timeBeforeLastWeekIsLeftOut() {
+        let shown = week(ending: 5, [stretch(date(22, month: 10, 9), date(22, month: 10, 10)), stretch(date(5, 9), date(5, 10))])
+        #expect(shown.deltas.first?.lastWeek == 0)
+        #expect(!shown.hasLastWeek)
+    }
+
+    @Test func aCategoryGoneThisWeekStillShowsItsDrop() {
+        let shown = week(ending: 5, [stretch(date(5, 9), date(5, 10)), stretch(date(28, month: 10, 9), date(28, month: 10, 10), "Feed")])
+        let social = shown.deltas.first { $0.id == "social" }
+        #expect(social?.thisWeek == 0)
+        #expect(social?.change == -3600)
+        #expect(shown.deltas.first?.id == ActivityCategorizer.workID)
+    }
+
+    @Test func noRecordLastWeekMeansNoComparison() {
+        let shown = week(ending: 5, [stretch(date(5, 9), date(5, 10))])
+        #expect(!shown.hasLastWeek)
+    }
+
+    @Test func aChangeReadsPlainly() {
+        func delta(_ now: TimeInterval, _ then: TimeInterval) -> ActivityWeek.Delta {
+            ActivityWeek.Delta(id: "x", name: "X", tint: 0, thisWeek: now, lastWeek: then)
+        }
+        #expect(delta(3600, 600).changeText == "+50 min")
+        #expect(delta(600, 3600).changeText == "\u{2212}50 min")
+        #expect(delta(600, 590).changeText == "Same")
+    }
+
+    @Test func midnightSplitsTheBars() {
+        let shown = week(ending: 5, [stretch(date(4, 23.5), date(5, 0.5))])
+        #expect(shown.days[5].seconds == 1800)
+        #expect(shown.days[6].seconds == 1800)
+    }
+
+    @Test func aMidnightStretchInYesterdaysFileReachesTodayThroughTheCache() async {
+        let cache = ActivityDigestCache(), sorter = categorizer, cal = calendar
+        var yesterday = ActivityDayLog(day: "2026-11-04")
+        yesterday.add(stretch(date(4, 23.5), date(5, 0.5)))
+        var today = ActivityDayLog(day: "2026-11-05")
+        today.add(stretch(date(5, 9), date(5, 10)))
+        let logs = [yesterday]
+        let digest = await cache.digest(grid: [], week: ["2026-11-04", "2026-11-05"], today: "2026-11-05", live: today,
+                                        signature: signature(), categorizer: sorter, calendar: cal) { _ in logs }
+        let work = ActivityCategorizer.workID
+        #expect(digest.byDay["2026-11-04"]?[work] == 1800)
+        #expect(digest.byDay["2026-11-05"]?[work] == 5400)
+        // Asked for no grid days, so the grid stays empty.
+        #expect(digest.heatmap.isEmpty)
+    }
+
+    @Test func aShortAndALongDayCountInFullAcrossClockChanges() {
+        // November 1 runs 25 hours in Detroit, March 8 runs 23.
+        let fall = week(ending: 2, [stretch(date(1), date(2))])
+        #expect(fall.days[5].key == "2026-11-01")
+        #expect(fall.days[5].seconds == 25 * 3600)
+        let spring = week(ending: 9, month: 3, [stretch(date(8, month: 3), date(9, month: 3))])
+        #expect(spring.days[5].key == "2026-03-08")
+        #expect(spring.days[5].seconds == 23 * 3600)
+    }
+
+    @Test func theKeysStepByCalendarDayOverAClockChange() {
+        let keys = ActivityWeek.keys(ending: date(2), calendar: calendar)
+        #expect(keys.count == 14)
+        #expect(Set(keys).count == 14)
+        #expect(keys.contains("2026-11-01"))
+        #expect(keys.contains("2026-10-20"))
     }
 
     // MARK: What's inside an app

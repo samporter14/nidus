@@ -82,7 +82,7 @@ struct ActivityHeatmap: Equatable, Sendable {
 
 /// What the grid depends on besides the days. `version` moves when the
 /// record is cleared.
-struct ActivityHeatmapSignature: Equatable, Sendable {
+struct ActivityDigestSignature: Equatable, Sendable {
     let version: Int
     let excluded: Set<String>
     let work: FocusCategory
@@ -90,44 +90,79 @@ struct ActivityHeatmapSignature: Equatable, Sendable {
     let overrides: ActivityOverrides
 }
 
-struct ActivityHeatmapRequest: Equatable, Sendable {
-    let signature: ActivityHeatmapSignature
+struct ActivityDigestRequest: Equatable, Sendable {
+    let signature: ActivityDigestSignature
     /// Moves with each save of today.
     let dayVersion: Int
     let start: Date
     let end: Date
+    /// The last day of the week view.
+    let weekEnd: Date
 }
 
-actor ActivityHeatmapCache {
-    private var signature: ActivityHeatmapSignature?
-    private var days: [String: ActivityHeatmap] = [:]
+/// Everything the page draws from one day's file.
+struct ActivityDayDigest: Equatable, Sendable {
+    var heatmap = ActivityHeatmap()
+    /// Seconds by day key, then by group. A stretch that runs past midnight
+    /// reaches into the next day's key.
+    var byDay: [String: [String: TimeInterval]] = [:]
 
-    /// `today` is still being written, so it's never kept: `live` is its
-    /// latest, and it's added afresh each time. The rest are loaded only when
-    /// not already known; a day with no file is remembered as empty.
-    func heatmap(days keys: [String], today: String, live: ActivityDayLog?, signature: ActivityHeatmapSignature,
-                 categorizer: ActivityCategorizer, calendar: Calendar,
-                 load: @Sendable ([String]) async -> [ActivityDayLog]) async -> ActivityHeatmap {
+    init() {}
+
+    init(stretches: [FocusActivitySegment], categorizer: ActivityCategorizer, calendar: Calendar = .current) {
+        heatmap = ActivityHeatmap(stretches: stretches, categorizer: categorizer, calendar: calendar)
+        for stretch in stretches where stretch.end > stretch.start {
+            let group = categorizer.category(appID: stretch.appID, site: stretch.site, url: stretch.url)
+                ?? ActivityCategorizer.uncategorizedID
+            var start = stretch.start
+            while start < stretch.end {
+                guard let day = calendar.dateInterval(of: .day, for: start), day.end > start else { break }
+                let end = min(day.end, stretch.end)
+                byDay[ActivityDayLog.key(for: start, calendar: calendar), default: [:]][group, default: 0] += end.timeIntervalSince(start)
+                start = end
+            }
+        }
+    }
+
+    mutating func add(_ other: ActivityDayDigest, grid: Bool) {
+        if grid { heatmap.add(other.heatmap) }
+        byDay.merge(other.byDay) { $0.merging($1, uniquingKeysWith: +) }
+    }
+}
+
+actor ActivityDigestCache {
+    private var signature: ActivityDigestSignature?
+    private var days: [String: ActivityDayDigest] = [:]
+
+    /// `grid` and `week` are the day keys each view covers. `today` is still
+    /// being written, so it's never kept: `live` is its latest, and it's
+    /// added afresh each time. The rest are loaded only when not already
+    /// known; a day with no file is remembered as empty.
+    func digest(grid: [String], week: [String], today: String, live: ActivityDayLog?, signature: ActivityDigestSignature,
+                categorizer: ActivityCategorizer, calendar: Calendar,
+                load: @Sendable ([String]) async -> [ActivityDayLog]) async -> ActivityDayDigest {
         if signature != self.signature {
             self.signature = signature
             days.removeAll()
         }
-        let past = keys.filter { $0 != today }
-        let missing = past.filter { days[$0] == nil }
+        let gridDays = Set(grid)
+        let wanted = gridDays.union(week)
+        let missing = wanted.filter { $0 != today && days[$0] == nil }.sorted()
         if !missing.isEmpty {
             let logs = await load(missing)
-            guard signature == self.signature else { return ActivityHeatmap() }
-            for key in missing { days[key] = ActivityHeatmap() }
+            guard signature == self.signature else { return ActivityDayDigest() }
+            for key in missing { days[key] = ActivityDayDigest() }
             for log in logs where log.day != today {
-                days[log.day] = ActivityHeatmap(stretches: log.stretches, categorizer: categorizer, calendar: calendar)
+                days[log.day] = ActivityDayDigest(stretches: log.stretches, categorizer: categorizer, calendar: calendar)
             }
         }
-        var result = ActivityHeatmap()
-        for key in past {
-            if let day = days[key] { result.add(day) }
+        var result = ActivityDayDigest()
+        for key in wanted where key != today {
+            if let day = days[key] { result.add(day, grid: gridDays.contains(key)) }
         }
-        if let live, keys.contains(today) {
-            result.add(ActivityHeatmap(stretches: live.stretches, categorizer: categorizer, calendar: calendar))
+        if let live, wanted.contains(today) {
+            result.add(ActivityDayDigest(stretches: live.stretches, categorizer: categorizer, calendar: calendar),
+                       grid: gridDays.contains(today))
         }
         return result
     }
