@@ -3,8 +3,8 @@
 //  Nidus
 //
 //  Shortcuts actions: Start Focus, Add Focus Time, End Focus, Toggle Focus,
-//  Get Focus Status, and Run Nidus Command (JSON, for scripts and
-//  assistants; FocusCommands.swift). Phrases are declared as App Shortcuts
+//  Get Focus Status, Get Today's Activity, How Much Work Today, and Run Nidus
+//  Command (JSON, for scripts and assistants; FocusCommands.swift). Phrases are declared as App Shortcuts
 //  too, which Apple doesn't offer on macOS; on a Mac the actions are in the
 //  Shortcuts app, and Spotlight may list them. The actions run
 //  in the menu bar app's own process and reach the model through
@@ -343,6 +343,38 @@ struct AddFocusTimeIntent: AppIntent {
     }
 }
 
+struct GetTodayActivityIntent: AppIntent {
+    static let title: LocalizedStringResource = "Get Today's Activity"
+    static let description = IntentDescription(
+        "Says how today has gone so far: time in Work, in distracting categories and in everything else. It changes nothing.",
+        categoryName: "Activity")
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let model = try await NidusModel.forIntent()
+        let today = await model.activityToday()
+        let sentence = ActivityTodaySummary.sentence(today, tracking: model.tracksActivityAllDay)
+        return .result(value: sentence, dialog: "\(sentence)")
+    }
+}
+
+struct HowMuchWorkIntent: AppIntent {
+    static let title: LocalizedStringResource = "How Much Work Today"
+    static let description = IntentDescription(
+        "Returns the minutes counted in your Work group today. It changes nothing.",
+        categoryName: "Activity")
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<Int> & ProvidesDialog {
+        let model = try await NidusModel.forIntent()
+        let today = await model.activityToday()
+        // A number can't say why it's 0; the dialog does.
+        let sentence = ActivityTodaySummary.workSentence(today, tracking: model.tracksActivityAllDay,
+                                                         workHasItems: model.workHasItems)
+        return .result(value: ActivityTodaySummary.workMinutes(today), dialog: "\(sentence)")
+    }
+}
+
 /// For scripts and assistants: one JSON request in, one JSON answer out,
 /// with the same rules as the other actions. A one-step shortcut around it
 /// is what `shortcuts run` calls; docs/automation.md has the contract.
@@ -374,7 +406,7 @@ struct RunNidusCommandIntent: AppIntent {
 
 /// Phrases for App Shortcuts, which Apple offers on iPhone and iPad but not
 /// on macOS; kept so the metadata stays complete. Every phrase says the app's
-/// name, as the system requires.
+/// name, as the system requires, and the system takes at most ten of these.
 struct NidusShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -401,5 +433,14 @@ struct NidusShortcuts: AppShortcutsProvider {
             phrases: ["Is focus on in \(.applicationName)",
                       "How much focus time is left in \(.applicationName)"],
             shortTitle: "Focus Status", systemImageName: "timer")
+        AppShortcut(
+            intent: GetTodayActivityIntent(),
+            phrases: ["What have I done today in \(.applicationName)",
+                      "Today's activity in \(.applicationName)"],
+            shortTitle: "Today's Activity", systemImageName: "chart.bar")
+        AppShortcut(
+            intent: HowMuchWorkIntent(),
+            phrases: ["How much work today in \(.applicationName)"],
+            shortTitle: "Work Today", systemImageName: "briefcase")
     }
 }

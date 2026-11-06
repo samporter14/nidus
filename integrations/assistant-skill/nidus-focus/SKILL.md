@@ -44,6 +44,9 @@ Run the script from this skill's folder. Put every value in single quotes.
   Run `setups` first, then pass that name or id. If the setup isn't there, say
   so and list the ones that are; don't start something else instead.
 - **There's no toggle.** Never end a session unless the user asks to end it.
+- **This script doesn't read activity.** For "how much did I work today?", say
+  that Get Today's Activity and How Much Work Today are Nidus's actions in the
+  Shortcuts app; don't work it out from `status`.
 - **After a timeout or an error with no JSON answer**, run `status` before
   anything else. Retry a start, add or end only if status shows it didn't
   happen, and reuse the request's id when you do.

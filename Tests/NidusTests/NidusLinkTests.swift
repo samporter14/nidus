@@ -368,7 +368,7 @@ struct ShortcutsActionTests {
         // by appintentsmetadataprocessor, which Scripts/appintents-metadata.sh
         // runs. Apple doesn't offer App Shortcuts on macOS; the actions are
         // in Shortcuts either way.
-        #expect(NidusShortcuts.appShortcuts.count == 5)
+        #expect(NidusShortcuts.appShortcuts.count == 7)
     }
 
     @Test func theMinutesOfAnActionShareTheLinksRange() {

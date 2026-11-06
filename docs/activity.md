@@ -23,6 +23,12 @@ New recaps show observed intervals, known document switches, context switches, a
 - **Hour by hour.** Weekdays by hours, over the last four weeks from Today or the selected range from Week and Month. An hour takes the color of whatever filled most of it: Work, a category, or everything else. Finished days are worked out once, off the main thread, and kept until the window closes.
 - **Inside an app.** In the Apps list, a row with anything named inside it opens in place: a browser to its sites and their pages, a document app to its files.
 
+## Widget and Shortcuts
+
+Nidus Today, a small or medium widget, shows today's Work, distracting and other time, split as Hour by hour splits it. The medium size adds the day as a ribbon of at most 24 bands. Each stretch is classified before anything is merged, so the bands are of those three kinds, and the totals are counted from the stretches rather than the bands. Excluded apps stay out. `widget.json` gets the summary when a save lands, at most every 15 minutes, at once for a new day, a cleared record or a newly excluded app, and only if it changed; that reloads this widget alone. It holds seconds and times of day, never a name. Past midnight the widget shows nothing until the new day has something to show.
+
+Get Today's Activity and How Much Work Today work the same split out when they are run, so they are always current.
+
 ## Tracking and access
 
 Activity, all-day tracking and titles are on by default; **Track activity** and **Track all day** under Tracking are the off switches. Record sessions must also be on. Titles need Accessibility access and websites need Automation access per browser, each asked for from a button there. Nothing leaves this Mac.
