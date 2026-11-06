@@ -91,7 +91,7 @@ struct ActivityWeekGlance: View {
                     Text(verbatim: name(of: day))
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(.tertiary)
-                    Text(ActivityDuration.string(day.seconds))
+                    Text(day.parts.isEmpty ? "\u{2013}" : ActivityDuration.string(day.seconds))
                         .font(.system(size: 9, design: .rounded))
                         .foregroundStyle(.secondary)
                         .monospacedDigit()
