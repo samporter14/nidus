@@ -49,6 +49,11 @@ struct FocusActivityPage: View {
     @State private var displayedCategorizer = ActivityCategorizer(categories: [], work: FocusCategory.workSeed)
     @State private var displayedCategories: [ActivityCategoryTotal] = []
     @State private var displayedFiltered: ActivityTotals?
+    @State private var digestCache = ActivityDigestCache()
+    @State private var displayedHeatmap = ActivityHeatmap()
+    @State private var displayedWeek: ActivityWeek?
+    /// Open rows of the ranked list: app ids, and app and site together.
+    @State private var openRows: Set<String> = []
 
     private var sessions: [SessionEntry] { model.activitySessions }
     private var effectiveNow: Date { now ?? Date() }
@@ -86,6 +91,8 @@ struct FocusActivityPage: View {
                 } else {
                     dailyPattern(scope.totals, sessions: rangeSessions)
                 }
+                weekGlance
+                hourHeatmap
                 rankedList(displayedFiltered ?? scope.totals)
                 projectInsights
                 sessionList(rangeSessions)
@@ -98,6 +105,7 @@ struct FocusActivityPage: View {
         }
         .onAppear { refreshProjects(); openInitialSession() }
         .task(id: requestedCacheKey) { await reload(requestedCacheKey) }
+        .task(id: digestRequest) { await reloadDigest(digestRequest) }
     }
 
     private var hero: some View {
@@ -255,6 +263,81 @@ struct FocusActivityPage: View {
         }
     }
 
+    /// Today alone says little about the shape of a week, so that view looks
+    /// back four weeks. A week or a month covers itself.
+    private var heatmapInterval: DateInterval {
+        let shown = requestedInterval
+        guard period == .today else { return shown }
+        let start = calendar.date(byAdding: .day, value: -27, to: shown.start) ?? shown.start
+        return DateInterval(start: start, end: shown.end)
+    }
+
+    /// The last day of the shown range, or today if the range isn't over.
+    private var weekEnd: Date {
+        let last = requestedInterval.end.addingTimeInterval(-1)
+        return calendar.startOfDay(for: min(last, effectiveNow))
+    }
+
+    private var digestRequest: ActivityDigestRequest {
+        let interval = heatmapInterval
+        return ActivityDigestRequest(signature: .init(version: model.controller?.historyVersion ?? 0, excluded: model.activityExcludedApps,
+                                                      work: model.workGroup, categories: model.categories,
+                                                      overrides: model.activityOverrides),
+                                     dayVersion: model.controller?.activityDayVersion ?? 0,
+                                     start: interval.start, end: interval.end, weekEnd: weekEnd)
+    }
+
+    @ViewBuilder
+    private var weekGlance: some View {
+        if let displayedWeek {
+            NidusSettingsSection {
+                VStack(alignment: .leading, spacing: 3) {
+                    settingsSectionHeader("Week at a glance")
+                    Text("Seven days by category, against the seven before.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            } content: {
+                ActivityWeekGlance(week: displayedWeek)
+                    .padding(.vertical, 8)
+            }
+        }
+    }
+
+    private var hourHeatmap: some View {
+        NidusSettingsSection {
+            VStack(alignment: .leading, spacing: 3) {
+                settingsSectionHeader("Hour by hour")
+                Text(period == .today ? "The last four weeks, by weekday and hour." : "This range, by weekday and hour.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+        } content: {
+            ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar)
+                .padding(.vertical, 8)
+        }
+    }
+
+    private func reloadDigest(_ request: ActivityDigestRequest) async {
+        guard let recorder = model.controller?.activityRecorder else { return }
+        let grid = dayKeys(from: request.start, to: request.end)
+        let week = ActivityWeek.keys(ending: request.weekEnd, calendar: calendar)
+        let today = ActivityDayLog.key(for: Date(), calendar: calendar)
+        // Today is still being written, and the recorder has the latest of it.
+        let written = recorder.isRecording ? recorder.today() : await recorder.store.load(days: [today]).first
+        let excluded = request.signature.excluded
+        let categorizer = ActivityCategorizer(categories: request.signature.categories, work: request.signature.work,
+                                              overrides: request.signature.overrides)
+        let digest = await digestCache.digest(grid: grid, week: week, today: today, live: written?.hiding(excluded),
+                                              signature: request.signature, categorizer: categorizer, calendar: calendar) { missing in
+            await recorder.store.load(days: missing).map { $0.hiding(excluded) }
+        }
+        guard !Task.isCancelled else { return }
+        if digest.heatmap != displayedHeatmap { displayedHeatmap = digest.heatmap }
+        let shown = ActivityWeek(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
+        if shown != displayedWeek { displayedWeek = shown }
+    }
+
     private func dailyPattern(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
         NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
@@ -377,9 +460,15 @@ struct FocusActivityPage: View {
                 }
             } else {
                 ForEach(Array(rows.prefix(limit).enumerated()), id: \.element.id) { index, row in
+                    let details = listKind == .apps ? totals.appDetails[row.id] ?? [] : []
                     ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint,
-                                    reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { target.perform() } })
+                                    reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { target.perform() } },
+                                    expansion: details.isEmpty ? nil : openRows.contains(row.id),
+                                    toggle: { toggle(row.id) })
                         .activityCountAs(model: model, target: ActivityCountTarget(rank: row, kind: listKind))
+                    if openRows.contains(row.id), !details.isEmpty {
+                        ActivityDrillList(appID: row.id, details: details, open: openRows, toggle: toggle)
+                    }
                 }
             }
             if count > 5 {
@@ -395,6 +484,11 @@ struct FocusActivityPage: View {
                 .accessibilityHint("Expands the ranked list")
             }
         }
+    }
+
+    private func toggle(_ id: String) {
+        let change = { if openRows.remove(id) == nil { openRows.insert(id) } }
+        if reduceMotion { change() } else { withAnimation(.easeInOut(duration: 0.18)) { change() } }
     }
 
     /// What the lists are cut to, and the way back.
@@ -676,7 +770,10 @@ enum ActivityInk {
     static let clay = FocusPalette.clay
     static let blue = Color(light: Color(.sRGB, red: 0.36, green: 0.55, blue: 0.70, opacity: 1), dark: Color(.sRGB, red: 0.53, green: 0.69, blue: 0.81, opacity: 1))
     static let sage = Color(light: Color(.sRGB, red: 0.48, green: 0.62, blue: 0.52, opacity: 1), dark: Color(.sRGB, red: 0.63, green: 0.76, blue: 0.65, opacity: 1))
+    /// The tint for time that belongs to no one thing.
+    nonisolated static let quietTint = -1
     static func series(_ index: Int) -> Color {
+        if index < 0 { return Color.primary.opacity(0.28) }
         switch index % 5 {
         case 0: return blue
         case 1: return sage
@@ -702,6 +799,8 @@ struct ActivityTotals {
     var sites: [ActivityRank] = []
     var documents: [ActivityRank] = []
     var services: [ActivityRank] = []
+    /// What's inside each app, by app id.
+    var appDetails: [String: [ActivityDrill]] = [:]
     var chartBuckets: [Date: [String: TimeInterval]] = [:]
 
     var lead: ActivityRank? { services.first }
@@ -767,6 +866,7 @@ struct ActivityTotals {
             }
         }
         apps = Self.ranked(appSeconds, names: appNames)
+        appDetails = ActivityDrill.tree(rows.map(\.row))
         sites = Self.ranked(siteSeconds).map { rank in
             var rank = rank
             rank.sourceAppID = siteApps[rank.id]?.id
@@ -1038,10 +1138,18 @@ private struct ActivityRankRow: View {
     let tint: Color
     /// Goes back to the page or document, where the row has somewhere to go.
     var reopen: (() -> Void)? = nil
+    /// Whether the row is open, where it has anything inside.
+    var expansion: Bool? = nil
+    var toggle: () -> Void = {}
     @State private var hovering = false
 
     var body: some View {
-        if let reopen {
+        if let expansion {
+            Button(action: toggle) { content.contentShape(Rectangle()) }
+                .buttonStyle(.plain)
+                .accessibilityValue(expansion ? "Open" : "Closed")
+                .accessibilityHint(expansion ? "Hides what's inside" : "Shows what's inside")
+        } else if let reopen {
             Button(action: reopen) { content.contentShape(Rectangle()) }
                 .buttonStyle(.plain)
                 .onHover { hovering = $0 }
@@ -1076,6 +1184,13 @@ private struct ActivityRankRow: View {
                     .font(.system(size: 11, weight: .medium, design: .rounded))
                     .foregroundStyle(.secondary)
                     .monospacedDigit()
+                if let expansion {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .rotationEffect(.degrees(expansion ? 90 : 0))
+                        .accessibilityHidden(true)
+                }
             }
             if let subtitle = item.subtitle, !subtitle.isEmpty {
                 Text(verbatim: subtitle)

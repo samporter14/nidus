@@ -148,7 +148,7 @@ struct ActivityDayRibbon: View {
                 context.clip(to: shape)
                 for block in ribbon.blocks {
                     let rect = frame(of: block, in: size)
-                    context.fill(Path(rect), with: .color(ActivityInk.series(block.series)))
+                    context.fill(Path(rect), with: .color(ActivityInk.series(ribbon.tint(ofSeries: block.series))))
                 }
                 if let hovered {
                     let rect = frame(of: hovered, in: size)
@@ -200,7 +200,7 @@ struct ActivityDayRibbon: View {
     private var legend: some View {
         HStack(spacing: 13) {
             ForEach(Array(ribbon.series.enumerated()), id: \.element.id) { index, item in
-                ActivityLegend(color: ActivityInk.series(index), title: "\(item.name)  \(ActivityDuration.string(item.seconds))")
+                ActivityLegend(color: ActivityInk.series(ribbon.tint(ofSeries: index)), title: "\(item.name)  \(ActivityDuration.string(item.seconds))")
                     .lineLimit(1)
             }
         }
