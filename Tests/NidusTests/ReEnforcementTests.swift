@@ -68,6 +68,30 @@ struct ReEnforcementTests {
         #expect(!(0...(every * 3)).contains { FocusController.sweepIsDue(tick: $0, enforcing: false) })
     }
 
+    @Test func browserSweepRunsEverySecondInABrowserAndEveryFifthOtherwise() {
+        let t0 = Date(timeIntervalSince1970: 1_000)
+        func due(_ after: TimeInterval, browser: Bool, last: Date? = t0) -> Bool {
+            FocusController.browserSweepIsDue(now: t0.addingTimeInterval(after), lastSweep: last, frontmostIsBrowser: browser)
+        }
+        // The first sweep of a session always goes out.
+        #expect(due(0, browser: false, last: nil))
+        // A browser in front: every tick.
+        #expect((1...10).allSatisfy { due(TimeInterval($0), browser: true) })
+        // Nothing in front: only about every fifth second.
+        #expect((1...3).allSatisfy { !due(TimeInterval($0), browser: false) })
+        #expect(due(5, browser: false))
+        #expect(due(4.6, browser: false))
+        // A clock set back must not stall the sweep.
+        #expect(due(-30, browser: false))
+    }
+
+    @Test func browserBundleIDsAreRecognised() {
+        #expect(FocusController.isBrowser("com.apple.Safari"))
+        #expect(FocusController.isBrowser("com.google.Chrome"))
+        #expect(!FocusController.isBrowser("com.apple.finder"))
+        #expect(!FocusController.isBrowser(nil))
+    }
+
     @Test func refusedAppsStartEmptyAndClearOnStop() {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("nidus-reenf-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
