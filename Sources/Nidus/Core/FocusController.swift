@@ -153,6 +153,8 @@ final class FocusController: ObservableObject {
     private var activityDetailAt: Date?
     private var lastAppActivation: Date?
     private var sweepInFlight = false
+    /// When a browser sweep last went out; nil until the first of a session.
+    private var lastBrowserSweepAt: Date?
     private lazy var appBlocker = AppBlocker(mode: .block([]), action: .terminate) { [weak self] app in
         self?.appWasBlocked(app)
     }
@@ -229,8 +231,12 @@ final class FocusController: ObservableObject {
             center.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.systemDidWake() }
             },
-            center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] _ in
+            center.addObserver(forName: NSWorkspace.didActivateApplicationNotification, object: nil, queue: .main) { [weak self] note in
+                let activated = (note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication)?.bundleIdentifier
                 MainActor.assumeIsolated {
+                    // Switching to a browser is when a blocked tab can come into
+                    // view, so look at once rather than at the next slow sweep.
+                    if Self.isBrowser(activated), self?.enforcing != nil { self?.sweepBrowsers() }
                     self?.lastAppActivation = Date()
                     self?.invalidateActivityProbe()
                     self?.activityRecorder.frontAppDidChange()
@@ -438,7 +444,14 @@ final class FocusController: ObservableObject {
         if before != (engine.session != nil, engine.isRunning, engine.isOnBreak) { objectWillChange.send() }
         warnAboutEndingSnoozes()
         warnAboutEndingBreak()
-        if enforcing != nil { sweepBrowsers() }
+        // Every second while a browser is in front, every few otherwise (a
+        // switch to one sweeps at once, see start()). The countdown and the
+        // rest of this tick still run each second.
+        if enforcing != nil,
+           Self.browserSweepIsDue(now: now, lastSweep: lastBrowserSweepAt,
+                                  frontmostIsBrowser: Self.isBrowser(NSWorkspace.shared.frontmostApplication?.bundleIdentifier)) {
+            sweepBrowsers()
+        }
         sweepApps()
         ticksSinceCheckpoint += 1
         if ticksSinceCheckpoint >= 15, engine.session != nil {
@@ -460,6 +473,25 @@ final class FocusController: ObservableObject {
         enforcingTicks = 0
         appBlocker.sweep()
         if appBlocker.refusedToQuit != refusedApps { refusedApps = appBlocker.refusedToQuit }
+    }
+
+    /// Seconds between browser sweeps while no browser is in front.
+    nonisolated static let idleBrowserSweepEvery: TimeInterval = 5
+
+    nonisolated static func isBrowser(_ bundleID: String?) -> Bool {
+        guard let bundleID else { return false }
+        return BrowserProfile.known.contains { $0.bundleID == bundleID }
+    }
+
+    /// Whether this tick sweeps browsers: always with a browser in front (the
+    /// tick is the 1 s cadence), the first time of a session (`lastSweep` nil),
+    /// and otherwise once `idleBrowserSweepEvery` has passed. A clock that moved
+    /// back sweeps too. The half second absorbs timer jitter.
+    nonisolated static func browserSweepIsDue(now: Date, lastSweep: Date?, frontmostIsBrowser: Bool) -> Bool {
+        guard let lastSweep else { return true }
+        if frontmostIsBrowser { return true }
+        let elapsed = now.timeIntervalSince(lastSweep)
+        return elapsed < 0 || elapsed >= idleBrowserSweepEvery - 0.5
     }
 
     /// Seconds between app sweeps (the controller ticks once a second).
@@ -686,11 +718,14 @@ final class FocusController: ObservableObject {
         enforcingOnBreak = engine.isOnBreak
 
         guard let target else {
+            lastBrowserSweepAt = nil
             appBlocker.stop()
             if Self.tabHandling(from: before, to: nil) == .restoreAll { restoreTabs(keepBlocked: nil) }
             return
         }
         if restarting { appBlocker.stop() }
+        // New rules: the next tick sweeps whatever the cadence.
+        lastBrowserSweepAt = nil
         appBlocker.mode = target.mode == .block ? .block(target.apps) : .allow(target.apps)
         appBlocker.start()
         if case .keepBlocked(let rule) = Self.tabHandling(from: before, to: target) {
@@ -778,6 +813,7 @@ final class FocusController: ObservableObject {
         // Nothing to find: no browser needs asking.
         if enforcing.mode == .block, enforcing.websites.isEmpty { return }
         sweepInFlight = true
+        lastBrowserSweepAt = Date()
         let rule = websiteRule(for: enforcing)
         let browsers = self.browsers
         let goal = engine.session?.plan.goal ?? ""

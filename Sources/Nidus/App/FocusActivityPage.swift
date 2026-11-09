@@ -42,6 +42,8 @@ struct FocusActivityPage: View {
     @State private var displayedScope = ActivityScope(logs: [], sessions: [])
     @State private var displayedLoadKey: ActivityCacheKey?
     @State private var displayedProjects: [ActivityProjectChoice] = []
+    /// Worked out in `reload`, not in `body`, so a redraw doesn't redo it.
+    @State private var displayedInsights: [ActivityProjectInsight] = []
     @State private var displayedProjectsVersion = -1
     /// A group's id (Uncategorized's included): the ranked lists count only its time.
     @State private var categoryFilter: String?
@@ -64,7 +66,9 @@ struct FocusActivityPage: View {
     }
     private var requestedCacheKey: ActivityCacheKey {
         let interval = requestedInterval
-        return ActivityCacheKey(version: model.controller?.historyVersion ?? 0, dayVersion: model.controller?.activityDayVersion ?? 0,
+        return ActivityCacheKey(version: model.controller?.historyVersion ?? 0,
+                                dayVersion: ActivityCacheKey.dayVersion(model.controller?.activityDayVersion ?? 0,
+                                                                        start: interval.start, end: interval.end, now: effectiveNow),
                                 start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly,
                                 excluded: model.activityExcludedApps, work: model.workGroup, categories: model.categories,
                                 overrides: model.activityOverrides, categoryFilter: categoryFilter)
@@ -428,7 +432,7 @@ struct FocusActivityPage: View {
     }
 
     private var projectInsights: some View {
-        let values = projectInsightValues
+        let values = displayedInsights
         guard !values.isEmpty else { return AnyView(EmptyView()) }
         return AnyView(NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
@@ -477,12 +481,6 @@ struct FocusActivityPage: View {
                 }
             }
         })
-    }
-
-    private var projectInsightValues: [ActivityProjectInsight] {
-        let anchor = period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar)
-        let interval = period.interval(around: anchor, calendar: calendar)
-        return ActivityProjectInsights.summaries(sessions: sessions, interval: interval, calendar: calendar)
     }
 
     private func rankedList(_ totals: ActivityTotals) -> some View {
@@ -670,6 +668,8 @@ struct FocusActivityPage: View {
         let known = [ActivityCategorizer.workID, ActivityCategorizer.uncategorizedID] + key.categories.map(\.id)
         let filter = key.categoryFilter.flatMap { known.contains($0) ? $0 : nil }
         displayedSessions = inRange
+        displayedInsights = ActivityProjectInsights.summaries(sessions: sessions, interval: DateInterval(start: key.start, end: key.end),
+                                                              calendar: calendar)
         displayedScope = scope
         displayedCategorizer = categorizer
         displayedCategories = scope.categoryTotals(using: categorizer)
@@ -714,6 +714,12 @@ struct ActivityCacheKey: Equatable {
     let categories: [FocusCategory]
     let overrides: ActivityOverrides
     let categoryFilter: String?
+
+    /// The 2-minute day-file save only changes today's numbers, so a range
+    /// that's over keeps its cached load instead of reading its files again.
+    static func dayVersion(_ version: Int, start: Date, end: Date, now: Date) -> Int {
+        start <= now && now < end ? version : 0
+    }
 
     /// The groups as the popover has them, "Count as" included.
     var categorizer: ActivityCategorizer {
