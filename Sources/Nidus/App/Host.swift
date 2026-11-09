@@ -44,17 +44,29 @@ final class NidusHost {
             }()
         }
 
+        /// What each key last decoded to, beside the bytes it came from. The
+        /// model reads preferences on every redraw and each read was a full
+        /// JSON decode. A read compares the stored bytes with the cached ones
+        /// (a memcmp), so a write by anyone, `setValueQuietly` included,
+        /// can't leave a stale value, and no `didChange` is needed to expire it.
+        private var decoded: [String: (data: Data, value: Any)] = [:]
+
         func value<Value: Codable>(forKey key: String, default value: Value) -> Value {
-            guard let data = defaults.data(forKey: key),
-                  let decoded = try? JSONDecoder().decode(Value.self, from: data) else { return value }
-            return decoded
+            guard let data = defaults.data(forKey: key) else { return value }
+            if let hit = decoded[key], hit.data == data, let cached = hit.value as? Value { return cached }
+            guard let result = try? JSONDecoder().decode(Value.self, from: data) else { return value }
+            decoded[key] = (data, result)
+            return result
         }
 
         /// A saved list, element by element: one element that doesn't decode
         /// is dropped, not every other with it.
         func list<Element: Codable>(forKey key: String, default value: [Element]) -> [Element] {
             guard let data = defaults.data(forKey: key) else { return value }
-            return LossyJSON.list(Element.self, from: data) ?? value
+            if let hit = decoded[key], hit.data == data, let cached = hit.value as? [Element] { return cached }
+            guard let result = LossyJSON.list(Element.self, from: data) else { return value }
+            decoded[key] = (data, result)
+            return result
         }
 
         func setValue<Value: Codable>(_ value: Value, forKey key: String) {

@@ -212,4 +212,28 @@ struct BrickCompanionTests {
         #expect(replaced.data.flatMap(BrickSignal.parse) == signal())
         #expect(replaced.refreshedBookmark != nil)
     }
+
+    @Test func unchangedStampSkipsTheReadAndAnyChangeOrDisappearanceDoesNot() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("nidus-brick-stamp-\(UUID().uuidString).json")
+        defer { try? FileManager.default.removeItem(at: url) }
+        try Data("{}".utf8).write(to: url)
+        let first = try #require(BrickFileStamp(url: url))
+        #expect(BrickFileStamp(url: url) == first)
+        #expect(BrickFileWatch.isUnchanged(cached: first, current: BrickFileStamp(url: url)))
+        // A rewrite of the same length still moves the time or the inode.
+        try Data("[]".utf8).write(to: url, options: .atomic)
+        #expect(!BrickFileWatch.isUnchanged(cached: first, current: BrickFileStamp(url: url)))
+        try Data(repeating: 65, count: 100).write(to: url)
+        #expect(BrickFileStamp(url: url)?.size == 100)
+        // Gone, or never read successfully: always read again.
+        try FileManager.default.removeItem(at: url)
+        #expect(BrickFileStamp(url: url) == nil)
+        #expect(!BrickFileWatch.isUnchanged(cached: first, current: nil))
+        #expect(!BrickFileWatch.isUnchanged(cached: nil, current: nil))
+    }
+
+    @Test func pollIsSlowAndToleratesCoalescing() {
+        #expect(BrickCompanion.pollInterval >= .seconds(10))
+        #expect(BrickCompanion.pollTolerance > .zero)
+    }
 }

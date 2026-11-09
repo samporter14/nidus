@@ -166,6 +166,17 @@ import Testing
         #expect(key(overrides) != key(ActivityOverrides()))
     }
 
+    @Test func onlyARangeContainingTodayFollowsTheDaySave() {
+        let now = at(12)
+        let today = DateInterval(start: at(0), end: at(24))
+        let past = DateInterval(start: at(-48), end: at(-24))
+        #expect(ActivityCacheKey.dayVersion(7, start: today.start, end: today.end, now: now) == 7)
+        #expect(ActivityCacheKey.dayVersion(8, start: past.start, end: past.end, now: now)
+                == ActivityCacheKey.dayVersion(9, start: past.start, end: past.end, now: now))
+        // A range ending exactly at midnight is over.
+        #expect(ActivityCacheKey.dayVersion(7, start: past.start, end: at(0), now: at(0)) == 0)
+    }
+
     // MARK: CSV
 
     @Test func aWindowsLineBreakInATitleIsQuoted() {
