@@ -7,7 +7,9 @@
 //  locks, the Mac sleeps) and otherwise sets one timer for the next moment
 //  anything could change, so an unchanging afternoon costs almost nothing.
 //  The only regular work is the tab or window-title read, at most every four
-//  seconds.
+//  seconds while someone is typing or clicking, and only every twenty while
+//  they are not (and not at all while nothing has been touched since the
+//  last read).
 //
 //  A stretch ends when the app, site or title changes, or at idle, lock,
 //  sleep, a pause or midnight. Time after the last input is not credited,
@@ -55,9 +57,14 @@ final class ActivityRecorder {
     nonisolated static let defaultRetentionDays = 90
     /// Between reads of the front tab or title.
     nonisolated static let probeInterval: TimeInterval = 4
+    /// While nobody has touched anything, the read is not repeated, and the
+    /// recorder only looks every this often for input to start it again.
+    nonisolated static let quietProbeInterval: TimeInterval = 20
     /// How soon a return from idle is noticed. There is no event for it
-    /// without watching every input, which this will not do.
-    nonisolated static let idlePollInterval: TimeInterval = 10
+    /// without watching every input, which this will not do. Only the noticing
+    /// is late: a stretch is back-dated to the last input, not to the poll.
+    /// An app switch or a wake from sleep still reconciles at once.
+    nonisolated static let idlePollInterval: TimeInterval = 30
     /// A crash loses at most this much.
     nonisolated static let saveInterval: TimeInterval = 120
     /// Passing through an app on the way to another isn't time in it.
@@ -112,6 +119,9 @@ final class ActivityRecorder {
     private var probeInFlight = false
     private var generation = 0
     private var lastProbeAt: Date?
+    /// When the last read was either made or judged unnecessary. Only this
+    /// moves while quiet, so the wake spacing doesn't depend on a read.
+    private var lastProbeCheck: Date?
     private var failedProbes = 0
     private var lastDetail: (detail: ActivityDetail, id: String, pid: pid_t, at: Date)?
     /// The private window in front, kept out until a read says otherwise.
@@ -520,21 +530,42 @@ final class ActivityRecorder {
     private func invalidateReads() {
         generation &+= 1
         lastProbeAt = nil
+        lastProbeCheck = nil
         lastDetail = nil
         failedProbes = 0
     }
 
     private func probeIfDue(_ front: ActivityFrontApp, at t: Date) {
         guard ActivityProbe.needsProbe(front.id, titles: settings.titles) else { return }
-        guard !probeInFlight,
-              lastProbeAt.map({ t.timeIntervalSince($0) >= Self.probeInterval }) ?? true else { return }
+        guard !probeInFlight else { return }
+        if let lastProbeAt, t.timeIntervalSince(lastProbeAt) >= Self.probeInterval { lastProbeCheck = t }
+        guard Self.shouldProbe(lastProbeAt: lastProbeAt, now: t, secondsSinceInput: idleSeconds,
+                               awaitingFirstRead: open?.awaitingFirstRead ?? true) else { return }
         probeInFlight = true
+        lastProbeCheck = t
         lastProbeAt = t
         let asked = generation
         let titles = settings.titles
         host.probe(front, titles: titles) { [weak self] detail in
             self?.finishProbe(detail, for: front, asked: asked, at: t, titles: titles)
         }
+    }
+
+    /// Whether a read is worth making. Nothing read can have changed if there
+    /// was no input since the last one (a streaming page's title may be
+    /// noticed late, on purpose). The first read of a stretch always happens.
+    nonisolated static func shouldProbe(lastProbeAt: Date?, now: Date, secondsSinceInput: TimeInterval,
+                                        awaitingFirstRead: Bool) -> Bool {
+        guard let lastProbeAt else { return true }
+        let elapsed = now.timeIntervalSince(lastProbeAt)
+        guard elapsed >= probeInterval else { return false }
+        return awaitingFirstRead || secondsSinceInput <= elapsed
+    }
+
+    /// How long to wait before the next look: the usual spacing while there is
+    /// input, the long one once a whole interval has passed with none.
+    nonisolated static func probeSpacing(secondsSinceInput: TimeInterval) -> TimeInterval {
+        secondsSinceInput >= probeInterval ? quietProbeInterval : probeInterval
     }
 
     private func finishProbe(_ detail: ActivityDetail?, for app: ActivityFrontApp, asked: Int, at requested: Date, titles: Bool) {
@@ -623,7 +654,8 @@ final class ActivityRecorder {
             if open != nil, !focusRunning { wait = min(wait, settings.idleCutoff - idleSeconds) }
             if open != nil, !probeInFlight, let front = host.frontApp(),
                ActivityProbe.needsProbe(front.id, titles: settings.titles) {
-                let due = lastProbeAt.map { Self.probeInterval - t.timeIntervalSince($0) } ?? 0
+                let spacing = Self.probeSpacing(secondsSinceInput: idleSeconds)
+                let due = lastProbeAt.map { _ in spacing - t.timeIntervalSince(lastProbeCheck ?? t) } ?? 0
                 wait = min(wait, due)
             }
             if hasPending {
@@ -641,7 +673,18 @@ final class SystemActivityHost: ActivityRecorderHost {
     private let queue: DispatchQueue
     private var timer: Timer?
 
-    init(queue: DispatchQueue) { self.queue = queue }
+    private var fire: (@MainActor () -> Void)?
+
+    init(queue: DispatchQueue) {
+        self.queue = queue
+        // The display coming back is the likeliest moment for the person to
+        // return, and the idle poll is slow now: look straight away.
+        // The host lives as long as the app, so the observer is never removed.
+        _ = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+            MainActor.assumeIsolated { if self?.timer != nil { self?.fire?() } }
+        }
+    }
 
     func frontApp() -> ActivityFrontApp? {
         guard let app = NSWorkspace.shared.frontmostApplication, let id = app.bundleIdentifier else { return nil }
@@ -666,10 +709,12 @@ final class SystemActivityHost: ActivityRecorderHost {
     func arm(after seconds: TimeInterval?, fire: @escaping @MainActor () -> Void) {
         timer?.invalidate()
         timer = nil
+        self.fire = seconds == nil ? nil : fire
         guard let seconds else { return }
         let next = Timer(timeInterval: seconds, repeats: false) { _ in MainActor.assumeIsolated { fire() } }
-        // Let macOS bundle this with other wake-ups.
-        next.tolerance = min(2, seconds * 0.25)
+        // Let macOS bundle this with other wake-ups. Every wake re-reads the
+        // clock and the last input, so a late one shifts nothing recorded.
+        next.tolerance = min(5, seconds * 0.25)
         RunLoop.main.add(next, forMode: .common)
         timer = next
     }

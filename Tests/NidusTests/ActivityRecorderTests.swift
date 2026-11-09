@@ -916,4 +916,96 @@ extension ActivityRecorderTests {
         rig.recorder.stop()
         #expect(rig.day("2026-11-04")?.seconds == 30)
     }
+
+    // MARK: Fewer wake-ups
+
+    @Test func probeDecisionNeedsInputSinceTheLastRead() {
+        let t = Date(timeIntervalSinceReferenceDate: 1000)
+        func go(_ last: TimeInterval?, idle: TimeInterval, first: Bool = false) -> Bool {
+            ActivityRecorder.shouldProbe(lastProbeAt: last.map { t.addingTimeInterval(-$0) }, now: t,
+                                         secondsSinceInput: idle, awaitingFirstRead: first)
+        }
+        #expect(go(nil, idle: 500), "The first read always happens")
+        #expect(!go(2, idle: 0), "Never sooner than the interval")
+        #expect(go(4, idle: 1), "Input since the last read")
+        #expect(go(10, idle: 10), "Input exactly at the last read still counts")
+        #expect(!go(10, idle: 11), "No input since the last read")
+        #expect(go(10, idle: 11, first: true), "A stretch's first read doesn't wait for input")
+    }
+
+    @Test func probeSpacingStretchesOnlyWhileQuiet() {
+        #expect(ActivityRecorder.probeSpacing(secondsSinceInput: 0) == ActivityRecorder.probeInterval)
+        #expect(ActivityRecorder.probeSpacing(secondsSinceInput: ActivityRecorder.probeInterval - 0.1) == ActivityRecorder.probeInterval)
+        #expect(ActivityRecorder.probeSpacing(secondsSinceInput: ActivityRecorder.probeInterval) == ActivityRecorder.quietProbeInterval)
+        #expect((15...30).contains(ActivityRecorder.quietProbeInterval))
+        #expect((30...60).contains(ActivityRecorder.idlePollInterval))
+    }
+
+    @Test func aQuietBrowserIsNotReadAgainAndWakesLessOften() {
+        let rig = Rig()
+        rig.host.autoAnswer = { _ in ActivityDetail(site: nil, title: nil, domain: "nature.com") }
+        rig.start(Rig.safari)
+        #expect(rig.host.probes == 1)
+        rig.host.idle = 10
+        rig.work(4)
+        #expect(rig.host.probes == 1, "Nothing touched since the read")
+        #expect(rig.host.armed == ActivityRecorder.quietProbeInterval)
+        rig.host.idle = 30
+        rig.work(20)
+        #expect(rig.host.probes == 1)
+        #expect(rig.host.armed == ActivityRecorder.quietProbeInterval)
+        // Input resumes: noticed at the next wake, read at once, then back to 4 s.
+        rig.host.idle = 1
+        rig.work(20)
+        #expect(rig.host.probes == 2)
+        #expect(rig.host.armed == ActivityRecorder.probeInterval)
+    }
+
+    @Test func aStretchIsStillBackdatedToTheLastInputAfterALongIdlePoll() {
+        let rig = Rig()
+        rig.start(Rig.word)
+        rig.work(100)
+        rig.leave(300)
+        #expect(rig.recorder.isIdle)
+        #expect(rig.host.armed == ActivityRecorder.idlePollInterval)
+        // Back 12 seconds ago, noticed only now, part way through a poll.
+        rig.clock.advance(ActivityRecorder.idlePollInterval - 5)
+        rig.host.idle = 12
+        rig.host.wake()
+        #expect(!rig.recorder.isIdle)
+        let returned = rig.stretches.last!
+        #expect(returned.start == rig.clock.now.addingTimeInterval(-12))
+    }
+
+    @Test func switchingAppsWhileIdleReconcilesWithoutWaitingForThePoll() {
+        let rig = Rig()
+        rig.start(Rig.word)
+        rig.leave(400)
+        #expect(rig.recorder.isIdle)
+        rig.host.idle = 0
+        rig.switchTo(Rig.mail)
+        #expect(!rig.recorder.isIdle)
+        rig.clock.advance(5)
+        #expect(rig.stretches.last?.appName == "Mail")
+    }
+
+    @Test func automationAnswerIsKeptPerProcessAndExpires() {
+        final class Box: @unchecked Sendable { var now = Date(timeIntervalSinceReferenceDate: 0); var calls = 0; var answer = false }
+        let box = Box()
+        let cache = AutomationPermissionCache(clock: { box.now })
+        func ask(_ pid: pid_t) -> Bool { cache.isGranted(pid: pid) { box.calls += 1; return box.answer } }
+        #expect(!ask(1))
+        #expect(!ask(1))
+        #expect(box.calls == 1, "Kept")
+        #expect(!ask(2))
+        #expect(box.calls == 2, "Per process")
+        box.answer = true
+        box.now += AutomationPermissionCache.lifetime - 1
+        #expect(!ask(1), "Still the old answer inside the window")
+        box.now += 1
+        #expect(ask(1), "A grant is seen once the window ends")
+        #expect(box.calls == 3)
+        box.now -= 1000
+        #expect(ask(1) && box.calls >= 4, "A clock set back never trusts an entry from the future")
+    }
 }

@@ -41,6 +41,9 @@ enum ActivityProbe {
     /// Longer than any address worth reopening, and short of a data: blob.
     static let urlLimit = 2048
 
+    /// Automation answers by process, shared by every read.
+    private static let permissions = AutomationPermissionCache()
+
     static func needsProbe(_ bundleID: String, titles: Bool) -> Bool {
         if BrowserProfile.known.contains(where: { $0.bundleID == bundleID }) { return true }
         return titles && (bundleID == capsidID || documentApps.contains(bundleID))
@@ -154,7 +157,9 @@ enum ActivityProbe {
 
     private static func selectedTab(in browser: BrowserProfile, pid: pid_t, titles: Bool) -> ActivityDetail? {
         let target = AppleEventTarget(processIdentifier: pid)
-        guard target.automationPermission(ask: false) == nil else { return nil }
+        // Asking the system on every read is wasteful, so the answer is kept
+        // per process for a minute: a grant made meanwhile is seen within it.
+        guard permissions.isGranted(pid: pid, check: { target.automationPermission(ask: false) == nil }) else { return nil }
         let window = ObjectSpecifier.index("cwin", 1)
         let tab = ObjectSpecifier.property(browser.bundleID == BrowserProfile.safari.bundleID ? "cTab" : "acTa", of: window)
         let url = ObjectSpecifier.property(browser.urlProperty, of: tab)
@@ -175,7 +180,8 @@ enum ActivityProbe {
         let rawTitle = titles ? (try? target.get(name, timeout: 0.75).stringValue) : nil
         // The selected tab may change between two Apple Events, and a title
         // from a different tab must not be kept under this one's site.
-        let confirmedURL = try? target.get(url, timeout: 0.75).stringValue
+        // With names off there is no title to mismatch, so no second read.
+        let confirmedURL = titles ? (try? target.get(url, timeout: 0.75).stringValue) : rawURL
         guard confirmedURL == rawURL else { return nil }
         return ActivityDetail(site: service(for: rawURL), title: cleanTitle(rawTitle),
                               domain: ActivityDomain.site(from: rawURL), url: keptURL(rawURL))
@@ -210,5 +216,34 @@ enum ActivityProbe {
         let title = String(words.joined(separator: " ").prefix(160))
         guard !title.isEmpty, !title.contains("://"), !title.lowercased().hasPrefix("www.") else { return nil }
         return title
+    }
+}
+
+/// Remembers whether a process may be sent Apple Events, per process ID, for a
+/// short while. A grant or a refusal is picked up when its entry expires. The
+/// clock is injected so expiry can be tested.
+final class AutomationPermissionCache: @unchecked Sendable {
+    static let lifetime: TimeInterval = 60
+
+    private let lock = NSLock()
+    private var entries: [pid_t: (granted: Bool, at: Date)] = [:]
+    private let clock: @Sendable () -> Date
+
+    init(clock: @escaping @Sendable () -> Date = { Date() }) { self.clock = clock }
+
+    /// The kept answer for `pid`, or a fresh one from `check` (run outside the lock).
+    func isGranted(pid: pid_t, check: () -> Bool) -> Bool {
+        let now = clock()
+        lock.lock()
+        let kept = entries[pid]
+        lock.unlock()
+        if let kept, (0..<Self.lifetime).contains(now.timeIntervalSince(kept.at)) { return kept.granted }
+        let granted = check()
+        lock.lock()
+        // Drop expired entries too, so exited processes don't pile up.
+        entries = entries.filter { (0..<Self.lifetime).contains(now.timeIntervalSince($0.value.at)) }
+        entries[pid] = (granted, now)
+        lock.unlock()
+        return granted
     }
 }
