@@ -145,6 +145,41 @@ struct BrickFileGate {
     }
 }
 
+/// What a `stat` says about the file, so a poll can tell nothing changed
+/// without opening it. A rewrite moves the modification time, usually the
+/// size, and, for an atomic Save, the inode.
+struct BrickFileStamp: Equatable, Sendable {
+    let seconds: Int
+    let nanoseconds: Int
+    let size: Int64
+    let inode: UInt64
+
+    init?(url: URL) {
+        var info = stat()
+        guard stat(url.path, &info) == 0 else { return nil }
+        seconds = Int(info.st_mtimespec.tv_sec)
+        nanoseconds = Int(info.st_mtimespec.tv_nsec)
+        size = Int64(info.st_size)
+        inode = UInt64(info.st_ino)
+    }
+}
+
+/// The resolved file and the stamp it had when last read. Only a successful
+/// read of a file is remembered, so a missing, unreadable or oversized file
+/// is looked at again every poll.
+struct BrickFileWatch: Sendable {
+    var bookmark: Data?
+    var url: URL?
+    var stamp: BrickFileStamp?
+
+    /// True when the cached stamp still describes the file and the full
+    /// read (bookmark resolve, open, decode) can be skipped.
+    static func isUnchanged(cached: BrickFileStamp?, current: BrickFileStamp?) -> Bool {
+        guard let cached, let current else { return false }
+        return cached == current
+    }
+}
+
 enum BrickFileReader {
     struct Result: Sendable {
         let data: Data?
@@ -154,16 +189,39 @@ enum BrickFileReader {
     }
 
     static func read(bookmark: Data) -> Result {
+        readResolving(bookmark: bookmark).result
+    }
+
+    /// The poll's entry point: nil when the file's stat is the one already
+    /// read, so an idle poll costs a `stat` and nothing else.
+    static func readIfChanged(bookmark: Data, watch: BrickFileWatch) -> (result: Result?, watch: BrickFileWatch) {
+        if watch.bookmark == bookmark, let url = watch.url {
+            let current: BrickFileStamp? = {
+                guard url.startAccessingSecurityScopedResource() else { return nil }
+                defer { url.stopAccessingSecurityScopedResource() }
+                return BrickFileStamp(url: url)
+            }()
+            if BrickFileWatch.isUnchanged(cached: watch.stamp, current: current) { return (nil, watch) }
+        }
+        let read = readResolving(bookmark: bookmark)
+        // The stamp is taken before the read, so a write landing during it
+        // shows as a change next poll instead of being missed.
+        let kept = read.result.data != nil
+        return (read.result, BrickFileWatch(bookmark: bookmark, url: kept ? read.url : nil, stamp: kept ? read.stamp : nil))
+    }
+
+    private static func readResolving(bookmark: Data) -> (result: Result, url: URL?, stamp: BrickFileStamp?) {
         var stale = false
         guard let url = try? URL(resolvingBookmarkData: bookmark,
                                  options: .withSecurityScope, relativeTo: nil, bookmarkDataIsStale: &stale) else {
-            return Result(data: nil, name: "", status: "File access expired. Choose the file again.")
+            return (Result(data: nil, name: "", status: "File access expired. Choose the file again."), nil, nil)
         }
         let name = url.lastPathComponent
         guard url.startAccessingSecurityScopedResource() else {
-            return Result(data: nil, name: name, status: "File access expired. Choose the file again.")
+            return (Result(data: nil, name: name, status: "File access expired. Choose the file again."), nil, nil)
         }
         defer { url.stopAccessingSecurityScopedResource() }
+        let stamp = BrickFileStamp(url: url)
         var result = readFile(at: url)
         // Save File may atomically replace the selected path. Foundation then
         // reports the old bookmark as stale while still resolving the new
@@ -172,7 +230,7 @@ enum BrickFileReader {
             result.refreshedBookmark = try? url.bookmarkData(options: .withSecurityScope,
                                                               includingResourceValuesForKeys: nil, relativeTo: nil)
         }
-        return result
+        return (result, url, stamp)
     }
 
     /// File I/O is bounded before decoding and happens on a detached task.
@@ -202,11 +260,17 @@ final class BrickCompanion {
     private weak var model: NidusModel?
     private var pollTask: Task<Void, Never>?
     private var fileGate = BrickFileGate()
+    private var fileWatch = BrickFileWatch()
     private var offerExpiryTask: Task<Void, Never>?
+
+    /// The file is stat-ed this often and read only when the stat changes.
+    nonisolated static let pollInterval = Duration.seconds(12)
+    nonisolated static let pollTolerance = Duration.seconds(3)
 
     func activate(_ model: NidusModel) {
         self.model = model
         fileGate.reset()
+        fileWatch = BrickFileWatch()
         refresh()
     }
 
@@ -224,13 +288,16 @@ final class BrickCompanion {
         guard let model, model.brickEnabled else {
             model?.dismissBrickOffer()
             fileGate.reset()
+            fileWatch = BrickFileWatch()
             return
         }
         guard !model.brickFileBookmark.isEmpty else { return }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.readSelectedFile()
-                try? await Task.sleep(for: .seconds(2))
+                // An offer may land up to this late. The wide tolerance lets
+                // the system fold the wakeup in with others.
+                try? await Task.sleep(for: Self.pollInterval, tolerance: Self.pollTolerance)
             }
         }
     }
@@ -238,6 +305,7 @@ final class BrickCompanion {
     func selectedNewFile() {
         model?.dismissBrickOffer()
         fileGate.reset()
+        fileWatch = BrickFileWatch()
         refresh()
     }
 
@@ -277,8 +345,12 @@ final class BrickCompanion {
         guard let model, model.brickEnabled else { return }
         model.expireBrickOffer()
         let bookmark = model.brickFileBookmark
-        let result = await Task.detached { BrickFileReader.read(bookmark: bookmark) }.value
+        let watch = fileWatch
+        let polled = await Task.detached { BrickFileReader.readIfChanged(bookmark: bookmark, watch: watch) }.value
         guard !Task.isCancelled, model.brickEnabled, model.brickFileBookmark == bookmark else { return }
+        // Nothing changed since the last read: no name, status or gate to touch.
+        guard let result = polled.result else { return }
+        fileWatch = polled.watch
         if let refreshed = result.refreshedBookmark {
             model.host?.preferences.setValueQuietly(refreshed, forKey: NidusModel.Key.brickFileBookmark)
         }
@@ -341,7 +413,7 @@ extension NidusModel {
         return offer
     }
 
-    /// What the last read found. It's read every two seconds and rarely
+    /// What the last read found. It's checked every few seconds and rarely
     /// changes, and each assignment to these redraws every open surface, so
     /// only a change is assigned.
     func noteBrickFile(name: String, status: String) {
