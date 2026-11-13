@@ -130,6 +130,25 @@ extension RenderSurfaces {
             await shoot(ActivitySessionRecap(entry: entry), width: 520, height: 680,
                         name: "activity-recap", in: directory)
         }
+        // Sort uncategorized: fictional items, one card on its own.
+        let unsorted: [ActivityUncategorizedItem] = [
+            .init(subject: .app("com.example.notebook"), name: "Lab Notebook", appID: "com.example.notebook",
+                  appName: "Lab Notebook", seconds: 2.4 * 3600),
+            .init(subject: .site("benchling.com"), name: "benchling.com", appID: "com.google.Chrome",
+                  appName: "Google Chrome", site: "benchling.com", seconds: 1.1 * 3600),
+            .init(subject: .app("com.GraphPad.Prism"), name: "Prism", appID: "com.GraphPad.Prism",
+                  appName: "Prism", seconds: 48 * 60),
+            .init(subject: .site("neb.com"), name: "neb.com", appID: "com.apple.Safari",
+                  appName: "Safari", site: "neb.com", seconds: 21 * 60),
+            .init(subject: .site("target.com"), name: "target.com", appID: "com.apple.Safari",
+                  appName: "Safari", site: "target.com", seconds: 17 * 60),
+            .init(subject: .app("com.apple.finder"), name: "Finder", appID: "com.apple.finder",
+                  appName: "Finder", seconds: 6 * 60),
+            .init(subject: .app("com.apple.systempreferences"), name: "System Settings",
+                  appID: "com.apple.systempreferences", appName: "System Settings", seconds: 4 * 60),
+        ]
+        await shoot(NidusSettingsPage { ActivitySortCard(model: model, items: unsorted) }, width: 640, height: 420,
+                    name: "activity-sort-uncategorized", in: directory)
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
     }
 }

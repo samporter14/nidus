@@ -50,6 +50,7 @@ struct FocusActivityPage: View {
     // Worked out in `reload`, with the scope, so a body pass reads them.
     @State private var displayedCategorizer = ActivityCategorizer(categories: [], work: FocusCategory.workSeed)
     @State private var displayedCategories: [ActivityCategoryTotal] = []
+    @State private var displayedUncategorized: [ActivityUncategorizedItem] = []
     @State private var displayedFiltered: ActivityTotals?
     @State private var digestCache = ActivityDigestCache()
     @State private var displayedHeatmap = ActivityHeatmap()
@@ -99,6 +100,7 @@ struct FocusActivityPage: View {
                 weekGlance
                 hourHeatmap
                 drift
+                ActivitySortCard(model: model, items: displayedUncategorized)
                 rankedList(displayedFiltered ?? scope.totals)
                 projectInsights
                 sessionList(rangeSessions)
@@ -673,6 +675,9 @@ struct FocusActivityPage: View {
         displayedScope = scope
         displayedCategorizer = categorizer
         displayedCategories = scope.categoryTotals(using: categorizer)
+        displayedUncategorized = ActivityUncategorized.items(stretches: scope.categoryStretches,
+                                                             rows: scope.categoryRows.map(\.row),
+                                                             using: categorizer, overrides: key.overrides)
         displayedFiltered = filter.map { scope.totals(in: $0, using: categorizer, calendar: calendar) }
         if filter != key.categoryFilter { categoryFilter = nil }
         displayedLoadKey = key
