@@ -83,6 +83,15 @@ struct FocusActivityPage: View {
                                     name: session.plan.goal.isEmpty ? "Focus" : session.plan.goal)
     }
 
+    /// The project of the session running now, which the project filter is
+    /// matched against.
+    private var liveProjectID: UUID? { model.controller?.engine.session?.plan.projectID }
+
+    /// The running session's bar, or nil when the project filter excludes it.
+    private var filteredLiveFocus: ActivityRibbon.Focus? {
+        ActivityFilterScope.includesLive(sessionProjectID: liveProjectID, filter: projectID) ? liveFocus : nil
+    }
+
     var body: some View {
         let rangeSessions = displayedSessions
         let scope = displayedScope
@@ -249,7 +258,7 @@ struct FocusActivityPage: View {
 
     private func dayRibbon(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
         let interval = requestedInterval
-        let live = liveFocus.flatMap { interval.intersects(DateInterval(start: $0.start, end: $0.end)) ? $0 : nil }
+        let live = filteredLiveFocus.flatMap { interval.intersects(DateInterval(start: $0.start, end: $0.end)) ? $0 : nil }
         let byCategory = model.activityRibbonByCategory
         let ribbon = ActivityRibbon(stretches: scope.stretches, sessions: sessions, live: live, day: interval,
                                     now: effectiveNow, colorBy: byCategory ? .category(displayedCategorizer) : .app,
@@ -303,6 +312,17 @@ struct FocusActivityPage: View {
                                      weekEnd: weekEnd)
     }
 
+    private var chartsIgnoreFilters: Bool {
+        ActivityFilterScope.chartsIgnoreFilters(projectID: projectID, focusOnly: focusOnly, category: categoryFilter)
+    }
+
+    /// Says the chart under it is not narrowed by the filters above.
+    private var unfilteredNote: some View {
+        Text(ActivityFilterScope.unfilteredCaption)
+            .font(.system(size: 11))
+            .foregroundStyle(.tertiary)
+    }
+
     @ViewBuilder
     private var weekGlance: some View {
         if let displayedWeek {
@@ -312,6 +332,7 @@ struct FocusActivityPage: View {
                     Text("Seven days by category, against the seven before.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                    if chartsIgnoreFilters { unfilteredNote }
                 }
             } content: {
                 ActivityWeekGlance(week: displayedWeek, calendar: calendar, openDay: open(day:))
@@ -334,6 +355,7 @@ struct FocusActivityPage: View {
                 Text(period == .today ? "The last four weeks, by weekday and hour." : "This range, by weekday and hour.")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
+                if chartsIgnoreFilters { unfilteredNote }
             }
         } content: {
             ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar, loadDetail: hourDetail)
@@ -376,6 +398,7 @@ struct FocusActivityPage: View {
                     Text("Three minutes or more on one thing, then as long on a distraction straight after.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
+                    if chartsIgnoreFilters { unfilteredNote }
                 }
             } content: {
                 ActivityDriftList(chains: displayedChains, categorizer: displayedCategorizer)
@@ -680,7 +703,7 @@ struct FocusActivityPage: View {
             // Only a single day draws the ribbon, so a week or month doesn't
             // keep a sorted copy of every stretch in it.
             scope = ActivityScope(logs: logs, sessions: inRange, narrowed: narrowed,
-                                  live: key.projectID == nil ? live : nil, includeTimeline: key.includeTimeline,
+                                  live: ActivityFilterScope.includesLive(sessionProjectID: liveProjectID, filter: key.projectID) ? live : nil, includeTimeline: key.includeTimeline,
                                   calendar: calendar)
         }
         let categorizer = key.categorizer
