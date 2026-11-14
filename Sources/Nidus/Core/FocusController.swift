@@ -223,7 +223,8 @@ final class FocusController: ObservableObject {
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
         activityRecorder = ActivityRecorder(store: ActivityDayStore(directory: directory.appendingPathComponent("Activity", isDirectory: true)),
-                                            host: SystemActivityHost(queue: DispatchQueue(label: "focus.activity.day", qos: .utility)))
+                                            host: SystemActivityHost(queue: DispatchQueue(label: "focus.activity.day", qos: .utility)),
+                                            uptime: { ProcessInfo.processInfo.systemUptime })
     }
 
     // MARK: Lifecycle

@@ -539,7 +539,7 @@ final class SessionEngine {
         guard var session else { return }
         // A pause saved by a version without the reminder: count from now.
         if case .paused(_, bySleep: false) = session.phase, session.pausedAt == nil {
-            session.pausedAt = now()
+            session.pausedAt = clockNow()
             self.session = session
         }
         switch session.phase {
@@ -984,7 +984,7 @@ final class SessionEngine {
     private func remindOfForgottenPause() {
         guard var session, case .paused(_, bySleep: false) = session.phase, !session.plan.strict,
               !session.pauseReminded, let pausedAt = session.pausedAt,
-              now().timeIntervalSince(pausedAt) >= Self.pauseReminderDelay, !isAway() else { return }
+              clockNow().timeIntervalSince(pausedAt) >= Self.pauseReminderDelay, !isAway() else { return }
         session.pauseReminded = true
         self.session = session
         save()
@@ -1054,7 +1054,9 @@ final class SessionEngine {
     private func pause(bySleep: Bool) {
         guard var session, case .running(let deadline) = session.phase else { return }
         session.phase = .paused(remaining: max(0, deadline.timeIntervalSince(clockNow())), bySleep: bySleep)
-        session.pausedAt = bySleep ? nil : now()
+        // On the countdown's timeline, like every date the clock change
+        // shifts: a pause between the change and its notice is not shifted twice.
+        session.pausedAt = bySleep ? nil : clockNow()
         session.pauseReminded = false
         session.activityContinuity += 1
         self.session = session

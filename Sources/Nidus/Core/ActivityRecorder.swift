@@ -86,6 +86,12 @@ final class ActivityRecorder {
 
     private let host: any ActivityRecorderHost
     private let clock: () -> Date
+    /// Time since boot, which setting the date can't move (and which stops
+    /// in sleep). nil: no check, and only the system's notice is trusted.
+    private let uptime: (() -> TimeInterval)?
+    private var lastSeenUptime: TimeInterval?
+    /// Slept since `lastSeen`: uptime stood still, so it can't be compared.
+    private var sleptSinceSeen = false
     private let calendar: Calendar
     let store: ActivityDayStore
     /// A save landed; a page showing the day can refresh.
@@ -138,10 +144,11 @@ final class ActivityRecorder {
     private var lastPruneDay: String?
 
     init(store: ActivityDayStore, host: any ActivityRecorderHost, now: @escaping () -> Date = Date.init,
-         calendar: Calendar = .current) {
+         calendar: Calendar = .current, uptime: (() -> TimeInterval)? = nil) {
         self.store = store
         self.host = host
         clock = now
+        self.uptime = uptime
         self.calendar = calendar
         let today = now()
         log = ActivityDayLog(day: ActivityDayLog.key(for: today, calendar: calendar))
@@ -197,7 +204,7 @@ final class ActivityRecorder {
     func start() {
         guard !isStarted else { return }
         isStarted = true
-        lastSeen = clock()
+        markSeen(clock())
         idleFloor = lastSeen
         isIdle = false
         recentDays.removeAll()
@@ -315,8 +322,8 @@ final class ActivityRecorder {
         reconcile()
     }
 
-    func systemWillSleep() { isAsleep = true; suspend() }
-    func systemDidWake() { isAsleep = false; resume() }
+    func systemWillSleep() { isAsleep = true; suspend(); sleptSinceSeen = true }
+    func systemDidWake() { isAsleep = false; sleptSinceSeen = true; resume() }
     func screenDidLock() { isLocked = true; suspend() }
     func screenDidUnlock() { isLocked = false; resume() }
 
@@ -334,7 +341,28 @@ final class ActivityRecorder {
     }
 
     /// Set the clock back and every open stretch would end before it began.
+    /// The notice may come after a wake-up has already read the new clock;
+    /// that wake-up dealt with the change (see `clockJumped`), so it is not
+    /// dealt with twice.
     func clockDidChange() {
+        if uptime != nil, !clockJumped() { return }
+        clockChanged()
+    }
+
+    /// Whether wall time since `lastSeen` disagrees with uptime by more than
+    /// a moment, with no sleep in between to explain it.
+    private func clockJumped() -> Bool {
+        guard let uptime, let lastSeenUptime, !sleptSinceSeen else { return false }
+        let wall = clock().timeIntervalSince(lastSeen)
+        return abs(wall - (uptime() - lastSeenUptime)) > Self.clockJumpTolerance
+    }
+
+    /// More than this between the wall clock and uptime is a changed date.
+    nonisolated static let clockJumpTolerance: TimeInterval = 2
+
+    /// Everything up to `lastSeen` was on the old clock: it ends there, and
+    /// what follows starts on the new one.
+    private func clockChanged() {
         let t = clock()
         closeOpen(at: lastSeen, at: lastSeen)
         if hasUnsaved { save(at: lastSeen) }
@@ -344,7 +372,14 @@ final class ActivityRecorder {
         dayContinuityFloor = continuity
         recentDays.removeAll()
         lastSavedAt = t
+        markSeen(t)
         reconcile()
+    }
+
+    private func markSeen(_ t: Date) {
+        lastSeen = t
+        lastSeenUptime = uptime?()
+        sleptSinceSeen = false
     }
 
     /// A running session: silence counts as reading until it stops running.
@@ -368,8 +403,11 @@ final class ActivityRecorder {
             host.arm(after: nil) {}
             return
         }
+        // A changed date read before its notice: settle it on the old clock
+        // first, rather than close what is open at a time on the new one.
+        if clockJumped() { clockChanged(); return }
         let t = clock()
-        lastSeen = t
+        markSeen(t)
         correctIdle(at: t)
         roll(to: t)
         observe(at: t)
