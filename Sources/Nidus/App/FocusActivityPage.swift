@@ -72,7 +72,8 @@ struct FocusActivityPage: View {
                                                                         start: interval.start, end: interval.end, now: effectiveNow),
                                 start: interval.start, end: interval.end, projectID: projectID, focusOnly: focusOnly,
                                 excluded: model.activityExcludedApps, work: model.workGroup, categories: model.categories,
-                                overrides: model.activityOverrides, categoryFilter: categoryFilter)
+                                overrides: model.activityOverrides, categoryFilter: categoryFilter,
+                                includeTimeline: period == .today)
     }
     /// The session running now, for the ribbon and focus-only views.
     private var liveFocus: ActivityRibbon.Focus? {
@@ -88,7 +89,7 @@ struct FocusActivityPage: View {
         return NidusSettingsPage {
             hero
             filters(scope)
-            if rangeSessions.isEmpty && scope.stretches.isEmpty && scope.totals.observed == 0 {
+            if rangeSessions.isEmpty && !scope.hasStretches && scope.totals.observed == 0 {
                 emptyState
             } else {
                 overview(scope, sessions: rangeSessions)
@@ -647,24 +648,41 @@ struct FocusActivityPage: View {
     /// when it is running, since that includes the stretch still open.
     private func reload(_ key: ActivityCacheKey) async {
         refreshProjects()
-        let inRange = sessions.filter { entry in
-            key.start <= entry.start && entry.start < key.end
-                && (key.projectID == nil || entry.projectID == key.projectID)
-        }.sorted { $0.start > $1.start }
-        let recorder = model.controller?.activityRecorder
-        var logs = await recorder?.store.load(days: dayKeys(from: key.start, to: key.end)) ?? []
-        guard !Task.isCancelled else { return }
-        logs = logs.map { $0.hiding(key.excluded) }
-        if let recorder, recorder.isRecording {
-            let today = recorder.today()
-            if dayKeys(from: key.start, to: key.end).contains(today.day) {
-                logs.removeAll { $0.day == today.day }
-                logs.append(today.hiding(key.excluded))
+        let narrowed = key.focusOnly || key.projectID != nil
+        let inRange: [SessionEntry]
+        let scope: ActivityScope
+        if !narrowed, let loaded = displayedLoadKey, loaded.scope == key.scope {
+            // Only the groups changed (an edit, "Count as", a filter): the
+            // same files would give the same scope. A narrowed view isn't
+            // reused, since its slice of the live session moves with the clock.
+            inRange = displayedSessions
+            scope = displayedScope
+        } else {
+            inRange = sessions.filter { entry in
+                key.start <= entry.start && entry.start < key.end
+                    && (key.projectID == nil || entry.projectID == key.projectID)
+            }.sorted { $0.start > $1.start }
+            let recorder = model.controller?.activityRecorder
+            let days = dayKeys(from: key.start, to: key.end)
+            // A newer reload cancels this one; it stops reading files then.
+            var read: [ActivityDayLog]? = []
+            if let recorder { read = await recorder.store.loadUnlessCancelled(days: days) }
+            guard var logs = read, !Task.isCancelled else { return }
+            logs = logs.map { $0.hiding(key.excluded) }
+            if let recorder, recorder.isRecording {
+                let today = recorder.today()
+                if days.contains(today.day) {
+                    logs.removeAll { $0.day == today.day }
+                    logs.append(today.hiding(key.excluded))
+                }
             }
+            let live = liveFocus.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
+            // Only a single day draws the ribbon, so a week or month doesn't
+            // keep a sorted copy of every stretch in it.
+            scope = ActivityScope(logs: logs, sessions: inRange, narrowed: narrowed,
+                                  live: key.projectID == nil ? live : nil, includeTimeline: key.includeTimeline,
+                                  calendar: calendar)
         }
-        let live = liveFocus.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
-        let scope = ActivityScope(logs: logs, sessions: inRange, narrowed: key.focusOnly || key.projectID != nil,
-                                  live: key.projectID == nil ? live : nil, calendar: calendar)
         let categorizer = key.categorizer
         // A filter on a category that has since been deleted is dropped.
         let known = [ActivityCategorizer.workID, ActivityCategorizer.uncategorizedID] + key.categories.map(\.id)
@@ -719,6 +737,24 @@ struct ActivityCacheKey: Equatable {
     let categories: [FocusCategory]
     let overrides: ActivityOverrides
     let categoryFilter: String?
+    /// A single day: the scope keeps its stretches for the ribbon.
+    var includeTimeline = true
+
+    /// What the scope is built from; the rest only changes how it's grouped.
+    struct Scope: Equatable {
+        let version: Int
+        let dayVersion: Int
+        let start: Date
+        let end: Date
+        let projectID: UUID?
+        let focusOnly: Bool
+        let excluded: Set<String>
+        let includeTimeline: Bool
+    }
+    var scope: Scope {
+        Scope(version: version, dayVersion: dayVersion, start: start, end: end, projectID: projectID,
+              focusOnly: focusOnly, excluded: excluded, includeTimeline: includeTimeline)
+    }
 
     /// The 2-minute day-file save only changes today's numbers, so a range
     /// that's over keeps its cached load instead of reading its files again.
@@ -979,18 +1015,24 @@ struct ActivityTotals {
 
     /// Gives sites and documents the last address each was seen at, from
     /// stretches in time order.
+    /// The latest address of each site and document. `stretches` need not be
+    /// in time order: the one starting last wins, and of two starting
+    /// together, the later in the list (as a stable sort would leave them).
     mutating func noteAddresses(from stretches: [FocusActivitySegment]) {
-        var bySite: [String: String] = [:]
-        var byDocument: [String: String] = [:]
+        var bySite: [String: (start: Date, url: String)] = [:]
+        var byDocument: [String: (start: Date, url: String)] = [:]
         for stretch in stretches {
             guard let url = stretch.url else { continue }
-            if let site = stretch.site { bySite[site] = url }
+            if let site = stretch.site, bySite[site].map({ stretch.start >= $0.start }) ?? true {
+                bySite[site] = (stretch.start, url)
+            }
             if let title = ActivityTimeline.documentName(appID: stretch.appID, title: stretch.title, site: stretch.site) {
-                byDocument[Self.documentKey(appID: stretch.appID, site: stretch.site, title: title)] = url
+                let key = Self.documentKey(appID: stretch.appID, site: stretch.site, title: title)
+                if byDocument[key].map({ stretch.start >= $0.start }) ?? true { byDocument[key] = (stretch.start, url) }
             }
         }
-        for index in sites.indices { sites[index].url = bySite[sites[index].id] }
-        for index in documents.indices { documents[index].url = byDocument[documents[index].id] }
+        for index in sites.indices { sites[index].url = bySite[sites[index].id]?.url }
+        for index in documents.indices { documents[index].url = byDocument[documents[index].id]?.url }
     }
 
     private static func ranked(_ values: [String: TimeInterval], names: [String: String] = [:]) -> [ActivityRank] {

@@ -172,11 +172,11 @@ struct NativePolishTests {
 
     @Test func repeatedJumpsKeepTheExactSettingAndRequestAScrollAgain() throws {
         let jump = SettingsJump { _, _ in }
-        let plaque = try #require(SettingsJumpIndex.entries.first { $0.id == "plaque" })
-        jump.open(plaque)
+        let brick = try #require(SettingsJumpIndex.entries.first { $0.id == "brick" })
+        jump.open(brick)
         let first = try #require(jump.destination)
-        #expect(first.page == "general" && first.anchor == "plaque")
-        jump.open(plaque)
+        #expect(first.page == "general" && first.anchor == "brick")
+        jump.open(brick)
         #expect(jump.destination?.request != first.request)
     }
 

@@ -81,6 +81,15 @@ final class NidusHost {
             _ = write(value, forKey: key)
         }
 
+        /// Forgets keys an older version saved and nothing reads now. No
+        /// `didChange`: nothing is listening for a value that is going away.
+        func removeValues(forKeys keys: [String]) {
+            for key in keys {
+                defaults.removeObject(forKey: key)
+                decoded[key] = nil
+            }
+        }
+
         private func write<Value: Codable>(_ value: Value, forKey key: String) -> Bool {
             guard let data = try? JSONEncoder().encode(value) else { return false }
             defaults.set(data, forKey: key)

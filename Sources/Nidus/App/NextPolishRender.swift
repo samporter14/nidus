@@ -48,10 +48,6 @@ extension RenderSurfaces {
         model.startProblem = "Choose a category with apps or websites in Blocking."
         await shoot(NidusPopover(model: model), width: 440, name: "refused-start", in: directory)
         model.startProblem = nil
-        if let entry = SettingsJumpIndex.entries.first(where: { $0.id == "plaque" }) {
-            model.settingsJump.open(entry)
-            await shootWindow(settings, page: "general", name: "jump-to-plaque", in: directory)
-        }
         await renderPerformancePolish(model: model, in: directory)
         settings.window?.close()
         print("SETTINGS_RELEASED \(settings.window == nil)")

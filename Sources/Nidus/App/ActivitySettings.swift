@@ -138,20 +138,27 @@ extension NidusModel {
                 logs.append(today)
             }
             guard !sessions.isEmpty || !logs.isEmpty else { return }
-            saveExport(ActivityExport.csv(logs: logs.map { $0.hiding(excluded) }, sessions: sessions))
+            // Building a year of rows takes a moment; the main actor keeps drawing meanwhile.
+            let data = await Task.detached(priority: .userInitiated) {
+                Data(ActivityExport.csv(logs: logs.map { $0.hiding(excluded) }, sessions: sessions).utf8)
+            }.value
+            saveExport(data)
         }
     }
 
-    private func saveExport(_ text: String) {
-        let data = Data(text.utf8)
+    private func saveExport(_ data: Data) {
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.commaSeparatedText]
         panel.nameFieldStringValue = "Nidus activity \(Date().formatted(.iso8601.year().month().day())).csv"
         panel.message = "App, website and document durations."
         let write: @MainActor (NSApplication.ModalResponse) -> Void = { response in
             guard response == .OK, let url = panel.url else { return }
-            do { try data.write(to: url, options: .atomic) }
-            catch { NSAlert(error: error).runModal() }
+            Task { @MainActor in
+                let failure = await Task.detached(priority: .userInitiated) { () -> Error? in
+                    do { try data.write(to: url, options: .atomic); return nil } catch { return error }
+                }.value
+                if let failure { NSAlert(error: failure).runModal() }
+            }
         }
         if let window = host?.workspace.settings.window, window.isVisible {
             panel.beginSheetModal(for: window, completionHandler: write)

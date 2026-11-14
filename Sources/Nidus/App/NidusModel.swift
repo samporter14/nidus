@@ -32,8 +32,6 @@ final class NidusModel: NSObject, ObservableObject {
     var widgetToday: WidgetToday?
     var widgetTodayThrottle = WidgetTodayThrottle()
     var widgetTodayTask: Task<Void, Never>?
-    /// Writes what Plaque may show, when that is turned on (PlaqueBridge.swift).
-    var plaqueBridge: PlaqueBridge?
 
     /// The goal typed into the popover, kept while it closes and opens.
     @Published var goalDraft = ""
@@ -129,7 +127,7 @@ final class NidusModel: NSObject, ObservableObject {
         controller.blocksNothing = Demo.isActive
         applyPresetUpdates()
         resumeNotes = ResumeNoteStore(url: host.environment.containerDirectory.appendingPathComponent(ResumeNoteStore.fileName))
-        plaqueBridge = makePlaqueBridge(directory: host.environment.containerDirectory)
+        Self.removePlaqueLeftovers(directory: host.environment.containerDirectory, preferences: host.preferences)
         applySettings()
         startInbox(host: host)
         startOpenShortcut()
@@ -212,12 +210,18 @@ final class NidusModel: NSObject, ObservableObject {
         }
     }
 
+    /// Once-per-launch tidy of what a removed feature left behind: the status
+    /// file and settings of the old Plaque sharing. Does nothing when they are gone.
+    static func removePlaqueLeftovers(directory: URL, preferences: NidusHost.Preferences) {
+        try? FileManager.default.removeItem(at: directory.appendingPathComponent("plaque-focus.json"))
+        preferences.removeValues(forKeys: ["plaqueFocus", "plaqueFocusText", "plaqueFocusRevision"])
+    }
+
     func deactivate() {
         protectionFeedback.stop()
         brickCompanion.deactivate()
         dismissBrickOffer()
         publishFocus(quitting: true)
-        plaqueBridge?.cancelPending()
         // Everything activate() started is torn down here, before Nidus quits.
         stopSchedules()
         welcomeTask?.cancel()
@@ -619,7 +623,6 @@ final class NidusModel: NSObject, ObservableObject {
             menuBar?.sessionDidStart()
         case .ended(let reason, let final):
             endBreakAfterFixedEnd(final)
-            notePlaqueSessionEnded(reason, final)
             host?.hud.dismiss(id: Self.snoozeHUDID)
             host?.hud.dismiss(id: Self.stillPausedHUDID)
             // The card can offer Undo only for an early end the engine will
@@ -1123,7 +1126,6 @@ extension NidusModel {
     /// pauses publish away so Capsid keeps holding cards; manual pauses and
     /// breaks release them. Demos and captures publish nothing.
     func publishFocus(quitting: Bool = false) {
-        publishPlaqueFocus(quitting: quitting)
         publishWidget(quitting: quitting)
         guard !Demo.isActive, let host else { return }
         let state = FocusFile.snapshot(session: engine?.session, quitting: quitting)

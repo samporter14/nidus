@@ -346,7 +346,7 @@ struct UndoEndControllerTests {
         controller.start(quiet())
         controller.end()
         controller.undoEnd()
-        #expect(seen.last == .undone, "the model publishes focus.json and Plaque's file on every event")
+        #expect(seen.last == .undone, "the model publishes focus.json on every event")
         // And what it would publish says focusing, not idle.
         let file = FocusFile.snapshot(session: controller.engine.session)
         #expect(file.focusing && file.until != nil)

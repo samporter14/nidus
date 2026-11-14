@@ -12,8 +12,11 @@ import Foundation
 
 struct ActivityScope {
     var totals: ActivityTotals
-    /// In time order. What the ribbon draws for a single day.
+    /// In time order. What the ribbon draws for a single day; empty when
+    /// built without the timeline (`includeTimeline: false`).
     var stretches: [FocusActivitySegment]
+    /// Whether any stretch went into this scope, timeline kept or not.
+    var hasStretches: Bool
     /// Some of this comes from a daily record, so time outside focus is here.
     var hasDailyRecords: Bool
     /// What categories are counted from: the stretches that account for all
@@ -24,9 +27,11 @@ struct ActivityScope {
     private(set) var categoryRows: [(day: Date, row: FocusActivity)] = []
 
     /// `narrowed`: only time inside these sessions (and `live`, the session
-    /// running now) counts, cut to their start and end.
+    /// running now) counts, cut to their start and end. `includeTimeline:
+    /// false` skips sorting and keeping `stretches`, which only the one-day
+    /// ribbon draws; totals, addresses and categories are the same either way.
     init(logs: [ActivityDayLog], sessions: [SessionEntry], narrowed: Bool = false, live: DateInterval? = nil,
-         calendar: Calendar = .current) {
+         includeTimeline: Bool = true, calendar: Calendar = .current) {
         let days = logs.filter { !$0.isEmpty }
         hasDailyRecords = !days.isEmpty
         var ranges = sessions.map { DateInterval(start: $0.start, end: max($0.start, $0.end)) }
@@ -82,9 +87,10 @@ struct ActivityScope {
         }
         categoryStretches = exact.sorted { $0.start < $1.start }
         categoryRows = unsegmented
-        stretches = kept.sorted { $0.start < $1.start }
+        hasStretches = !kept.isEmpty
+        stretches = includeTimeline ? kept.sorted { $0.start < $1.start } : []
         totals = ActivityTotals(rows: rows, focused: sessions.reduce(0) { $0 + max(0, $1.focused) })
-        totals.noteAddresses(from: stretches)
+        totals.noteAddresses(from: kept)
     }
 
     // MARK: Categories

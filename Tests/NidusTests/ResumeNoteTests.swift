@@ -363,43 +363,6 @@ struct NextStepTests {
         #expect(model.beginNextStep(for: state, entry: nil) == nil, "no notes file, no field")
     }
 
-    @Test func plaqueIsToldTheStepOnceTypingSettlesNotAtEveryLetter() async throws {
-        let folder = try tempFolder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let store = ResumeNoteStore(url: folder.appendingPathComponent(ResumeNoteStore.fileName))
-        let step = NextStepSession(seed: .init(goal: "Aims", projectID: nil, projectName: nil, entryID: nil),
-                                   historyIsOff: false, store: store, settleDelay: .milliseconds(30))
-        var told: [String?] = []
-        step.onSettled = { told.append($0) }
-        for text in ["R", "Re", "Rerun it "] { step.setText(text) }
-        #expect(told.isEmpty, "nothing yet: the person is still typing")
-        // Waits for the report rather than a fixed time: a busy Mac can run
-        // the 30 ms debounce late, which is no failure of the debounce.
-        let deadline = ContinuousClock.now + .seconds(5)
-        while told.isEmpty, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
-        // A few more debounce periods: still one report.
-        try await Task.sleep(for: .milliseconds(150))
-        #expect(told == ["Rerun it"], "one report, the step as it is kept")
-    }
-
-    @Test func doneReportsTheStepAtOnceAndOnlyWhenItChanged() throws {
-        let folder = try tempFolder()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let store = ResumeNoteStore(url: folder.appendingPathComponent(ResumeNoteStore.fileName))
-        let step = Self.session(store: store)
-        var told: [String?] = []
-        step.onSettled = { told.append($0) }
-        step.settleNow()
-        #expect(told.isEmpty, "skipping says nothing: there was no step and still is none")
-        step.setText("Check the controls")
-        step.settleNow()
-        step.settleNow()
-        #expect(told == ["Check the controls"])
-        step.setText("")
-        step.settleNow()
-        #expect(told == ["Check the controls", nil], "taking the step back tells Plaque there is none")
-    }
-
     @Test func theCardStaysLongEnoughToTypeIn() {
         #expect(FinishReply.noteLinger > FinishReply.linger)
         #expect(FinishReply.noteLinger >= 15)
