@@ -23,8 +23,24 @@ final class HistoryFileWriter: @unchecked Sendable {
     private var pending: Mutation?
     private var isDraining = false
     private let perform: @Sendable (Mutation) -> Void
+    private let failure: Failure
+
+    /// The latest write failed. Read anywhere; set on the queue.
+    var lastWriteFailed: Bool { failure.value }
+    /// Told after each write is tried, on the writer's queue: whether it
+    /// landed. Set once, before the first write.
+    var onOutcome: (@Sendable (Bool) -> Void)?
+
+    private final class Failure: @unchecked Sendable {
+        private let lock = NSLock()
+        private var failed = false
+        var value: Bool { lock.withLock { failed } }
+        func set(_ value: Bool) { lock.withLock { failed = value } }
+    }
 
     init(url: URL) {
+        let failure = Failure()
+        self.failure = failure
         perform = { mutation in
             do {
                 switch mutation {
@@ -36,7 +52,9 @@ final class HistoryFileWriter: @unchecked Sendable {
                     do { try FileManager.default.removeItem(at: url) }
                     catch CocoaError.fileNoSuchFile { }
                 }
+                failure.set(false)
             } catch {
+                failure.set(true)
                 Logger(subsystem: "local.sam.nidus", category: "history")
                     .error("Could not save history: \(error.localizedDescription, privacy: .public)")
             }
@@ -45,7 +63,10 @@ final class HistoryFileWriter: @unchecked Sendable {
 
     /// Allows tests to hold a write in progress without depending on disk
     /// speed, and prove that edits stay responsive and pending state bounded.
-    init(perform: @escaping @Sendable (Mutation) -> Void) { self.perform = perform }
+    init(perform: @escaping @Sendable (Mutation) -> Void) {
+        self.perform = perform
+        failure = Failure()
+    }
 
     func enqueue(_ mutation: Mutation) {
         lock.lock()
@@ -73,6 +94,7 @@ final class HistoryFileWriter: @unchecked Sendable {
             }
             guard let next else { return }
             perform(next)
+            onOutcome?(!failure.value)
         }
     }
 }

@@ -7,6 +7,9 @@ extension NidusModel.Key {
     static let activityTracking = "activityTrackingEnabled"
     static let activityExcluded = "activityExcludedApps"
     static let activityAllDay = "activityAllDayEnabled"
+    /// On by default. Off: websites are kept as domains, with no page or
+    /// window names and no addresses.
+    static let activityTitles = "activityDocumentTitlesEnabled"
     static let activityIdleMinutes = "activityIdleMinutes"
     static let activityRetentionDays = "activityRetentionDays"
     static let activityPausedUntil = "activityPausedUntil"
@@ -79,6 +82,12 @@ extension NidusModel {
         get { preference(Key.activityExcluded, default: Set<String>()) }
         set { setPreference(newValue, Key.activityExcluded); applyActivitySettings() }
     }
+    /// Page, window and document names, and page addresses (without query
+    /// or fragment). Off: websites are kept as domains only.
+    var activityNamesEnabled: Bool {
+        get { preference(Key.activityTitles, default: true) }
+        set { setPreference(newValue, Key.activityTitles); applyActivitySettings() }
+    }
     /// Only meaningful with Activity and history on.
     var activityAllDayEnabled: Bool {
         get { preference(Key.activityAllDay, default: true) }
@@ -104,7 +113,7 @@ extension NidusModel {
     }
     func applyActivitySettings() {
         controller?.activityTrackingEnabled = recordsHistory && activityTrackingEnabled
-        controller?.activityDocumentTitlesEnabled = true
+        controller?.activityDocumentTitlesEnabled = activityNamesEnabled
         controller?.activityExcludedApps = activityExcludedApps
         controller?.activityAllDayEnabled = activityAllDayEnabled
         controller?.activityIdleCutoff = TimeInterval(max(1, activityIdleMinutes) * 60)
@@ -175,6 +184,16 @@ struct ActivityTrackingControls: View {
     @State private var confirmingClear = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            if model.controller?.changesNotSaved == true {
+                Label("Changes aren't saved. Nidus will keep trying.", systemImage: "exclamationmark.triangle")
+                    .font(.callout).foregroundStyle(.secondary)
+            }
+            disclosure
+        }
+    }
+
+    private var disclosure: some View {
         DisclosureGroup(isExpanded: $expanded) {
             VStack(alignment: .leading, spacing: 14) {
                 Toggle("Track activity", isOn: model.binding(\.activityTrackingEnabled))
@@ -197,9 +216,12 @@ struct ActivityTrackingControls: View {
                             }
                         }
                     }
+                    Toggle("Keep page and window names", isOn: model.binding(\.activityNamesEnabled))
+                    Text("Page, window and document names are kept, with page addresses for reopening (never their query or fragment). Off: websites are kept as domains only. Everything stays on this Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
                     Divider()
                     HStack {
-                        Label(accessibilityGranted ? "Window titles are on" : "Window titles need access",
+                        Label(accessibilityGranted ? "Window access is on" : "Window names need access",
                               systemImage: accessibilityGranted ? "checkmark.circle" : "lock")
                             .font(.callout)
                         Spacer()

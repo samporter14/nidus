@@ -12,8 +12,8 @@ import SwiftUI
 /// session's clock and controls.
 struct FocusWidget: View {
     @ObservedObject var model: NidusModel
-    /// Where ↑ and ↓ are in the recent goals; nil is the field as typed.
-    @State private var recentIndex: Int?
+    /// Where ↑ and ↓ are in the recent goals, and the draft they put aside.
+    @State private var goalRecall = GoalRecall()
     /// A strict session's End asks for this phrase first.
     @State private var confirmingEnd = false
     @State private var endPhrase = ""
@@ -161,6 +161,9 @@ struct FocusWidget: View {
                     .onSubmit(start)
                     .onKeyPress(.upArrow) { stepRecentGoal(1) }
                     .onKeyPress(.downArrow) { stepRecentGoal(-1) }
+                    .onChange(of: model.goalDraft) { _, draft in
+                        goalRecall.draftChanged(to: draft, goals: model.recentGoals)
+                    }
                     .accessibilityLabel("Goal")
                 if !model.recentGoals.isEmpty {
                     recentGoalsMenu
@@ -323,7 +326,6 @@ struct FocusWidget: View {
                 ForEach(model.recentGoals, id: \.self) { goal in
                     Button(goal) {
                         model.goalDraft = goal
-                        recentIndex = model.recentGoals.firstIndex(of: goal)
                     }
                 }
             }
@@ -341,19 +343,13 @@ struct FocusWidget: View {
         .accessibilityLabel("Recent goals")
     }
 
-    /// ↑ steps back through the recent goals and ↓ forward, back to an
-    /// empty field, as a shell's history does.
+    /// ↑ steps back through the recent goals and ↓ forward again, back to
+    /// what was typed, as a shell's history does.
     private func stepRecentGoal(_ step: Int) -> KeyPress.Result {
-        let goals = model.recentGoals
-        guard !goals.isEmpty else { return .ignored }
-        let next = (recentIndex ?? -1) + step
-        if next < 0 {
-            recentIndex = nil
-            model.goalDraft = ""
-        } else if next < goals.count {
-            recentIndex = next
-            model.goalDraft = goals[next]
+        guard let draft = goalRecall.step(step, draft: model.goalDraft, goals: model.recentGoals) else {
+            return .ignored
         }
+        model.goalDraft = draft
         return .handled
     }
 

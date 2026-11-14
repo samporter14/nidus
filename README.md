@@ -24,10 +24,11 @@ A *nidus* is the place where something takes hold and grows.
   its code ever reaches for the network. What it keeps stays on your
   Mac, and Settings can stop the history or clear it.
 - **Light.** A menu bar app in Swift, with no Electron and no web views.
-  Between sessions it does nothing at all, except keep one timer for the next
-  schedule if you've made one. During a session it checks your apps and tabs
-  once a second, at about 50 MB of memory and a fraction of a percent of one
-  core.
+  Between sessions it blocks nothing. With Activity on, it records which
+  apps, documents and websites are in front all day, on your Mac only, waking
+  only for the next thing that could change. During a session it checks your apps and
+  tabs once a second, at about 50 MB of memory and a fraction of a percent of
+  one core.
 - **Native.** SwiftUI, AppKit and Core Animation, with the Mac's own controls:
   a Liquid Glass popover and cards, and Settings in toolbar tabs like any
   Mac app's. It quits apps the way the Dock does, reaches browser tabs through Apple Events, and turns Focus modes
@@ -150,8 +151,9 @@ and the categories to block, and press Start. Until the session ends:
 - **Activity.** A record of your whole day: which apps, websites and
   documents were in front and when, drawn to clock scale with your focus
   sessions above it, ranked by day, week or month. Time stops when you step
-  away. It keeps page titles, document names and full addresses, in one file a day
-  on your Mac for 90 days, and you can turn it off, exclude apps, pause it for
+  away. It keeps page titles, document names and page addresses (without
+  query strings or fragments), in one file a day on your Mac for 90 days. You
+  can keep websites as domains only, turn it off, exclude apps, pause it for
   an hour or clear it. [More on what it records](docs/activity.md).
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
   session, how many goals you finished and what you blocked most. On Monday a

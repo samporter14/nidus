@@ -134,6 +134,9 @@ final class FocusController: ObservableObject {
     let activityRecorder: ActivityRecorder
     /// Tells the stats page something was added.
     @Published private(set) var historyVersion = 0
+    /// Something Nidus keeps (the session, history or today's activity)
+    /// failed to save and is being tried again. One quiet line, not alerts.
+    @Published private(set) var changesNotSaved = false
 
     private let blockPage: BlockPage
     private let browsers: BrowserBlocker
@@ -153,6 +156,14 @@ final class FocusController: ObservableObject {
     private var activityDetailAt: Date?
     private var lastAppActivation: Date?
     private var sweepInFlight = false
+    /// Bumped whenever the rules or the session change. A sweep that comes
+    /// back under another generation was judged by rules no longer in force
+    /// (or for a session that has ended), so its redirects are not reported.
+    private(set) var sweepGeneration = 0
+    /// What a sweep does off the main actor. Tests replace it to hold one.
+    typealias SweepWork = @Sendable (_ rule: WebsiteRule, _ goal: String, _ snoozeMinutes: Int, _ onBreak: Bool)
+        -> (redirected: [String], access: [String: AppleEventError])
+    var sweepWork: SweepWork
     /// When a browser sweep last went out; nil until the first of a session.
     private var lastBrowserSweepAt: Date?
     private lazy var appBlocker = AppBlocker(mode: .block([]), action: .terminate) { [weak self] app in
@@ -189,7 +200,20 @@ final class FocusController: ObservableObject {
     /// monotonic clock, which setting the date cannot move.
     init(directory: URL, now: (() -> Date)? = nil) {
         blockPage = BlockPage(directory: directory)
-        browsers = BrowserBlocker(blockPage: blockPage)
+        let browsers = BrowserBlocker(blockPage: blockPage)
+        self.browsers = browsers
+        sweepWork = { rule, goal, minutes, onBreak in
+            var redirected: [String] = []
+            var access: [String: AppleEventError] = [:]
+            for browser in BrowserProfile.known {
+                do throws(AppleEventError) {
+                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes, onBreak: onBreak)
+                } catch {
+                    access[browser.bundleID] = error
+                }
+            }
+            return (redirected, access)
+        }
         let store = FileSessionStore(url: directory.appendingPathComponent("session.json"))
         if let now {
             engine = SessionEngine(store: store, now: now)
@@ -199,7 +223,8 @@ final class FocusController: ObservableObject {
         tabsRestoredMarker = directory.appendingPathComponent("tabs-restored")
         history = FocusHistory(url: directory.appendingPathComponent("history.json"))
         activityRecorder = ActivityRecorder(store: ActivityDayStore(directory: directory.appendingPathComponent("Activity", isDirectory: true)),
-                                            host: SystemActivityHost(queue: DispatchQueue(label: "focus.activity.day", qos: .utility)))
+                                            host: SystemActivityHost(queue: DispatchQueue(label: "focus.activity.day", qos: .utility)),
+                                            uptime: { ProcessInfo.processInfo.systemUptime })
     }
 
     // MARK: Lifecycle
@@ -212,6 +237,10 @@ final class FocusController: ObservableObject {
         engine.isAway = { [weak self] in self?.isScreenLocked ?? false }
         now = Date()
         activityRecorder.onSave = { [weak self] in self?.bumpActivityDayVersion() }
+        activityRecorder.onSaveTrouble = { [weak self] _ in self?.refreshSaveTrouble() }
+        // History is written as a session ends, when the clock may stop: a
+        // failed write is retried from here, not only from the tick.
+        history.onSaveOutcome { [weak self] landed in self?.historySaveFinished(landed: landed) }
         engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
                        allowTitles: activityDocumentTitlesEnabled,
                        excludedApps: activityExcludedApps)
@@ -454,10 +483,46 @@ final class FocusController: ObservableObject {
         }
         sweepApps()
         ticksSinceCheckpoint += 1
-        if ticksSinceCheckpoint >= 15, engine.session != nil {
+        if ticksSinceCheckpoint >= 15 {
             ticksSinceCheckpoint = 0
-            engine.checkpoint()
+            if engine.session != nil { engine.checkpoint() } else if engine.saveFailed { engine.persist() }
+            if history.saveFailed { history.retrySave() }
+            refreshSaveTrouble()
         }
+    }
+
+    private var saveRetryPending = false
+    /// How long a failed save waits before it is tried again with no clock.
+    nonisolated static let saveRetryDelay: TimeInterval = 30
+
+    private func historySaveFinished(landed: Bool) {
+        refreshSaveTrouble()
+        if !landed { scheduleSaveRetry() }
+    }
+
+    /// One retry at a time, for whatever is failing then. Between sessions
+    /// nothing else would try again.
+    private func scheduleSaveRetry() {
+        guard !saveRetryPending else { return }
+        saveRetryPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.saveRetryDelay) { [weak self] in
+            MainActor.assumeIsolated { self?.retryFailedSaves() }
+        }
+    }
+
+    /// Tries again whatever failed to save. For the retry above, and tests.
+    func retryFailedSaves() {
+        saveRetryPending = false
+        if engine.saveFailed { engine.persist() }
+        if history.saveFailed { history.retrySave() }
+        refreshSaveTrouble()
+        if engine.saveFailed { scheduleSaveRetry() }
+    }
+
+    /// Republishes whether anything failed to save.
+    func refreshSaveTrouble() {
+        let failing = engine.saveFailed || history.saveFailed || activityRecorder.savesFailing
+        if failing != changesNotSaved { changesNotSaved = failing }
     }
 
     /// Every few ticks, while enforcing, has the blocker take another look at
@@ -597,6 +662,10 @@ final class FocusController: ObservableObject {
         case .started, .ended, .paused, .resumed, .undone: invalidateActivityProbe()
         default: break
         }
+        switch event {
+        case .started, .ended, .undone: sweepGeneration &+= 1
+        default: break
+        }
         activityRecorder.setFocusRunning(engine.isRunning)
         var opened: (WorkspaceReport, SessionPlan)?
         switch event {
@@ -645,6 +714,7 @@ final class FocusController: ObservableObject {
         }
         applyEnforcement(sessionStarted: event == .started)
         updateClock()
+        if engine.saveFailed { refreshSaveTrouble(); scheduleSaveRetry() }
         onSessionEvent(event)
         // After the session's own surfaces have reacted to the start, so a
         // card about the workspace is not dismissed by them.
@@ -716,6 +786,7 @@ final class FocusController: ObservableObject {
         let before = enforcing
         enforcing = target
         enforcingOnBreak = engine.isOnBreak
+        sweepGeneration &+= 1
 
         guard let target else {
             lastBrowserSweepAt = nil
@@ -815,37 +886,46 @@ final class FocusController: ObservableObject {
         sweepInFlight = true
         lastBrowserSweepAt = Date()
         let rule = websiteRule(for: enforcing)
-        let browsers = self.browsers
         let goal = engine.session?.plan.goal ?? ""
         // 0 hides the block page's Snooze: a strict session has none, and
         // neither has a break (the page would offer what nothing can do).
         let onBreak = engine.session == nil
         let minutes = onBreak || engine.session?.plan.strict == true ? 0 : Int((snoozeLength / 60).rounded())
+        let generation = sweepGeneration
+        let work = sweepWork
+        // Serial with restores, so a restore asked for later runs after it.
         browserQueue.async { [weak self] in
-            var redirected: [String] = []
-            var access: [String: AppleEventError] = [:]
-            for browser in BrowserProfile.known {
-                do throws(AppleEventError) {
-                    redirected += try browsers.sweep(browser, rule: rule, goal: goal, snoozeMinutes: minutes, onBreak: onBreak)
-                } catch {
-                    access[browser.bundleID] = error
-                }
-            }
+            let (redirected, access) = work(rule, goal, minutes, onBreak)
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    guard let self else { return }
-                    self.sweepInFlight = false
-                    if self.browserAccess != access { self.browserAccess = access }
-                    // Tabs put back at quit, blocked again: not a new block.
-                    if self.quietsNextSweep {
-                        self.quietsNextSweep = false
-                    } else {
-                        for key in redirected { self.report(.website(domain: key)) }
-                    }
+                    self?.finishSweep(redirected: redirected, access: access, generation: generation)
                 }
             }
         }
     }
+
+    private func finishSweep(redirected: [String], access: [String: AppleEventError], generation: Int) {
+        sweepInFlight = false
+        if browserAccess != access { browserAccess = access }
+        guard Self.sweepIsCurrent(asked: generation, now: sweepGeneration) else {
+            // Judged by old rules or for an ended session: counting it would
+            // credit this session (or none) with another's blocks, and it
+            // must not use up the quiet flag armed for the sweep after it.
+            // The rules now in force get a sweep of their own at once.
+            if enforcing != nil { sweepBrowsers() }
+            return
+        }
+        // Tabs put back at quit, blocked again: not a new block.
+        if quietsNextSweep {
+            quietsNextSweep = false
+        } else {
+            for key in redirected { report(.website(domain: key)) }
+        }
+    }
+
+    /// Whether a sweep's results may be reported: only under the rules and
+    /// session it was sent for.
+    nonisolated static func sweepIsCurrent(asked: Int, now: Int) -> Bool { asked == now }
 
     private func restoreTabs(keepBlocked rule: WebsiteRule?) {
         let browsers = self.browsers
@@ -864,18 +944,22 @@ final class FocusController: ObservableObject {
         guard let bundleID = app.bundleIdentifier else { return }
         let name = app.localizedName ?? bundleID
         let quit = appBlocker.action(for: app) == .terminate
-        if quit { engine.recordQuit(bundleID, name: name) }
-        report(.app(bundleID: bundleID, name: name, quit: quit))
+        // The block that follows saves the quit with it: one write, not two.
+        if quit { engine.recordQuit(bundleID, name: name, save: false) }
+        if !report(.app(bundleID: bundleID, name: name, quit: quit)), quit { engine.persist() }
     }
 
     /// One block, counted and shown once: a relaunch loop within a few
     /// seconds is a single block, not ten.
-    private func report(_ item: BlockedItem) {
+    /// Whether it was counted (and so saved).
+    @discardableResult
+    private func report(_ item: BlockedItem) -> Bool {
         let key = item.snoozeKey
-        if let last = lastReported[key], Date().timeIntervalSince(last) < 5 { return }
+        if let last = lastReported[key], Date().timeIntervalSince(last) < 5 { return false }
         lastReported[key] = Date()
         engine.recordBlock(key, name: item.displayName)
         onBlocked(item)
+        return true
     }
 
     private func reopen(_ bundleIDs: [String]) {

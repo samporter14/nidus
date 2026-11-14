@@ -86,10 +86,26 @@ final class ActivityRecorder {
 
     private let host: any ActivityRecorderHost
     private let clock: () -> Date
+    /// Time since boot, which setting the date can't move (and which stops
+    /// in sleep). nil: no check, and only the system's notice is trusted.
+    private let uptime: (() -> TimeInterval)?
+    private var lastSeenUptime: TimeInterval?
+    /// Slept since `lastSeen`: uptime stood still, so it can't be compared.
+    private var sleptSinceSeen = false
     private let calendar: Calendar
     let store: ActivityDayStore
     /// A save landed; a page showing the day can refresh.
     var onSave: () -> Void = {}
+    /// Whether today's record is failing to reach the disk changed.
+    var onSaveTrouble: (Bool) -> Void = { _ in }
+    /// Today's record isn't on disk: the last write of it failed, or its file
+    /// could not be read. What's in memory stays unsaved and is tried again.
+    private(set) var savesFailing = false {
+        didSet { if savesFailing != oldValue { onSaveTrouble(savesFailing) } }
+    }
+    /// Today's file was there but could not be read. Until it can be, it is
+    /// not written over; once it can, this run's time is added to it.
+    private var todayUnreadable = false
 
     private(set) var settings = ActivityRecorderSettings()
     private var isStarted = false
@@ -128,14 +144,33 @@ final class ActivityRecorder {
     private var lastPruneDay: String?
 
     init(store: ActivityDayStore, host: any ActivityRecorderHost, now: @escaping () -> Date = Date.init,
-         calendar: Calendar = .current) {
+         calendar: Calendar = .current, uptime: (() -> TimeInterval)? = nil) {
         self.store = store
         self.host = host
         clock = now
+        self.uptime = uptime
         self.calendar = calendar
         let today = now()
         log = ActivityDayLog(day: ActivityDayLog.key(for: today, calendar: calendar))
         lastSeen = today
+        store.onOutcome = { [weak self] outcome in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.writeFinished(outcome) }
+            }
+        }
+    }
+
+    /// A write's result. One that failed leaves today unsaved, so the next
+    /// periodic save writes the latest state again; nothing older is queued,
+    /// so a clear in between is never undone.
+    private func writeFinished(_ outcome: ActivityDayStore.Outcome) {
+        guard let day = outcome.day, day == log.day else { return }
+        if outcome.succeeded {
+            if !todayUnreadable { savesFailing = false }
+        } else {
+            savesFailing = true
+            if hasSavedSnapshot { hasUnsaved = true }
+        }
     }
 
     // MARK: Reading
@@ -169,7 +204,7 @@ final class ActivityRecorder {
     func start() {
         guard !isStarted else { return }
         isStarted = true
-        lastSeen = clock()
+        markSeen(clock())
         idleFloor = lastSeen
         isIdle = false
         recentDays.removeAll()
@@ -211,7 +246,7 @@ final class ActivityRecorder {
         }
         if old.titles != new.titles {
             invalidateReads()
-            if !new.titles { open?.segment.title = nil }
+            if !new.titles { open?.segment.title = nil; open?.segment.url = nil }
         }
         if old.enabled != new.enabled {
             invalidateReads()
@@ -241,6 +276,8 @@ final class ActivityRecorder {
         open = nil
         hasUnsaved = false
         hasSavedSnapshot = false
+        todayUnreadable = false
+        savesFailing = false
         savedOpenID = nil
         recentDays.removeAll()
         idleFloor = clock()
@@ -285,8 +322,8 @@ final class ActivityRecorder {
         reconcile()
     }
 
-    func systemWillSleep() { isAsleep = true; suspend() }
-    func systemDidWake() { isAsleep = false; resume() }
+    func systemWillSleep() { isAsleep = true; suspend(); sleptSinceSeen = true }
+    func systemDidWake() { isAsleep = false; sleptSinceSeen = true; resume() }
     func screenDidLock() { isLocked = true; suspend() }
     func screenDidUnlock() { isLocked = false; resume() }
 
@@ -304,7 +341,28 @@ final class ActivityRecorder {
     }
 
     /// Set the clock back and every open stretch would end before it began.
+    /// The notice may come after a wake-up has already read the new clock;
+    /// that wake-up dealt with the change (see `clockJumped`), so it is not
+    /// dealt with twice.
     func clockDidChange() {
+        if uptime != nil, !clockJumped() { return }
+        clockChanged()
+    }
+
+    /// Whether wall time since `lastSeen` disagrees with uptime by more than
+    /// a moment, with no sleep in between to explain it.
+    private func clockJumped() -> Bool {
+        guard let uptime, let lastSeenUptime, !sleptSinceSeen else { return false }
+        let wall = clock().timeIntervalSince(lastSeen)
+        return abs(wall - (uptime() - lastSeenUptime)) > Self.clockJumpTolerance
+    }
+
+    /// More than this between the wall clock and uptime is a changed date.
+    nonisolated static let clockJumpTolerance: TimeInterval = 2
+
+    /// Everything up to `lastSeen` was on the old clock: it ends there, and
+    /// what follows starts on the new one.
+    private func clockChanged() {
         let t = clock()
         closeOpen(at: lastSeen, at: lastSeen)
         if hasUnsaved { save(at: lastSeen) }
@@ -314,7 +372,14 @@ final class ActivityRecorder {
         dayContinuityFloor = continuity
         recentDays.removeAll()
         lastSavedAt = t
+        markSeen(t)
         reconcile()
+    }
+
+    private func markSeen(_ t: Date) {
+        lastSeen = t
+        lastSeenUptime = uptime?()
+        sleptSinceSeen = false
     }
 
     /// A running session: silence counts as reading until it stops running.
@@ -338,8 +403,11 @@ final class ActivityRecorder {
             host.arm(after: nil) {}
             return
         }
+        // A changed date read before its notice: settle it on the old clock
+        // first, rather than close what is open at a time on the new one.
+        if clockJumped() { clockChanged(); return }
         let t = clock()
-        lastSeen = t
+        markSeen(t)
         correctIdle(at: t)
         roll(to: t)
         observe(at: t)
@@ -466,8 +534,12 @@ final class ActivityRecorder {
     private func loadToday() {
         guard settings.enabled else { return }
         let key = ActivityDayLog.key(for: clock(), calendar: calendar)
-        let loaded = store.load(day: key)
+        let file = store.loadFile(day: key)
+        let loaded = file.log
         log = loaded ?? ActivityDayLog(day: key)
+        // A corrupt file is set aside by the store at the first write.
+        todayUnreadable = file == .inaccessible
+        savesFailing = todayUnreadable
         continuity = max(continuity, (log.stretches.map(\.continuity).max() ?? -1) + 1)
         dayContinuityFloor = continuity
         hasSavedSnapshot = loaded != nil
@@ -514,6 +586,26 @@ final class ActivityRecorder {
         var snapshot = log
         if let open, let segment = closing(open, at: creditedEnd(at: t)) {
             snapshot.add(segment)
+        }
+        if todayUnreadable {
+            switch store.loadFile(day: log.day) {
+            case .inaccessible:
+                // Still can't be read: keep everything for the next try.
+                hasUnsaved = true
+                savesFailing = true
+                return
+            case .loaded(let onDisk):
+                // Readable again: what was there comes first, then this run.
+                var merged = onDisk
+                for stretch in log.stretches { merged.add(stretch) }
+                log = merged
+                snapshot = log
+                if let open, let segment = closing(open, at: creditedEnd(at: t)) { snapshot.add(segment) }
+                hasSavedSnapshot = true
+            case .absent, .corrupt:
+                break
+            }
+            todayUnreadable = false
         }
         hasUnsaved = false
         // An empty correction must replace a nonempty periodic snapshot.
@@ -609,23 +701,25 @@ final class ActivityRecorder {
     private func take(_ detail: ActivityDetail, for app: ActivityFrontApp, at t: Date) {
         let site = ActivityTimeline.safeDaySite(detail.site ?? detail.domain)
         let title = settings.titles ? detail.title : nil
+        // Domain only unless names are on; the domain is already in `site`.
+        let detailURL = settings.titles ? detail.url : nil
         guard let current = open else { return }
         open?.awaitingFirstRead = false
         if current.awaitingFirstRead {
             open?.segment.site = site
             open?.segment.title = title
-            open?.segment.url = detail.url
-        } else if current.segment.url != nil, detail.url != nil,
-                  !ActivityTimeline.samePage(current.segment.url, detail.url) {
-            change(to: site, title: title, url: detail.url, at: t)
+            open?.segment.url = detailURL
+        } else if current.segment.url != nil, detailURL != nil,
+                  !ActivityTimeline.samePage(current.segment.url, detailURL) {
+            change(to: site, title: title, url: detailURL, at: t)
         } else if current.segment.site == site, title == nil || current.segment.title == nil {
             // A name arriving late, or one read that returned none.
             open?.segment.title = title ?? current.segment.title
-            open?.segment.url = detail.url ?? current.segment.url
+            open?.segment.url = detailURL ?? current.segment.url
         } else if current.segment.site != site || current.segment.title != title {
-            change(to: site, title: title, url: detail.url, at: t)
+            change(to: site, title: title, url: detailURL, at: t)
         } else {
-            open?.segment.url = detail.url ?? current.segment.url
+            open?.segment.url = detailURL ?? current.segment.url
         }
     }
 

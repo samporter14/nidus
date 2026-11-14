@@ -190,7 +190,9 @@ struct ActivityProbePureTests {
     }
 
     @Test func onlyAWebPagesAddressIsKept() {
-        #expect(ActivityProbe.keptURL("https://nature.com/a?b=1#c") == "https://nature.com/a?b=1#c")
+        // Never the query, fragment or a sign-in: only the page.
+        #expect(ActivityProbe.keptURL("https://nature.com/a?b=1#c") == "https://nature.com/a")
+        #expect(ActivityProbe.keptURL("https://me:secret@mail.example/inbox?token=x") == "https://mail.example/inbox")
         #expect(ActivityProbe.keptURL("file:///Users/me/a.pdf") == nil)
         #expect(ActivityProbe.keptURL("about:blank") == nil)
         #expect(ActivityProbe.keptURL("https://a.com/" + String(repeating: "x", count: ActivityProbe.urlLimit)) == nil)
@@ -761,5 +763,14 @@ struct ActivityDayStoreTests {
         let hidden = session.hiding(["a"])
         #expect(hidden.foreground == ["b": 20])
         #expect(hidden.activity?.map(\.appID) == ["b"])
+    }
+}
+
+@MainActor
+struct ActivityNamesDefaultTests {
+    @Test func namesAreKeptUnlessTurnedOff() {
+        // A Mac that never touched the switch keeps page and window names,
+        // with addresses cleaned (see `keptURL`).
+        #expect(NidusModel().activityNamesEnabled)
     }
 }
