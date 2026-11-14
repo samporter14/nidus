@@ -151,9 +151,10 @@ and the categories to block, and press Start. Until the session ends:
 - **Activity.** A record of your whole day: which apps, websites and
   documents were in front and when, drawn to clock scale with your focus
   sessions above it, ranked by day, week or month. Time stops when you step
-  away. Websites are kept as domains only, unless you turn on page and window
-  names. It keeps one file a day on your Mac for 90 days, and you can turn it
-  off, exclude apps, pause it for an hour or clear it. [More on what it records](docs/activity.md).
+  away. It keeps page titles, document names and page addresses (without
+  query strings or fragments), in one file a day on your Mac for 90 days. You
+  can keep websites as domains only, turn it off, exclude apps, pause it for
+  an hour or clear it. [More on what it records](docs/activity.md).
 - **Stats.** Six months of focus as a graph, with your streaks, your longest
   session, how many goals you finished and what you blocked most. On Monday a
   card sums up last week. Export your history as CSV or JSON whenever you

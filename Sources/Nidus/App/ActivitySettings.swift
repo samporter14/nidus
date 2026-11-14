@@ -7,8 +7,8 @@ extension NidusModel.Key {
     static let activityTracking = "activityTrackingEnabled"
     static let activityExcluded = "activityExcludedApps"
     static let activityAllDay = "activityAllDayEnabled"
-    /// Off by default: websites are kept as domains, with no page or window
-    /// names and no addresses.
+    /// On by default. Off: websites are kept as domains, with no page or
+    /// window names and no addresses.
     static let activityTitles = "activityDocumentTitlesEnabled"
     static let activityIdleMinutes = "activityIdleMinutes"
     static let activityRetentionDays = "activityRetentionDays"
@@ -85,7 +85,7 @@ extension NidusModel {
     /// Page, window and document names, and page addresses (without query
     /// or fragment). Off: websites are kept as domains only.
     var activityNamesEnabled: Bool {
-        get { preference(Key.activityTitles, default: false) }
+        get { preference(Key.activityTitles, default: true) }
         set { setPreference(newValue, Key.activityTitles); applyActivitySettings() }
     }
     /// Only meaningful with Activity and history on.
@@ -217,7 +217,7 @@ struct ActivityTrackingControls: View {
                         }
                     }
                     Toggle("Keep page and window names", isOn: model.binding(\.activityNamesEnabled))
-                    Text("Off: websites are kept as domains only. On: page, window and document names are kept too, with page addresses for reopening (never their query or fragment). Everything stays on this Mac.")
+                    Text("Page, window and document names are kept, with page addresses for reopening (never their query or fragment). Off: websites are kept as domains only. Everything stays on this Mac.")
                         .font(.caption).foregroundStyle(.secondary)
                     Divider()
                     HStack {

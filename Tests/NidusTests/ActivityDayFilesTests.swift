@@ -765,3 +765,12 @@ struct ActivityDayStoreTests {
         #expect(hidden.activity?.map(\.appID) == ["b"])
     }
 }
+
+@MainActor
+struct ActivityNamesDefaultTests {
+    @Test func namesAreKeptUnlessTurnedOff() {
+        // A Mac that never touched the switch keeps page and window names,
+        // with addresses cleaned (see `keptURL`).
+        #expect(NidusModel().activityNamesEnabled)
+    }
+}
