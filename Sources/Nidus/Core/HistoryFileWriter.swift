@@ -27,6 +27,9 @@ final class HistoryFileWriter: @unchecked Sendable {
 
     /// The latest write failed. Read anywhere; set on the queue.
     var lastWriteFailed: Bool { failure.value }
+    /// Told after each write is tried, on the writer's queue: whether it
+    /// landed. Set once, before the first write.
+    var onOutcome: (@Sendable (Bool) -> Void)?
 
     private final class Failure: @unchecked Sendable {
         private let lock = NSLock()
@@ -91,6 +94,7 @@ final class HistoryFileWriter: @unchecked Sendable {
             }
             guard let next else { return }
             perform(next)
+            onOutcome?(!failure.value)
         }
     }
 }

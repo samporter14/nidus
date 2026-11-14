@@ -84,4 +84,29 @@ struct SaveTroubleTests {
         engine.start(plan)
         #expect(!engine.saveFailed)
     }
+
+    @Test func aHistoryWriteThatFailsAsASessionEndsIsShownAndRetried() async throws {
+        let dir = folder()
+        final class Clock { var now = Date(timeIntervalSinceReferenceDate: 800_000_000) }
+        let clock = Clock()
+        let controller = FocusController(directory: dir, now: { clock.now })
+        controller.sweepWork = { _, _, _, _ in ([], [:]) }
+        controller.start()
+        defer { controller.stop() }
+        controller.start(SessionPlan(goal: "Write", duration: 25 * 60, mode: .block, apps: [], websites: []))
+        clock.now += 10 * 60
+        controller.tick()
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o500], ofItemAtPath: dir.path)
+        controller.end()
+        for _ in 0..<100 where !controller.changesNotSaved { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.changesNotSaved, "no clock runs after the end, and it still shows")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+        controller.retryFailedSaves()
+        controller.history.flush()
+        for _ in 0..<100 where controller.changesNotSaved { try? await Task.sleep(for: .milliseconds(10)) }
+        #expect(!controller.changesNotSaved)
+        #expect(FocusHistory(url: dir.appendingPathComponent("history.json")).sessions.count == 1)
+    }
 }

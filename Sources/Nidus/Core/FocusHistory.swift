@@ -259,6 +259,13 @@ final class FocusHistory {
     /// The latest write of the history file failed.
     var saveFailed: Bool { writer.lastWriteFailed }
 
+    /// Told on the main actor after each write: whether it landed.
+    func onSaveOutcome(_ handler: @escaping @MainActor (Bool) -> Void) {
+        writer.onOutcome = { landed in
+            DispatchQueue.main.async { MainActor.assumeIsolated { handler(landed) } }
+        }
+    }
+
     /// Writes the history as it is now, after a write that failed. Nothing
     /// older is queued, so a clear is never undone.
     func retrySave() {

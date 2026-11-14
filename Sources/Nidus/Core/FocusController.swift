@@ -238,6 +238,9 @@ final class FocusController: ObservableObject {
         now = Date()
         activityRecorder.onSave = { [weak self] in self?.bumpActivityDayVersion() }
         activityRecorder.onSaveTrouble = { [weak self] _ in self?.refreshSaveTrouble() }
+        // History is written as a session ends, when the clock may stop: a
+        // failed write is retried from here, not only from the tick.
+        history.onSaveOutcome { [weak self] landed in self?.historySaveFinished(landed: landed) }
         engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
                        allowTitles: activityDocumentTitlesEnabled,
                        excludedApps: activityExcludedApps)
@@ -488,6 +491,34 @@ final class FocusController: ObservableObject {
         }
     }
 
+    private var saveRetryPending = false
+    /// How long a failed save waits before it is tried again with no clock.
+    nonisolated static let saveRetryDelay: TimeInterval = 30
+
+    private func historySaveFinished(landed: Bool) {
+        refreshSaveTrouble()
+        if !landed { scheduleSaveRetry() }
+    }
+
+    /// One retry at a time, for whatever is failing then. Between sessions
+    /// nothing else would try again.
+    private func scheduleSaveRetry() {
+        guard !saveRetryPending else { return }
+        saveRetryPending = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + Self.saveRetryDelay) { [weak self] in
+            MainActor.assumeIsolated { self?.retryFailedSaves() }
+        }
+    }
+
+    /// Tries again whatever failed to save. For the retry above, and tests.
+    func retryFailedSaves() {
+        saveRetryPending = false
+        if engine.saveFailed { engine.persist() }
+        if history.saveFailed { history.retrySave() }
+        refreshSaveTrouble()
+        if engine.saveFailed { scheduleSaveRetry() }
+    }
+
     /// Republishes whether anything failed to save.
     func refreshSaveTrouble() {
         let failing = engine.saveFailed || history.saveFailed || activityRecorder.savesFailing
@@ -683,6 +714,7 @@ final class FocusController: ObservableObject {
         }
         applyEnforcement(sessionStarted: event == .started)
         updateClock()
+        if engine.saveFailed { refreshSaveTrouble(); scheduleSaveRetry() }
         onSessionEvent(event)
         // After the session's own surfaces have reacted to the start, so a
         // card about the workspace is not dismissed by them.
