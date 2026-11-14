@@ -91,6 +91,28 @@ final class ActivityDayStore: @unchecked Sendable {
         }
     }
 
+    /// As `load(days:)`, for a reader that may be superseded: once the
+    /// calling task is cancelled it stops between files and returns nil, so
+    /// a stale read doesn't hold up the next one behind it. Nil is never
+    /// "no days"; only a reader that drops cancelled results should use this.
+    func loadUnlessCancelled(days: [String]) async -> [ActivityDayLog]? {
+        let cancelled = OSAllocatedUnfairLock(initialState: false)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<[ActivityDayLog]?, Never>) in
+                queue.async { [self] in
+                    var logs: [ActivityDayLog] = []
+                    for day in days.sorted() {
+                        if cancelled.withLock({ $0 }) { return continuation.resume(returning: nil) }
+                        if let log = Self.read(url(for: day)) { logs.append(log) }
+                    }
+                    continuation.resume(returning: logs)
+                }
+            }
+        } onCancel: {
+            cancelled.withLock { $0 = true }
+        }
+    }
+
     /// Every saved day, oldest first.
     func loadAll() async -> [ActivityDayLog] {
         await withCheckedContinuation { continuation in
