@@ -172,6 +172,14 @@ enum PresetUpdates {
                            BlockedApp(bundleID: "it.bloop.airmail2", name: "Airmail"),
                            BlockedApp(bundleID: "org.mozilla.thunderbird", name: "Thunderbird")]
 
+    /// The Mac apps of the chat assistants AI chat lists by website. Only a
+    /// suggestion carries them: a saved AI chat keeps what the person chose.
+    static let aiChatApps = [BlockedApp(bundleID: "com.openai.chat", name: "ChatGPT"),
+                             BlockedApp(bundleID: "com.openai.codex", name: "Codex"),
+                             BlockedApp(bundleID: "com.google.GeminiMacOS", name: "Gemini"),
+                             BlockedApp(bundleID: "com.google.antigravity", name: "Antigravity"),
+                             BlockedApp(bundleID: "ai.opencode.desktop", name: "OpenCode")]
+
     /// Whole new categories are offered explicitly, never inserted into a
     /// saved list. Removing one keeps it removed until Add is pressed again.
     static let suggestedCategories: [FocusCategory] = [
@@ -186,7 +194,7 @@ enum PresetUpdates {
             ["robinhood.com", "finance.yahoo.com", "coinbase.com", "tradingview.com"]),
         .init(id: "forums", name: "Forums and Q&A", symbol: "text.bubble", apps: [], websites:
             ["reddit.com", "quora.com", "news.ycombinator.com"]),
-        .init(id: "ai-chat", name: "AI chat", symbol: "sparkles", apps: [], websites:
+        .init(id: "ai-chat", name: "AI chat", symbol: "sparkles", apps: aiChatApps, websites:
             ["chatgpt.com", "claude.ai", "gemini.google.com", "perplexity.ai"]),
     ]
 
