@@ -1,3 +1,11 @@
+//
+//  ActivityFilterScope.swift
+//  Nidus
+//
+//  How the Activity page's filters meet the running session and the charts
+//  built from all activity.
+//
+
 import Foundation
 
 /// Decisions about how the Activity page's filters meet the running session

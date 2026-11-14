@@ -320,7 +320,7 @@ struct FocusActivityPage: View {
     private var unfilteredNote: some View {
         Text(ActivityFilterScope.unfilteredCaption)
             .font(.system(size: 11))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(.secondary)
     }
 
     @ViewBuilder
