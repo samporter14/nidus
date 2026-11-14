@@ -4,7 +4,7 @@
 //
 //  "Jump to" in the Settings window: a field over every tab that finds a
 //  setting by what it is called or what you would call it ("break", "strict",
-//  "calendar", "shortcut", "Plaque") and opens the tab or page it lives on.
+//  "calendar", "shortcut") and opens the tab or page it lives on.
 //  The index below is a hand-kept list, not a crawl of the views: each entry
 //  names the page it opens, and a test checks that every page is one Settings
 //  can open and that the place it shows is the tab the page really belongs to.
@@ -55,7 +55,7 @@ struct SettingsJumpEntry: Identifiable, Equatable, Sendable {
     var anchor: String? {
         switch id {
         case "session-length", "break", "strict", "menu-bar-time", "login", "open-shortcut",
-             "plaque", "brick", "focus-shortcuts", "block-mode", "blocked-app", "snooze", "reopen",
+             "brick", "focus-shortcuts", "block-mode", "blocked-app", "snooze", "reopen",
              "categories", "browsers": id
         case "break-rules": "break"
         case "exceptions": "categories"
@@ -90,8 +90,6 @@ enum SettingsJumpIndex {
                   ["shortcut", "keyboard", "hotkey", "hot key", "global", "key", "popover", "open", "toggle"]),
             .init("apps-to-open", "Apps to open", page: NidusModel.launchAppsPageID, section: "When a session starts",
                   pageTitle: "Apps to open", ["launch", "start apps", "open apps", "workspace", "when a session starts"]),
-            .init("plaque", "Plaque", page: general, section: "Plaque",
-                  ["e-paper", "epaper", "e-ink", "eink", "reader", "display", "status file", "show focus"]),
             .init("brick", "Phone focus requests", page: general, section: "Brick companion",
                   ["brick", "phone", "companion", "request", "session chooser"]),
             .init("get-started", "Get started guide", page: general, section: "Get started",

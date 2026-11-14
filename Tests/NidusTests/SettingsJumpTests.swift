@@ -83,12 +83,6 @@ struct SettingsJumpIndexTests {
         #expect(SettingsRoute.resolve(top("inbox")!.page) == SettingsRoute(tab: .general, pushes: true))
     }
 
-    @Test func plaqueFindsPlaqueInGeneral() {
-        #expect(top("Plaque")?.id == "plaque")
-        #expect(top("plaque")?.tab == .general)
-        #expect(top("e-ink")?.id == "plaque")
-    }
-
     @Test func exceptionsFindsWebsiteExceptionsInBlocking() {
         #expect(top("exceptions")?.id == "exceptions")
         #expect(top("exception")?.id == "exceptions", "singular or plural")
@@ -118,13 +112,13 @@ struct SettingsJumpIndexTests {
     @Test func moreWordsNarrowTheResults() {
         #expect(ids("capture shortcut").first == "capture-shortcut")
         #expect(ids("open nidus").first == "open-shortcut")
-        #expect(!ids("capture shortcut").contains("plaque"))
+        #expect(!ids("capture shortcut").contains("brick"))
         #expect(ids("break shortcut").isEmpty, "every word must be found")
     }
 
     @Test func caseAccentsAndSpacesDoNotMatter() {
         #expect(ids("  BREAK ") == ids("break"))
-        #expect(ids("Pl\u{00E2}que") == ids("plaque"))
+        #expect(ids("Br\u{00E9}ak") == ids("break"))
     }
 
     @Test func nothingIsFoundForNothingOrNonsense() {

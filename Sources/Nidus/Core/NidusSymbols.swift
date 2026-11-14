@@ -8,6 +8,5 @@ enum NidusSymbols {
     static let sequence = "list.number"
     static let setup = "bolt"
     static let calendar = "calendar.badge.clock"
-    static let plaque = "rectangle.on.rectangle"
     static let brick = "iphone"
 }

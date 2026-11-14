@@ -116,7 +116,6 @@ struct CrossFeatureFixesTests {
         let engine = SessionEngine(store: store)
         engine.restore()
         #expect(engine.sequence == nil)
-        #expect(NidusModel.plaqueSequence(run) == nil, "and the Plaque snapshot never indexes it")
     }
 
     @Test func aSequenceStepsMinutesAreHeldToADay() throws {
