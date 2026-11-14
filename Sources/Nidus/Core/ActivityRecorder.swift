@@ -90,6 +90,16 @@ final class ActivityRecorder {
     let store: ActivityDayStore
     /// A save landed; a page showing the day can refresh.
     var onSave: () -> Void = {}
+    /// Whether today's record is failing to reach the disk changed.
+    var onSaveTrouble: (Bool) -> Void = { _ in }
+    /// Today's record isn't on disk: the last write of it failed, or its file
+    /// could not be read. What's in memory stays unsaved and is tried again.
+    private(set) var savesFailing = false {
+        didSet { if savesFailing != oldValue { onSaveTrouble(savesFailing) } }
+    }
+    /// Today's file was there but could not be read. Until it can be, it is
+    /// not written over; once it can, this run's time is added to it.
+    private var todayUnreadable = false
 
     private(set) var settings = ActivityRecorderSettings()
     private var isStarted = false
@@ -136,6 +146,24 @@ final class ActivityRecorder {
         let today = now()
         log = ActivityDayLog(day: ActivityDayLog.key(for: today, calendar: calendar))
         lastSeen = today
+        store.onOutcome = { [weak self] outcome in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated { self?.writeFinished(outcome) }
+            }
+        }
+    }
+
+    /// A write's result. One that failed leaves today unsaved, so the next
+    /// periodic save writes the latest state again; nothing older is queued,
+    /// so a clear in between is never undone.
+    private func writeFinished(_ outcome: ActivityDayStore.Outcome) {
+        guard let day = outcome.day, day == log.day else { return }
+        if outcome.succeeded {
+            if !todayUnreadable { savesFailing = false }
+        } else {
+            savesFailing = true
+            if hasSavedSnapshot { hasUnsaved = true }
+        }
     }
 
     // MARK: Reading
@@ -241,6 +269,8 @@ final class ActivityRecorder {
         open = nil
         hasUnsaved = false
         hasSavedSnapshot = false
+        todayUnreadable = false
+        savesFailing = false
         savedOpenID = nil
         recentDays.removeAll()
         idleFloor = clock()
@@ -466,8 +496,12 @@ final class ActivityRecorder {
     private func loadToday() {
         guard settings.enabled else { return }
         let key = ActivityDayLog.key(for: clock(), calendar: calendar)
-        let loaded = store.load(day: key)
+        let file = store.loadFile(day: key)
+        let loaded = file.log
         log = loaded ?? ActivityDayLog(day: key)
+        // A corrupt file is set aside by the store at the first write.
+        todayUnreadable = file == .inaccessible
+        savesFailing = todayUnreadable
         continuity = max(continuity, (log.stretches.map(\.continuity).max() ?? -1) + 1)
         dayContinuityFloor = continuity
         hasSavedSnapshot = loaded != nil
@@ -514,6 +548,26 @@ final class ActivityRecorder {
         var snapshot = log
         if let open, let segment = closing(open, at: creditedEnd(at: t)) {
             snapshot.add(segment)
+        }
+        if todayUnreadable {
+            switch store.loadFile(day: log.day) {
+            case .inaccessible:
+                // Still can't be read: keep everything for the next try.
+                hasUnsaved = true
+                savesFailing = true
+                return
+            case .loaded(let onDisk):
+                // Readable again: what was there comes first, then this run.
+                var merged = onDisk
+                for stretch in log.stretches { merged.add(stretch) }
+                log = merged
+                snapshot = log
+                if let open, let segment = closing(open, at: creditedEnd(at: t)) { snapshot.add(segment) }
+                hasSavedSnapshot = true
+            case .absent, .corrupt:
+                break
+            }
+            todayUnreadable = false
         }
         hasUnsaved = false
         // An empty correction must replace a nonempty periodic snapshot.

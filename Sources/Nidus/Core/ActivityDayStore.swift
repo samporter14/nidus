@@ -20,7 +20,39 @@ final class ActivityDayStore: @unchecked Sendable {
         case prune(before: String)
     }
 
+    /// What is on disk for a day. A file that is there but can't be read is
+    /// never the same as no file: treating it as an empty day would let the
+    /// next save write over it.
+    enum DayFile: Sendable, Equatable {
+        case absent
+        case loaded(ActivityDayLog)
+        /// There, but not a day this store can decode. Set aside before the
+        /// day is written again.
+        case corrupt
+        /// There, but it could not be read (permissions, a disk error). Never
+        /// written over.
+        case inaccessible
+
+        var log: ActivityDayLog? {
+            if case .loaded(let log) = self { return log }
+            return nil
+        }
+    }
+
+    /// How a change went on disk. `day` is set for a write.
+    struct Outcome: Sendable, Equatable {
+        var day: String?
+        var succeeded: Bool
+    }
+
+    enum StoreError: Error { case inaccessible(String) }
+
     let directory: URL
+    /// Told after each change is tried, on the store's queue.
+    var onOutcome: (@Sendable (Outcome) -> Void)?
+    /// Days this store has written, so the file there is known to be its own
+    /// and needs no check before the next write. Queue only.
+    private var writtenDays: Set<String> = []
     private let queue = DispatchQueue(label: "local.sam.nidus.activity-days", qos: .utility)
     private let lock = NSLock()
     private var pending: [Change] = []
@@ -80,6 +112,11 @@ final class ActivityDayStore: @unchecked Sendable {
     /// one small file is wanted at once.
     func load(day: String) -> ActivityDayLog? {
         queue.sync { Self.read(url(for: day)) }
+    }
+
+    /// As `load(day:)`, telling a missing file from one that can't be read.
+    func loadFile(day: String) -> DayFile {
+        queue.sync { Self.readFile(url(for: day)) }
     }
 
     /// The days that have files, oldest first.
@@ -153,32 +190,75 @@ final class ActivityDayStore: @unchecked Sendable {
 
     static func encode(_ log: ActivityDayLog) throws -> Data { try JSONEncoder().encode(log) }
 
-    private static func read(_ url: URL) -> ActivityDayLog? {
-        guard let data = try? Data(contentsOf: url) else { return nil }
-        do { return try JSONDecoder().decode(ActivityDayLog.self, from: data).sanitized }
+    private static func read(_ url: URL) -> ActivityDayLog? { readFile(url).log }
+
+    static func readFile(_ url: URL) -> DayFile {
+        let data: Data
+        do { data = try Data(contentsOf: url) }
+        catch CocoaError.fileReadNoSuchFile, CocoaError.fileNoSuchFile { return .absent }
+        catch {
+            logger.error("Could not open a day of activity: \(error.localizedDescription, privacy: .public)")
+            return .inaccessible
+        }
+        do { return .loaded(try JSONDecoder().decode(ActivityDayLog.self, from: data).sanitized) }
         catch {
             logger.error("Could not read a day of activity: \(error.localizedDescription, privacy: .public)")
-            return nil
+            return .corrupt
         }
     }
 
     private static let logger = Logger(subsystem: "local.sam.nidus", category: "activity")
 
     private func apply(_ change: Change) {
+        var day: String?
         do {
             switch change {
             case .write(let log):
-                try save(log)
+                day = log.day
+                try write(log)
             case .clear:
+                writtenDays.removeAll()
                 for key in dayKeys() { try delete(key) }
             case .removeTitles:
                 try rewrite { $0.hasTitles ? $0.removeTitles() : () }
             case .prune(let before):
                 for key in dayKeys() where key < before { try delete(key) }
             }
+            onOutcome?(Outcome(day: day, succeeded: true))
         } catch {
             Self.logger.error("Could not save activity: \(error.localizedDescription, privacy: .public)")
+            onOutcome?(Outcome(day: day, succeeded: false))
         }
+    }
+
+    /// The first write of a day this run looks at what is there: a file that
+    /// can't be read is left alone, and one that can't be decoded is kept
+    /// beside the new one rather than lost.
+    private func write(_ log: ActivityDayLog) throws {
+        if !writtenDays.contains(log.day) {
+            let file = url(for: log.day)
+            switch Self.readFile(file) {
+            case .inaccessible: throw StoreError.inaccessible(log.day)
+            case .corrupt: try setAside(file)
+            case .absent, .loaded: break
+            }
+        }
+        try save(log)
+        writtenDays.insert(log.day)
+    }
+
+    /// Renames an unreadable day to `<day>.json.corrupt-<time>` beside it.
+    /// That name is not a day file, so nothing reads or prunes it.
+    private func setAside(_ file: URL) throws {
+        let stamp = Int(Date().timeIntervalSince1970)
+        var aside = file.appendingPathExtension("corrupt-\(stamp)")
+        var n = 1
+        while FileManager.default.fileExists(atPath: aside.path) {
+            aside = file.appendingPathExtension("corrupt-\(stamp)-\(n)")
+            n += 1
+        }
+        try FileManager.default.moveItem(at: file, to: aside)
+        Self.logger.error("Set aside an unreadable day of activity as \(aside.lastPathComponent, privacy: .public)")
     }
 
     private func rewrite(_ edit: (inout ActivityDayLog) -> Void) throws {
@@ -197,10 +277,12 @@ final class ActivityDayStore: @unchecked Sendable {
                                                 attributes: [.posixPermissions: 0o700])
         let file = url(for: log.day)
         try data.write(to: file, options: .atomic)
+        writtenDays.insert(log.day)
         try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
     }
 
     private func delete(_ key: String) throws {
+        writtenDays.remove(key)
         do { try FileManager.default.removeItem(at: url(for: key)) }
         catch CocoaError.fileNoSuchFile { }
     }
