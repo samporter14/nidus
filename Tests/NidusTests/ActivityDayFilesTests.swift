@@ -190,7 +190,9 @@ struct ActivityProbePureTests {
     }
 
     @Test func onlyAWebPagesAddressIsKept() {
-        #expect(ActivityProbe.keptURL("https://nature.com/a?b=1#c") == "https://nature.com/a?b=1#c")
+        // Never the query, fragment or a sign-in: only the page.
+        #expect(ActivityProbe.keptURL("https://nature.com/a?b=1#c") == "https://nature.com/a")
+        #expect(ActivityProbe.keptURL("https://me:secret@mail.example/inbox?token=x") == "https://mail.example/inbox")
         #expect(ActivityProbe.keptURL("file:///Users/me/a.pdf") == nil)
         #expect(ActivityProbe.keptURL("about:blank") == nil)
         #expect(ActivityProbe.keptURL("https://a.com/" + String(repeating: "x", count: ActivityProbe.urlLimit)) == nil)

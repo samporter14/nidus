@@ -226,10 +226,15 @@ protocol SessionStore: AnyObject {
     /// What went wrong in the last `load()`, if anything. A store that cannot
     /// go wrong need not say so.
     var loadProblem: SessionLoadProblem? { get }
+    /// Whether the latest save failed to reach the disk.
+    var lastSaveFailed: Bool { get }
 }
 
 extension SessionStore {
     var loadProblem: SessionLoadProblem? { nil }
+    /// Whether the latest save failed to reach the disk. A store that cannot
+    /// fail need not say so.
+    var lastSaveFailed: Bool { false }
 }
 
 /// A saved session file that could not be read, and what became of it. The
@@ -254,6 +259,9 @@ final class FileSessionStore: SessionStore {
     private let now: () -> Date
     /// Set by `load()`; nil when the file was fine or there was none.
     private(set) var loadProblem: SessionLoadProblem?
+    /// The latest save did not land. The next save writes the whole record
+    /// again, so nothing more than that is needed to catch up.
+    private(set) var lastSaveFailed = false
 
     init(url: URL, now: @escaping () -> Date = Date.init) {
         self.url = url
@@ -282,13 +290,18 @@ final class FileSessionStore: SessionStore {
     func save(_ record: SessionRecord) {
         let fm = FileManager.default
         try? fm.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let data = try? JSONEncoder().encode(record) else { return }
+        guard let data = try? JSONEncoder().encode(record) else { lastSaveFailed = true; return }
         // The file about to be replaced becomes the backup (atomically, so a
         // crash leaves the old backup or the new, never half of one). With no
         // file yet, the backup starts as this write.
         let previous = try? Data(contentsOf: url)
         try? (previous ?? data).write(to: backupURL, options: .atomic)
-        try? data.write(to: url, options: .atomic)
+        do {
+            try data.write(to: url, options: .atomic)
+            lastSaveFailed = false
+        } catch {
+            lastSaveFailed = true
+        }
     }
 
     /// The record in `data`, or nil when it is not one. A file whose session
@@ -682,13 +695,15 @@ final class SessionEngine {
     }
 
     /// Notes an app the session quit, for `reopensQuitApps` and the stats.
-    func recordQuit(_ bundleID: String, name: String? = nil) {
+    /// `save` false: the caller saves straight after (a quit is followed by
+    /// its block), so the file is written once, not twice.
+    func recordQuit(_ bundleID: String, name: String? = nil, save saves: Bool = true) {
         guard var session else { return }
         if !session.quitApps.contains(bundleID) { session.quitApps.append(bundleID) }
         session.quitCounts[bundleID, default: 0] += 1
         if let name { session.names[bundleID] = name }
         self.session = session
-        save()
+        if saves { save() }
     }
 
     /// Counts one block of an app (bundle identifier) or site (domain).
@@ -1145,6 +1160,13 @@ final class SessionEngine {
         save()
         onEvent(event)
     }
+
+    /// The latest save of the session file failed.
+    var saveFailed: Bool { store?.lastSaveFailed ?? false }
+
+    /// Writes the current state again, after a save that failed or a change
+    /// recorded without one.
+    func persist() { save() }
 
     private func save() {
         store?.save(SessionRecord(session: session, lastPlan: lastPlan, pendingBreak: breakState, sequence: sequence))

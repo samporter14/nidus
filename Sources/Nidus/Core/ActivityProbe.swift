@@ -61,11 +61,20 @@ enum ActivityProbe {
         return ActivityDetail(site: nil, title: title)
     }
 
-    /// An address worth keeping: a web page's, and not an endless one.
+    /// An address worth keeping: a web page's, and not an endless one, with
+    /// no query, fragment or sign-in in it. Those carry search terms, tokens
+    /// and account details, and two addresses that differ only there are the
+    /// same page anyway (see `ActivityTimeline.samePage`). Only stored with
+    /// names on; with names off a website is kept as its domain alone.
     static func keptURL(_ raw: String?) -> String? {
-        guard let raw, raw.count <= urlLimit, let scheme = URLComponents(string: raw)?.scheme?.lowercased(),
-              scheme == "https" || scheme == "http" else { return nil }
-        return raw
+        guard let raw, raw.count <= urlLimit, var parts = URLComponents(string: raw),
+              let scheme = parts.scheme?.lowercased(), scheme == "https" || scheme == "http",
+              parts.host?.isEmpty == false else { return nil }
+        parts.query = nil
+        parts.fragment = nil
+        parts.user = nil
+        parts.password = nil
+        return parts.string
     }
 
     /// Takes off what changes while the same document stays open: Preview's

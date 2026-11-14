@@ -239,7 +239,7 @@ final class ActivityRecorder {
         }
         if old.titles != new.titles {
             invalidateReads()
-            if !new.titles { open?.segment.title = nil }
+            if !new.titles { open?.segment.title = nil; open?.segment.url = nil }
         }
         if old.enabled != new.enabled {
             invalidateReads()
@@ -663,23 +663,25 @@ final class ActivityRecorder {
     private func take(_ detail: ActivityDetail, for app: ActivityFrontApp, at t: Date) {
         let site = ActivityTimeline.safeDaySite(detail.site ?? detail.domain)
         let title = settings.titles ? detail.title : nil
+        // Domain only unless names are on; the domain is already in `site`.
+        let detailURL = settings.titles ? detail.url : nil
         guard let current = open else { return }
         open?.awaitingFirstRead = false
         if current.awaitingFirstRead {
             open?.segment.site = site
             open?.segment.title = title
-            open?.segment.url = detail.url
-        } else if current.segment.url != nil, detail.url != nil,
-                  !ActivityTimeline.samePage(current.segment.url, detail.url) {
-            change(to: site, title: title, url: detail.url, at: t)
+            open?.segment.url = detailURL
+        } else if current.segment.url != nil, detailURL != nil,
+                  !ActivityTimeline.samePage(current.segment.url, detailURL) {
+            change(to: site, title: title, url: detailURL, at: t)
         } else if current.segment.site == site, title == nil || current.segment.title == nil {
             // A name arriving late, or one read that returned none.
             open?.segment.title = title ?? current.segment.title
-            open?.segment.url = detail.url ?? current.segment.url
+            open?.segment.url = detailURL ?? current.segment.url
         } else if current.segment.site != site || current.segment.title != title {
-            change(to: site, title: title, url: detail.url, at: t)
+            change(to: site, title: title, url: detailURL, at: t)
         } else {
-            open?.segment.url = detail.url ?? current.segment.url
+            open?.segment.url = detailURL ?? current.segment.url
         }
     }
 

@@ -341,13 +341,33 @@ struct ActivityRecorderTests {
 
     // MARK: Pages
 
-    @Test func aPageKeepsItsAddressButCountsUnderItsDomain() {
+    @Test func withNamesOffAPageIsKeptAsItsDomainOnly() {
         let rig = Rig()
         rig.start(Rig.chrome)
-        rig.host.answer(ActivityDetail(site: nil, title: "A paper", domain: "nature.com", url: "https://www.nature.com/articles/a?x=1"))
+        rig.host.answer(ActivityDetail(site: nil, title: "A paper", domain: "nature.com", url: "https://www.nature.com/articles/a"))
         rig.clock.advance(4)
         #expect(rig.stretches.map(\.site) == ["nature.com"])
-        #expect(rig.stretches.first?.url == "https://www.nature.com/articles/a?x=1")
+        #expect(rig.stretches.first?.url == nil)
+        #expect(rig.stretches.first?.title == nil)
+    }
+
+    @Test func withNamesOnAPageKeepsItsAddressButCountsUnderItsDomain() {
+        let rig = Rig(settings: ActivityRecorderSettings(enabled: true, titles: true))
+        rig.start(Rig.chrome)
+        rig.host.answer(ActivityDetail(site: nil, title: "A paper", domain: "nature.com", url: "https://www.nature.com/articles/a"))
+        rig.clock.advance(4)
+        #expect(rig.stretches.map(\.site) == ["nature.com"])
+        #expect(rig.stretches.first?.url == "https://www.nature.com/articles/a")
+    }
+
+    @Test func turningNamesOffDropsTheOpenPagesAddress() {
+        let rig = Rig(settings: ActivityRecorderSettings(enabled: true, titles: true))
+        rig.start(Rig.chrome)
+        rig.host.answer(ActivityDetail(site: nil, title: "A paper", domain: "nature.com", url: "https://www.nature.com/articles/a"))
+        rig.clock.advance(4)
+        rig.recorder.apply(ActivityRecorderSettings(enabled: true, titles: false))
+        #expect(rig.stretches.last?.url == nil)
+        #expect(rig.stretches.last?.title == nil)
     }
 
     @Test func aBrowserLeftBeforeItsFirstReadIsStillTimeInThatBrowser() {
@@ -744,7 +764,7 @@ extension ActivityRecorderTests {
     }
 
     @Test func differentPagePathsKeepTheirOwnRecordedTime() {
-        let rig = Rig()
+        let rig = Rig(settings: ActivityRecorderSettings(enabled: true, titles: true))
         rig.start(Rig.safari)
         rig.host.answer(ActivityDetail(site: nil, title: nil, domain: "example.com", url: "https://example.com/work"))
         rig.work(4)

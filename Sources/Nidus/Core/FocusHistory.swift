@@ -256,6 +256,15 @@ final class FocusHistory {
         writer.enqueue(.write(sessions))
     }
 
+    /// The latest write of the history file failed.
+    var saveFailed: Bool { writer.lastWriteFailed }
+
+    /// Writes the history as it is now, after a write that failed. Nothing
+    /// older is queued, so a clear is never undone.
+    func retrySave() {
+        if sessions.isEmpty { writer.enqueue(.remove) } else { save() }
+    }
+
     /// Drain accepted edits before quitting, or before a caller needs to
     /// inspect the file itself. Session completion never waits for this.
     func flush() { writer.flush() }

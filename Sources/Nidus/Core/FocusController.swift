@@ -134,6 +134,9 @@ final class FocusController: ObservableObject {
     let activityRecorder: ActivityRecorder
     /// Tells the stats page something was added.
     @Published private(set) var historyVersion = 0
+    /// Something Nidus keeps (the session, history or today's activity)
+    /// failed to save and is being tried again. One quiet line, not alerts.
+    @Published private(set) var changesNotSaved = false
 
     private let blockPage: BlockPage
     private let browsers: BrowserBlocker
@@ -233,6 +236,7 @@ final class FocusController: ObservableObject {
         engine.isAway = { [weak self] in self?.isScreenLocked ?? false }
         now = Date()
         activityRecorder.onSave = { [weak self] in self?.bumpActivityDayVersion() }
+        activityRecorder.onSaveTrouble = { [weak self] _ in self?.refreshSaveTrouble() }
         engine.restore(allowActivity: recordsHistory && activityTrackingEnabled,
                        allowTitles: activityDocumentTitlesEnabled,
                        excludedApps: activityExcludedApps)
@@ -475,10 +479,18 @@ final class FocusController: ObservableObject {
         }
         sweepApps()
         ticksSinceCheckpoint += 1
-        if ticksSinceCheckpoint >= 15, engine.session != nil {
+        if ticksSinceCheckpoint >= 15 {
             ticksSinceCheckpoint = 0
-            engine.checkpoint()
+            if engine.session != nil { engine.checkpoint() } else if engine.saveFailed { engine.persist() }
+            if history.saveFailed { history.retrySave() }
+            refreshSaveTrouble()
         }
+    }
+
+    /// Republishes whether anything failed to save.
+    func refreshSaveTrouble() {
+        let failing = engine.saveFailed || history.saveFailed || activityRecorder.savesFailing
+        if failing != changesNotSaved { changesNotSaved = failing }
     }
 
     /// Every few ticks, while enforcing, has the blocker take another look at
@@ -899,18 +911,22 @@ final class FocusController: ObservableObject {
         guard let bundleID = app.bundleIdentifier else { return }
         let name = app.localizedName ?? bundleID
         let quit = appBlocker.action(for: app) == .terminate
-        if quit { engine.recordQuit(bundleID, name: name) }
-        report(.app(bundleID: bundleID, name: name, quit: quit))
+        // The block that follows saves the quit with it: one write, not two.
+        if quit { engine.recordQuit(bundleID, name: name, save: false) }
+        if !report(.app(bundleID: bundleID, name: name, quit: quit)), quit { engine.persist() }
     }
 
     /// One block, counted and shown once: a relaunch loop within a few
     /// seconds is a single block, not ten.
-    private func report(_ item: BlockedItem) {
+    /// Whether it was counted (and so saved).
+    @discardableResult
+    private func report(_ item: BlockedItem) -> Bool {
         let key = item.snoozeKey
-        if let last = lastReported[key], Date().timeIntervalSince(last) < 5 { return }
+        if let last = lastReported[key], Date().timeIntervalSince(last) < 5 { return false }
         lastReported[key] = Date()
         engine.recordBlock(key, name: item.displayName)
         onBlocked(item)
+        return true
     }
 
     private func reopen(_ bundleIDs: [String]) {
