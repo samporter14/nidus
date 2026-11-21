@@ -14,6 +14,8 @@ struct ActivityDriftChain: Equatable, Sendable, Identifiable {
     /// The app or site that took the most of each side, never a title.
     let origin: String
     let target: String
+    /// The target's bundle identifier when it is an app, nil when it is a site.
+    var targetAppID: String? = nil
     /// Distracting seconds by group, kept so a range's top group is the true one.
     var groups: [String: TimeInterval]
     /// Whether Work took the most of the time before it, on any day.
@@ -56,6 +58,8 @@ enum ActivityDrift {
         var end: Date
         var seconds: TimeInterval = 0
         var labels: [String: TimeInterval] = [:]
+        /// Bundle identifier by label, for the labels that are apps, not sites.
+        var appIDs: [String: String] = [:]
         var groups: [String: TimeInterval] = [:]
 
         init(_ stretch: FocusActivitySegment, group: String?, distracting: Bool) {
@@ -70,6 +74,7 @@ enum ActivityDrift {
             end = max(end, stretch.end)
             seconds += stretch.seconds
             labels[stretch.site ?? stretch.appName, default: 0] += stretch.seconds
+            if stretch.site == nil { appIDs[stretch.appName] = stretch.appID }
             groups[group ?? ActivityCategorizer.uncategorizedID, default: 0] += stretch.seconds
         }
 
@@ -78,6 +83,7 @@ enum ActivityDrift {
             end = max(end, run.end)
             seconds += run.seconds
             labels.merge(run.labels, uniquingKeysWith: +)
+            appIDs.merge(run.appIDs) { old, _ in old }
             groups.merge(run.groups, uniquingKeysWith: +)
         }
 
@@ -99,7 +105,7 @@ enum ActivityDrift {
         where run.distracting && !origin.distracting && origin.seconds >= shortest && run.seconds >= shortest
             && run.follows(origin, within: reach) {
             guard let from = top(origin.labels), let to = top(run.labels) else { continue }
-            chains.append(ActivityDriftChain(origin: from, target: to, groups: run.groups,
+            chains.append(ActivityDriftChain(origin: from, target: to, targetAppID: run.appIDs[to], groups: run.groups,
                                              fromWork: categorizer.role(forGroup: top(origin.groups)) == .work, seconds: run.seconds))
         }
         return chains

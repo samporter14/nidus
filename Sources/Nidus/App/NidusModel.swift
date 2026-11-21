@@ -25,6 +25,11 @@ final class NidusModel: NSObject, ObservableObject {
     fileprivate var lastPublishedFocus: FocusFile?
     /// One current result per surface, discarded when Settings closes.
     var historySummaryCache = HistorySummaryCache()
+    /// The drift-to-block offer (DriftBlockSuggestion.swift), its last
+    /// computation and the day digests it reads.
+    @Published var driftSuggestion: DriftBlockSuggestion?
+    var driftComputedAt: Date?
+    let driftDigests = ActivityDigestCache()
     /// A widget only needs a few setup labels, not decoded workspaces per tick.
     var widgetSetupCache = WidgetSetupCache()
     /// Today for the widget, and when it was last worked out (WidgetBridge.swift).
@@ -1030,6 +1035,8 @@ extension NidusModel {
         controller?.clearHistory()
         recentGoals = []
         clearPlanStarts()
+        driftSuggestion = nil
+        driftComputedAt = nil
         resumeNotes?.clear()
         cards.nextStep = nil
         resumeNotice = nil
