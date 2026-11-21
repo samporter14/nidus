@@ -39,10 +39,13 @@ final class ActivityDayStore: @unchecked Sendable {
         }
     }
 
-    /// How a change went on disk. `day` is set for a write.
+    /// How a change went on disk. `day` and `written` are set for a write.
     struct Outcome: Sendable, Equatable {
         var day: String?
         var succeeded: Bool
+        /// What the write was of, so a late word about an older write of the
+        /// same day isn't taken for the newest.
+        var written: ActivityDayLog?
     }
 
     enum StoreError: Error { case inaccessible(String) }
@@ -211,10 +214,12 @@ final class ActivityDayStore: @unchecked Sendable {
 
     private func apply(_ change: Change) {
         var day: String?
+        var written: ActivityDayLog?
         do {
             switch change {
             case .write(let log):
                 day = log.day
+                written = log
                 try write(log)
             case .clear:
                 writtenDays.removeAll()
@@ -224,10 +229,10 @@ final class ActivityDayStore: @unchecked Sendable {
             case .prune(let before):
                 for key in dayKeys() where key < before { try delete(key) }
             }
-            onOutcome?(Outcome(day: day, succeeded: true))
+            onOutcome?(Outcome(day: day, succeeded: true, written: written))
         } catch {
             Self.logger.error("Could not save activity: \(error.localizedDescription, privacy: .public)")
-            onOutcome?(Outcome(day: day, succeeded: false))
+            onOutcome?(Outcome(day: day, succeeded: false, written: written))
         }
     }
 

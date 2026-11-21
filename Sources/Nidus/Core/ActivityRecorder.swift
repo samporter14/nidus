@@ -21,6 +21,7 @@
 
 import AppKit
 import CoreGraphics
+import os
 
 struct ActivityFrontApp: Equatable, Sendable {
     var id: String
@@ -107,6 +108,34 @@ final class ActivityRecorder {
     /// not written over; once it can, this run's time is added to it.
     private var todayUnreadable = false
 
+    /// A past day whose time is not yet safely in its file: a write that
+    /// failed, or a file that can't be read yet. Kept in memory, and tried
+    /// again, until a write of it lands.
+    private struct RetainedDay {
+        var log: ActivityDayLog
+        /// `log` is the whole day, so writing it replaces the file. Otherwise
+        /// it is only time from this run, to be joined to a file that could
+        /// not be read.
+        var whole: Bool
+        /// The newest write of `log` has not been heard from. Older writes
+        /// of the day may still be out, and are not told apart by their word.
+        var inFlight = false
+        /// What that newest write is of.
+        var sent: ActivityDayLog?
+    }
+
+    /// Past days waiting to reach their files. At most `maxRetainedPastDays`;
+    /// the oldest is let go beyond that, and each day is bounded by
+    /// `ActivityDayLog.stretchLimit`.
+    private var retained: [String: RetainedDay] = [:]
+    private var lastPastTry: Date?
+    /// Counts writes of today handed to the store.
+    private var writesEnqueued = 0
+    private var lastWritten: ActivityDayLog?
+    nonisolated static let maxRetainedPastDays = 7
+    private static let logger = Logger(subsystem: "local.sam.nidus", category: "activity")
+    var retainedPastDays: [String] { retained.keys.sorted() }
+
     private(set) var settings = ActivityRecorderSettings()
     private var isStarted = false
     private var isLocked = false
@@ -164,7 +193,8 @@ final class ActivityRecorder {
     /// periodic save writes the latest state again; nothing older is queued,
     /// so a clear in between is never undone.
     private func writeFinished(_ outcome: ActivityDayStore.Outcome) {
-        guard let day = outcome.day, day == log.day else { return }
+        guard let day = outcome.day else { return }
+        if day != log.day { pastWriteFinished(outcome); return }
         if outcome.succeeded {
             if !todayUnreadable { savesFailing = false }
         } else {
@@ -279,6 +309,7 @@ final class ActivityRecorder {
         todayUnreadable = false
         savesFailing = false
         savedOpenID = nil
+        retained.removeAll()
         recentDays.removeAll()
         idleFloor = clock()
         invalidateReads()
@@ -302,6 +333,7 @@ final class ActivityRecorder {
             let floor = redact(&previous, preservingFloor: recent.floor)
             recentDays[day] = (floor, recent.end)
         }
+        for day in retained.keys { retained[day]?.log.removeTitles() }
         invalidateReads()
         store.enqueue(.removeTitles)
         onSave()
@@ -416,6 +448,7 @@ final class ActivityRecorder {
         } else if lastSavedAt == nil, hasPending {
             lastSavedAt = t
         }
+        if hasStuckPast, t.timeIntervalSince(lastPastTry ?? .distantPast) >= Self.saveInterval { retryPast(at: t) }
         scheduleWake(at: t)
     }
 
@@ -487,6 +520,12 @@ final class ActivityRecorder {
         let end = min(t, input)
         if log.trim(after: end, continuityAtLeast: dayContinuityFloor) { hasUnsaved = true }
         for (day, recent) in recentDays {
+            if retained[day] != nil {
+                // Not on disk yet, or not readable: the correction is made to
+                // what is held, and goes with it.
+                if retained[day]?.log.trim(after: end, continuityAtLeast: recent.floor) == true { flushPast(day) }
+                continue
+            }
             // Retention may already have removed a day. Never recreate it.
             guard var previous = store.load(day: day),
                   previous.trim(after: end, continuityAtLeast: recent.floor) else { continue }
@@ -522,11 +561,89 @@ final class ActivityRecorder {
                 log.add(piece)
                 hasUnsaved = true
             } else {
-                var other = store.load(day: day) ?? ActivityDayLog(day: day)
-                other.add(piece)
-                store.enqueue(.write(other))
+                filePast(piece, day: day)
             }
         }
+    }
+
+    // MARK: Past days
+
+    /// Time that belongs to a day that is no longer today. A file that can't
+    /// be read is never taken for an empty day: the time is held until it can
+    /// be joined to what is there.
+    private func filePast(_ piece: FocusActivitySegment, day: String) {
+        if retained[day] != nil {
+            retained[day]?.log.add(piece)
+        } else {
+            switch store.loadFile(day: day) {
+            case .loaded(var onDisk):
+                onDisk.add(piece)
+                retained[day] = RetainedDay(log: onDisk, whole: true)
+            case .absent, .corrupt:
+                // A file that can't be decoded is set aside by the store at
+                // the write, as it is for today.
+                var fresh = ActivityDayLog(day: day)
+                fresh.add(piece)
+                retained[day] = RetainedDay(log: fresh, whole: true)
+            case .inaccessible:
+                var fresh = ActivityDayLog(day: day)
+                fresh.add(piece)
+                retained[day] = RetainedDay(log: fresh, whole: false)
+            }
+            lastPastTry = lastPastTry ?? clock()
+            limitRetained()
+        }
+        flushPast(day)
+    }
+
+    private func limitRetained() {
+        while retained.count > Self.maxRetainedPastDays, let oldest = retained.keys.min() {
+            Self.logger.error("Gave up on unsaved time for a past day: too many days are waiting")
+            retained[oldest] = nil
+        }
+    }
+
+    /// Hands a held day to the store. A write already out is overtaken by
+    /// this one (the store keeps them in order); only the newest is waited on.
+    private func flushPast(_ day: String) {
+        guard var entry = retained[day] else { return }
+        if !entry.whole {
+            switch store.loadFile(day: day) {
+            case .inaccessible:
+                return
+            case .loaded(let onDisk):
+                var merged = onDisk
+                for stretch in entry.log.stretches { merged.add(stretch) }
+                entry.log = merged
+            case .absent, .corrupt:
+                break
+            }
+            entry.whole = true
+        }
+        entry.inFlight = true
+        entry.sent = entry.log
+        retained[day] = entry
+        store.enqueue(.write(entry.log))
+    }
+
+    private func pastWriteFinished(_ outcome: ActivityDayStore.Outcome) {
+        guard let day = outcome.day, var entry = retained[day], entry.inFlight,
+              outcome.written == entry.sent else { return }
+        entry.inFlight = false
+        retained[day] = entry
+        if outcome.succeeded {
+            retained[day] = nil
+        } else {
+            lastPastTry = clock()
+        }
+    }
+
+    /// Held days with no write out: they failed, or could not be read yet.
+    private var hasStuckPast: Bool { retained.values.contains { !$0.inFlight } }
+
+    private func retryPast(at t: Date) {
+        lastPastTry = t
+        for day in retained.keys.sorted() where retained[day]?.inFlight == false { flushPast(day) }
     }
 
     // MARK: Days
@@ -559,7 +676,9 @@ final class ActivityRecorder {
             closeOpen(at: min(midnight, credited), at: t, continues: true)
             if credited <= midnight { carried = nil }
         }
-        if hasUnsaved { save(at: t) }
+        let written = writesEnqueued
+        if hasUnsaved || hasSavedSnapshot { save(at: t) }
+        retainRolledDay(wroteIt: writesEnqueued != written, at: t)
         if let end = log.stretches.map(\.end).max() {
             recentDays[log.day] = (dayContinuityFloor, end)
         }
@@ -573,16 +692,34 @@ final class ActivityRecorder {
         prune()
     }
 
+    /// Yesterday's whole record is held until its write lands: the outcome
+    /// comes after today's file is already the one in memory.
+    private func retainRolledDay(wroteIt: Bool, at t: Date) {
+        if wroteIt {
+            retained[log.day] = RetainedDay(log: log, whole: true, inFlight: true, sent: lastWritten)
+        } else if todayUnreadable, !log.isEmpty {
+            // Its file couldn't be read, so none of it was written.
+            retained[log.day] = RetainedDay(log: log, whole: false)
+        } else {
+            return
+        }
+        lastPastTry = lastPastTry ?? t
+        limitRetained()
+    }
+
     private func prune() {
         let today = ActivityDayLog.key(for: clock(), calendar: calendar)
         guard lastPruneDay != today else { return }
         lastPruneDay = today
         guard let first = ActivityDayLog.retentionStart(days: settings.retentionDays, today: clock(), calendar: calendar) else { return }
+        // A day retention lets go of is not written back.
+        for day in retained.keys where day < first { retained[day] = nil }
         store.enqueue(.prune(before: first))
     }
 
     private func save(at t: Date) {
         lastSavedAt = t
+        if hasStuckPast { retryPast(at: t) }
         var snapshot = log
         if let open, let segment = closing(open, at: creditedEnd(at: t)) {
             snapshot.add(segment)
@@ -613,6 +750,8 @@ final class ActivityRecorder {
         guard !snapshot.isEmpty || hasSavedSnapshot else { return }
         hasSavedSnapshot = true
         savedOpenID = open?.segment.id
+        writesEnqueued += 1
+        lastWritten = snapshot
         store.enqueue(.write(snapshot))
         onSave()
     }
@@ -756,6 +895,7 @@ final class ActivityRecorder {
                 let saved = lastSavedAt ?? t
                 wait = min(wait, Self.saveInterval - t.timeIntervalSince(saved))
             }
+            if hasStuckPast { wait = min(wait, Self.saveInterval - t.timeIntervalSince(lastPastTry ?? t)) }
         }
         host.arm(after: max(1, wait)) { [weak self] in self?.reconcile() }
     }
