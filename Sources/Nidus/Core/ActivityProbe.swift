@@ -169,31 +169,89 @@ enum ActivityProbe {
         // Asking the system on every read is wasteful, so the answer is kept
         // per process for a minute: a grant made meanwhile is seen within it.
         guard permissions.isGranted(pid: pid, check: { target.automationPermission(ask: false) == nil }) else { return nil }
+        return readTab(in: browser, using: target, titles: titles)
+    }
+
+    /// What one browser tab says, read from a front window's selected tab.
+    /// Split from the permission check so the events sent can be tested.
+    static func readTab(in browser: BrowserProfile, using target: some AppleEventSending, titles: Bool) -> ActivityDetail? {
         let window = ObjectSpecifier.index("cwin", 1)
         let tab = ObjectSpecifier.property(browser.bundleID == BrowserProfile.safari.bundleID ? "cTab" : "acTa", of: window)
         let url = ObjectSpecifier.property(browser.urlProperty, of: tab)
         let name = ObjectSpecifier.property("pnam", of: tab)
-        let rawURL = try? target.get(url, timeout: 0.75).stringValue
-        guard let rawURL else { return nil }
+
+        // Chromium-family browsers answer `properties` of the tab with one
+        // record holding the address and the title together, so one event reads
+        // both and they cannot belong to different tabs. That makes the old
+        // second address read (a guard against the tab changing between the two
+        // events) unnecessary. Safari answers `properties` of a tab with an
+        // error (-10000), so it keeps the separate reads and the guard.
+        // With titles off the title is never requested: one event for the address.
+        var together: (url: String, name: String?)?
+        if titles, browser.bundleID != BrowserProfile.safari.bundleID {
+            switch readTogether(tab, in: browser, using: target) {
+            case .read(let url, let name): together = (url, name)
+            case .unreadable: return nil
+            case .unsupported: break
+            }
+        }
+
+        let rawURL: String
+        if let together {
+            rawURL = together.url
+        } else {
+            guard let read = try? target.get(url, timeout: 0.75).stringValue else { return nil }
+            rawURL = read
+        }
         // The local Science launcher serves its UI in a separate browser.
         // A loopback address alone is not enough: require the running launcher,
         // its exact port/routes, and the application's generic tab title.
         if isLocalScienceURL(rawURL) {
             guard !NSRunningApplication.runningApplications(withBundleIdentifier: scienceID).isEmpty else { return nil }
-            let label = try? target.get(name, timeout: 0.75).stringValue
+            let label = together != nil ? together?.name : (try? target.get(name, timeout: 0.75).stringValue)
             guard label == "Claude Science" else { return nil }
-            let confirmed = try? target.get(url, timeout: 0.75).stringValue
-            guard confirmed == rawURL else { return nil }
+            if together == nil {
+                let confirmed = try? target.get(url, timeout: 0.75).stringValue
+                guard confirmed == rawURL else { return nil }
+            }
             return ActivityDetail(site: "Claude Science", title: nil)
         }
-        let rawTitle = titles ? (try? target.get(name, timeout: 0.75).stringValue) : nil
-        // The selected tab may change between two Apple Events, and a title
-        // from a different tab must not be kept under this one's site.
-        // With names off there is no title to mismatch, so no second read.
-        let confirmedURL = titles ? (try? target.get(url, timeout: 0.75).stringValue) : rawURL
+        let rawTitle: String?
+        let confirmedURL: String?
+        if let together {
+            rawTitle = together.name
+            confirmedURL = rawURL
+        } else {
+            rawTitle = titles ? (try? target.get(name, timeout: 0.75).stringValue) : nil
+            // The selected tab may change between two Apple Events, and a title
+            // from a different tab must not be kept under this one's site.
+            // With names off there is no title to mismatch, so no second read.
+            confirmedURL = titles ? (try? target.get(url, timeout: 0.75).stringValue) : rawURL
+        }
         guard confirmedURL == rawURL else { return nil }
         return ActivityDetail(site: service(for: rawURL), title: cleanTitle(rawTitle),
                               domain: ActivityDomain.site(from: rawURL), url: keptURL(rawURL))
+    }
+
+    private enum TogetherRead {
+        case read(url: String, name: String?)
+        /// No answer in time, or not allowed: the old path would fare no better.
+        case unreadable
+        /// This browser did not answer in the expected shape; read it the old way.
+        case unsupported
+    }
+
+    private static func readTogether(_ tab: NSAppleEventDescriptor, in browser: BrowserProfile,
+                                     using target: some AppleEventSending) -> TogetherRead {
+        do {
+            let reply = try target.get(ObjectSpecifier.property("pALL", of: tab), timeout: 0.75)
+            guard reply.descriptorType == fourCC("reco"),
+                  let url = reply.paramDescriptor(forKeyword: fourCC(browser.urlProperty))?.stringValue else { return .unsupported }
+            return .read(url: url, name: reply.paramDescriptor(forKeyword: fourCC("pnam"))?.stringValue)
+        } catch {
+            if case .failed = error { return .unsupported }
+            return .unreadable
+        }
     }
 
     static func usefulTitle(_ raw: String?) -> String? {

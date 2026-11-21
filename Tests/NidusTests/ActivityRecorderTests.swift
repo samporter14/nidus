@@ -157,6 +157,35 @@ struct ActivityRecorderTests {
         #expect(!ActivityTimeline.touches(stretches[0], stretches[1]))
     }
 
+    @Test func switchingToABrowserReadsItAtOnce() {
+        let rig = Rig()
+        rig.start(Rig.word)
+        rig.work(30)
+        let before = rig.host.probes
+        rig.switchTo(Rig.chrome)
+        #expect(rig.host.probes == before + 1, "No wait for the next four-second read")
+    }
+
+    @Test func rapidSwitchesAreReadOncePerSecond() {
+        let rig = Rig()
+        rig.start(Rig.word)
+        rig.work(30)
+        rig.host.autoAnswer = { _ in nil }
+        rig.switchTo(Rig.chrome)
+        let afterFirst = rig.host.probes
+        rig.clock.advance(0.2)
+        rig.switchTo(Rig.safari)
+        rig.clock.advance(0.2)
+        rig.switchTo(Rig.chrome)
+        #expect(rig.host.probes == afterFirst, "Switches within a second of a read send no event")
+        #expect((rig.host.armed ?? 0) >= 1, "The read waits for a wake-up, not a new timer of its own")
+        rig.clock.advance(1)
+        rig.host.wake()
+        #expect(rig.host.probes == afterFirst + 1, "One read when the spacing is up, however many switches")
+        rig.work(1)
+        #expect(rig.host.probes == afterFirst + 1, "And no polling in between")
+    }
+
     @Test func idleCutoffIsAdjustable() {
         var settings = ActivityRecorderSettings(enabled: true)
         settings.idleCutoff = 60
