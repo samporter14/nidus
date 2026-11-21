@@ -57,6 +57,12 @@ final class ActivityRecorder {
     nonisolated static let defaultRetentionDays = 90
     /// Between reads of the front tab or title.
     nonisolated static let probeInterval: TimeInterval = 4
+    /// The least between two reads started by app switches. Switching to an
+    /// app reads it at once; flicking through apps must not send an event at
+    /// each one, so a read that comes too soon waits out this spacing.
+    /// A change of tab inside a browser has no notification, so it is still
+    /// only noticed by the `probeInterval` read.
+    nonisolated static let switchProbeSpacing: TimeInterval = 1
     /// While nobody has touched anything, the read is not repeated, and the
     /// recorder only looks every this often for input to start it again.
     nonisolated static let quietProbeInterval: TimeInterval = 20
@@ -135,6 +141,9 @@ final class ActivityRecorder {
     private var probeInFlight = false
     private var generation = 0
     private var lastProbeAt: Date?
+    /// When a read was last started. Unlike `lastProbeAt` it survives
+    /// `invalidateReads`, which is what lets a rapid switch be debounced.
+    private var lastProbeStartedAt: Date?
     /// When the last read was either made or judged unnecessary. Only this
     /// moves while quiet, so the wake spacing doesn't depend on a read.
     private var lastProbeCheck: Date?
@@ -631,11 +640,15 @@ final class ActivityRecorder {
         guard ActivityProbe.needsProbe(front.id, titles: settings.titles) else { return }
         guard !probeInFlight else { return }
         if let lastProbeAt, t.timeIntervalSince(lastProbeAt) >= Self.probeInterval { lastProbeCheck = t }
+        // A read forgotten by a switch is due at once, unless one only just began.
+        if lastProbeAt == nil, let started = lastProbeStartedAt,
+           (0..<Self.switchProbeSpacing).contains(t.timeIntervalSince(started)) { return }
         guard Self.shouldProbe(lastProbeAt: lastProbeAt, now: t, secondsSinceInput: idleSeconds,
                                awaitingFirstRead: open?.awaitingFirstRead ?? true) else { return }
         probeInFlight = true
         lastProbeCheck = t
         lastProbeAt = t
+        lastProbeStartedAt = t
         let asked = generation
         let titles = settings.titles
         host.probe(front, titles: titles) { [weak self] detail in

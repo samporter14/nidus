@@ -74,6 +74,11 @@ enum ObjectSpecifier {
     }
 }
 
+/// What a read needs of a target, so tests can stand in for a browser.
+protocol AppleEventSending {
+    func get(_ specifier: NSAppleEventDescriptor, timeout: TimeInterval) throws(AppleEventError) -> NSAppleEventDescriptor
+}
+
 /// Sends `get` and `set` to one running app, addressed by process ID.
 struct AppleEventTarget {
     let processIdentifier: pid_t
@@ -132,6 +137,8 @@ struct AppleEventTarget {
         return reply.paramDescriptor(forKeyword: fourCC("----")) ?? .null()
     }
 }
+
+extension AppleEventTarget: AppleEventSending {}
 
 extension NSAppleEventDescriptor {
     /// The items of a list descriptor (AppleScript lists are 1-based).
