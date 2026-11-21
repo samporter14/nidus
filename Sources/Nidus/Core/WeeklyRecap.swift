@@ -26,6 +26,8 @@ struct WeeklyRecap: Equatable, Sendable {
     /// The weekday's name, in the calendar's own language.
     var bestDayName: String?
     var goalsFinished: Int
+    /// "Snoozed reddit.com 6 times", or nil when the week had no snoozes.
+    var snoozeLine: String?
 
     /// The card appears from this hour on Monday, not at midnight: a Mac
     /// that is awake overnight should not drop it on an empty desk.
@@ -41,6 +43,7 @@ struct WeeklyRecap: Equatable, Sendable {
         var parts = ["\(sessionCount) \(sessionCount == 1 ? "session" : "sessions")"]
         if let bestDayName { parts.append("best day \(bestDayName)") }
         if goalsFinished > 0 { parts.append("\(goalsFinished) \(goalsFinished == 1 ? "goal" : "goals") finished") }
+        if let snoozeLine { parts.append(snoozeLine) }
         return parts
     }
 
@@ -105,6 +108,12 @@ struct WeeklyRecap: Equatable, Sendable {
         sessionCount = week.count
         focused = week.reduce(0) { $0 + $1.focused }
         goalsFinished = week.filter { $0.finished == true }.count
+        var snoozed: [String: Int] = [:], snoozeNames: [String: String] = [:]
+        for s in week {
+            for (k, v) in s.snoozeCounts { snoozed[k, default: 0] += v }
+            snoozeNames.merge(s.names) { _, new in new }
+        }
+        snoozeLine = SnoozeSummary.text(counts: snoozed, names: snoozeNames)
 
         var byDay: [Date: TimeInterval] = [:]
         for s in week { byDay[calendar.startOfDay(for: s.start), default: 0] += s.focused }

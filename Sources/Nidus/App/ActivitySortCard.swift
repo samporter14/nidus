@@ -47,8 +47,29 @@ struct ActivitySortCard: View {
 private struct ActivitySortRow: View {
     @ObservedObject var model: NidusModel
     let item: ActivityUncategorizedItem
+    /// For a subdomain: count the whole registrable domain, not just the host.
+    @State private var wholeDomain = false
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            row
+            if let domain = item.domain {
+                Picker("Applies to", selection: $wholeDomain) {
+                    Text(verbatim: "Just \(item.name)").tag(false)
+                    Text(verbatim: "All of \(domain)").tag(true)
+                }
+                .pickerStyle(.menu)
+                .controlSize(.small)
+                .fixedSize()
+                .padding(.leading, 27)
+            }
+        }
+        .padding(.vertical, 4)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("\(item.name), \(ActivityDuration.string(item.seconds)) uncategorized")
+    }
+
+    private var row: some View {
         HStack(spacing: 9) {
             Image(systemName: item.isWebsite ? "globe" : "app.dashed")
                 .font(.system(size: 11))
@@ -81,12 +102,20 @@ private struct ActivitySortRow: View {
         }
         .controlSize(.small)
         .buttonStyle(.bordered)
-        .padding(.vertical, 4)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("\(item.name), \(ActivityDuration.string(item.seconds)) uncategorized")
     }
 
     private func count(_ group: ActivityGroup) {
+        let subject = item.subject(wholeDomain: wholeDomain)
+        switch subject {
+        case .domain(let domain):
+            model.countActivity(subject: subject, name: "\(domain) and subdomains", as: group)
+            return
+        case .page(let page):
+            model.countActivity(subject: subject, name: page.title, as: group)
+            return
+        case .app, .site:
+            break
+        }
         model.countActivity(appID: item.appID, appName: item.appName, site: item.site, url: item.url, as: group)
     }
 }

@@ -37,10 +37,12 @@ enum ActivityTodaySummary {
             if let known = kinds[key] {
                 kind = known
             } else {
-                switch categorizer.category(appID: stretch.appID, site: stretch.site, url: stretch.url) {
-                case ActivityCategorizer.workID: kind = .work
-                case nil: kind = .other
-                default: kind = .distracting
+                // Neutral time folds into "other", so the widget's JSON is unchanged.
+                let group = categorizer.category(appID: stretch.appID, site: stretch.site, url: stretch.url)
+                switch categorizer.role(forGroup: group) {
+                case .work?: kind = .work
+                case .distracting?: kind = .distracting
+                case .neutral?, nil: kind = .other
                 }
                 kinds[key] = kind
             }

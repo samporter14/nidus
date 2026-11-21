@@ -58,6 +58,13 @@ struct SessionPreview: Equatable {
 
 extension NidusModel {
     func sessionPreview(now: Date = Date()) -> SessionPreview? {
+        guard let (plan, ids) = previewedPlan(now: now) else { return nil }
+        return SessionPreview(plan: plan, categoryNames: categories.filter { ids.contains($0.id) && !$0.isEmpty }.map(\.name))
+    }
+
+    /// The plan the popover would start and the category ids behind it, from
+    /// the same resolution as Start.
+    private func previewedPlan(now: Date) -> (SessionPlan, [String])? {
         let request = popoverRequest(now: now)
         // Cached meeting only. Start still refreshes the real calendar once
         // at the moment of committing, as it always has.
@@ -65,21 +72,39 @@ extension NidusModel {
         guard let resolved = request.resolved(with: startDefaults, length: {
             (meeting ?? fallbackMinutes(for: request, now: now), meeting != nil)
         }) else { return nil }
-        let ids = request.categoryIDs ?? selectedCategoryIDs
-        return SessionPreview(plan: resolved.plan, categoryNames: categories.filter { ids.contains($0.id) && !$0.isEmpty }.map(\.name))
+        return (resolved.plan, request.categoryIDs ?? selectedCategoryIDs)
+    }
+
+    /// The what's-blocked list, built on demand when the disclosure opens. The
+    /// setup it is compared with is the one the popover was loaded from, else
+    /// the saved setup nearest the selection (see `BlockedList.comparisonSetup`).
+    func blockedList(now: Date = Date()) -> BlockedList? {
+        guard let (plan, ids) = previewedPlan(now: now) else { return nil }
+        return BlockedList.make(plan: plan, categories: categories.filter { ids.contains($0.id) && !$0.isEmpty },
+                                setups: setups, loadedSetupID: setupDraft?.source.id, allCategories: categories)
     }
 }
 
 struct SessionPreviewRow: View {
     let preview: SessionPreview
+    /// Builds the what's-blocked list; called only when that disclosure opens.
+    var blockedList: (() -> BlockedList?)?
     @State private var expanded = false
 
-    init(preview: SessionPreview, expanded: Bool = false) {
+    init(preview: SessionPreview, expanded: Bool = false, blockedList: (() -> BlockedList?)? = nil) {
         self.preview = preview
+        self.blockedList = blockedList
         _expanded = State(initialValue: expanded)
     }
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            details
+            if let blockedList { BlockedListDisclosure(build: blockedList) }
+        }
+    }
+
+    private var details: some View {
         DisclosureGroup(isExpanded: $expanded) {
             // Details have no hosting tree until the person asks for them.
             if expanded {

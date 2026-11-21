@@ -50,9 +50,92 @@ struct ActivityUncategorizedTests {
         #expect(found.first?.seconds == 210)
     }
 
-    @Test func aBrowserWithNoPageIsLeftOut() {
-        let found = items([stretch(safari, seconds: 600), stretch(chrome, site: "Claude Science", seconds: 60)])
-        #expect(found.isEmpty)
+    @Test func aBrowserWithNoPageIsOfferedAsLocalAndBrowserPagesNotAsTheBrowser() {
+        let found = items([
+            stretch(safari, seconds: 600),
+            stretch(chrome, site: nil, url: "http://localhost:3000/app", seconds: 100),
+            stretch(chrome, site: "intranet", seconds: 20),
+        ])
+        #expect(found.count == 1)
+        #expect(found.first?.subject == .page(.local))
+        #expect(found.first?.name == "Local and browser pages")
+        #expect(found.first?.seconds == 720)
+        #expect(found.contains { $0.subject == .app(safari) } == false)
+    }
+
+    @Test func claudeScienceTabsAreTheirOwnSubject() {
+        let found = items([
+            stretch(chrome, site: "Claude Science", seconds: 60),
+            stretch(safari, site: "Claude Science", seconds: 40),
+            stretch(safari, seconds: 10),
+        ])
+        #expect(found.map(\.subject) == [.page(.science), .page(.local)])
+        #expect(found.first?.seconds == 100)
+        #expect(found.first?.name == "Claude Science")
+    }
+
+    @Test func assigningTheLocalBucketCategorizesOnlyThatBucket() {
+        var overrides = ActivityOverrides()
+        overrides.set(.category("messaging"), subject: .page(.local), name: "Local and browser pages")
+        let categorizer = ActivityCategorizer(categories: [messaging], work: .workSeed, overrides: overrides)
+        #expect(categorizer.category(appID: safari, site: nil) == "messaging")
+        #expect(categorizer.category(appID: chrome, site: nil, url: "http://localhost:8080/") == "messaging")
+        #expect(categorizer.category(appID: safari, site: "Claude Science") == nil, "science is a separate bucket")
+        #expect(categorizer.category(appID: safari, site: "neb.com", url: "https://neb.com/") == nil)
+        #expect(categorizer.category(appID: prism, site: nil) == nil)
+        // The bucket leaves the card once assigned, and the science tab stays.
+        let found = items([stretch(safari, seconds: 30), stretch(safari, site: "Claude Science", seconds: 20)], overrides: overrides)
+        #expect(found.map(\.subject) == [.page(.science)])
+        var science = overrides
+        science.set(.work, subject: .page(.science), name: "Claude Science")
+        let both = ActivityCategorizer(categories: [messaging], work: .workSeed, overrides: science)
+        #expect(both.category(appID: safari, site: "Claude Science") == ActivityCategorizer.workID)
+    }
+
+    @Test func aBrowserOverrideStillBeatsNothingAndPagesBeatTheApp() {
+        var overrides = ActivityOverrides()
+        overrides.set(.work, appID: safari, appName: "Safari", site: nil)
+        let categorizer = ActivityCategorizer(categories: [messaging], work: .workSeed, overrides: overrides)
+        #expect(categorizer.category(appID: safari, site: nil) == ActivityCategorizer.workID)
+        #expect(items([stretch(safari, seconds: 30)], overrides: overrides).isEmpty)
+    }
+
+    @Test func subdomainsCarryTheirRegistrableDomain() {
+        let found = items([
+            stretch(chrome, site: "docs.google.com", url: "https://docs.google.com/x/1", seconds: 30),
+            stretch(chrome, site: "neb.com", url: "https://neb.com/", seconds: 20),
+            stretch(chrome, site: "news.bbc.co.uk", url: "https://news.bbc.co.uk/", seconds: 10),
+        ])
+        #expect(found.first { $0.name == "docs.google.com" }?.domain == "google.com")
+        #expect(found.first { $0.name == "neb.com" }?.domain == nil)
+        #expect(found.first { $0.name == "news.bbc.co.uk" }?.domain == "bbc.co.uk")
+        let docs = found.first { $0.name == "docs.google.com" }!
+        #expect(docs.subject(wholeDomain: true) == .domain("google.com"))
+        #expect(docs.subject(wholeDomain: false) == .site("docs.google.com"))
+    }
+
+    @Test func aDomainOverrideTakesItsSubdomainsOffTheCard() {
+        var overrides = ActivityOverrides()
+        overrides.set(.uncategorized, subject: .domain("google.com"), name: "google.com and subdomains")
+        let found = items([
+            stretch(chrome, site: "docs.google.com", url: "https://docs.google.com/x/1", seconds: 30),
+            stretch(chrome, site: "neb.com", url: "https://neb.com/", seconds: 20),
+        ], overrides: overrides)
+        #expect(found.map(\.name) == ["neb.com"])
+    }
+
+    @Test func itemsRunBiggestTrackedTimeFirstAcrossKinds() {
+        let found = items(
+            [
+                stretch(prism, name: "Prism", seconds: 100),
+                stretch(chrome, site: "neb.com", url: "https://neb.com/", seconds: 300),
+                stretch(safari, seconds: 200),
+                stretch(chrome, site: "Claude Science", seconds: 50),
+                stretch(claude, name: "Claude", seconds: 50),
+            ],
+            rows: [FocusActivity(appID: prism, appName: "Prism", seconds: 250)])
+        #expect(found.map(\.seconds) == [350, 300, 200, 50, 50])
+        #expect(found.map(\.name) == ["Prism", "neb.com", "Local and browser pages", "Claude", "Claude Science"])
     }
 
     @Test func anOverrideTakesTheItemOffTheCardEvenLeave() {

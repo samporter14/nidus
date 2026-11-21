@@ -134,6 +134,7 @@ struct FocusWidget: View {
                 blockingSummary
             }
         }
+        .task { await model.refreshDriftSuggestion() }
         .onAppear {
             model.requestKeyboardFocus()
             // The calendar is read only when someone is about to start.
@@ -198,7 +199,7 @@ struct FocusWidget: View {
 
     /// Something is waiting behind More: a note to pick up, the inbox, or
     /// the offer to save a setup.
-    private var moreHasNudge: Bool { nudge == .resume || nudge == .inbox || nudge == .saveSetup }
+    private var moreHasNudge: Bool { nudge == .resume || nudge == .inbox || nudge == .saveSetup || nudge == .blockDrift }
 
     private var moreButton: some View {
         Button {
@@ -250,7 +251,7 @@ struct FocusWidget: View {
             // While a custom length is being typed it is not committed;
             // its own caption previews it until Return sets the choice.
             if model.customLengthDraft == nil, let preview = model.sessionPreview() {
-                SessionPreviewRow(preview: preview)
+                SessionPreviewRow(preview: preview, blockedList: { [model] in model.blockedList() })
             }
             if nudge == .resume { ResumePopoverRow(model: model) }
             footerNudge
@@ -264,6 +265,7 @@ struct FocusWidget: View {
     @ViewBuilder private var footerNudge: some View {
         if nudge == .inbox { FocusInboxRow(model: model) }
         if nudge == .saveSetup { saveSetupSuggestion }
+        if nudge == .blockDrift { blockDriftSuggestion }
     }
 
     /// The one nudge the idle popover shows now.
@@ -271,7 +273,8 @@ struct FocusWidget: View {
         IdleNudge.top(brickOffer: model.currentBrickOffer != nil,
                       resumeNote: model.newestResumeNote != nil,
                       inbox: model.inboxOpenCount > 0,
-                      saveSetup: model.offersSetupSuggestion())
+                      saveSetup: model.offersSetupSuggestion(),
+                      blockDrift: model.offersDriftSuggestion())
     }
 
     /// Under the goal: the length read from its end, and the goal that will
@@ -309,6 +312,27 @@ struct FocusWidget: View {
         .controlSize(.small)
         .font(.system(size: 12))
         .foregroundStyle(.secondary)
+    }
+
+    /// Below the save-a-setup line: a site or app that keeps pulling attention
+    /// away. Add puts it in this popover's selection only.
+    private var blockDriftSuggestion: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(verbatim: model.driftSuggestion?.message ?? "")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: NidusSpacing.sm) {
+                Button("Add", action: model.acceptDriftSuggestion)
+                    .help("Block it in this session's selection")
+                Button("Don\u{2019}t ask again", action: model.dismissDriftSuggestion)
+                    .help("Don\u{2019}t suggest this one again")
+            }
+            .buttonStyle(.borderless)
+            .controlSize(.small)
+            .font(.system(size: 12))
+        }
+        .accessibilityElement(children: .contain)
     }
 
     /// Start, with any length still being typed taken first, as Return in
@@ -781,17 +805,20 @@ struct FocusWidget: View {
 /// What the idle popover can nudge about. Several things may be waiting at
 /// once and the popover shows one, so it stays a place to start.
 enum IdleNudge: Equatable, CaseIterable {
-    case brick, resume, inbox, saveSetup
+    case brick, resume, inbox, saveSetup, blockDrift
 
     /// The most urgent of those waiting, in this order: a phone's request to
     /// focus (it goes stale), a note to pick up, the inbox, and last the
-    /// offer to save the plan started by hand again and again. The project
+    /// offer to save the plan started by hand again and again, then the offer
+    /// to block what keeps pulling attention away. The project
     /// picker is not a nudge and is not asked about here.
-    static func top(brickOffer: Bool, resumeNote: Bool, inbox: Bool, saveSetup: Bool = false) -> IdleNudge? {
+    static func top(brickOffer: Bool, resumeNote: Bool, inbox: Bool, saveSetup: Bool = false,
+                    blockDrift: Bool = false) -> IdleNudge? {
         if brickOffer { return .brick }
         if resumeNote { return .resume }
         if inbox { return .inbox }
         if saveSetup { return .saveSetup }
+        if blockDrift { return .blockDrift }
         return nil
     }
 }

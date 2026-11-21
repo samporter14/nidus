@@ -57,6 +57,7 @@ struct ActivityCategorizer: Sendable {
         let name: String
         let symbol: String
         let apps: Set<String>
+        let role: FocusCategory.Role
         /// nil when the group lists no websites.
         let rule: WebsiteRule?
 
@@ -64,6 +65,7 @@ struct ActivityCategorizer: Sendable {
             id = category.id
             name = category.name
             symbol = category.symbol
+            role = category.id == ActivityCategorizer.workID ? .work : category.role
             apps = Set(category.apps.map(\.bundleID))
             rule = category.websites.isEmpty
                 ? nil
@@ -89,7 +91,9 @@ struct ActivityCategorizer: Sendable {
     /// one; it is preferred over `site`.
     ///
     /// Order, first hit wins:
-    ///  1. an override on the page's host;
+    ///  1. an override on the page's exact host, then one on its registrable
+    ///     domain (which covers subdomains), then one on the bucket of browser
+    ///     pages with no website (local pages, Claude Science);
     ///  2. a group whose website rules match the page;
     ///  3. an override on the app;
     ///  4. a group that lists the app;
@@ -100,8 +104,15 @@ struct ActivityCategorizer: Sendable {
     /// Uncategorized is a hit: it beats a list that holds the item.
     func category(appID: String, site: String?, url: String? = nil) -> String? {
         let address = Self.address(site: site, url: url)
-        if !overrides.sites.isEmpty, let address, let host = ActivityDomain.site(from: address),
-           let hit = resolve(overrides.sites[host]) {
+        if let address, let host = ActivityDomain.site(from: address) {
+            if let hit = resolve(overrides.sites[host]) { return hit }
+            if !overrides.domains.isEmpty, let domain = ActivityDomain.registrable(of: host),
+               let hit = resolve(overrides.domains[domain]) {
+                return hit
+            }
+        }
+        if !overrides.pages.isEmpty, let page = ActivityOverrides.browserPage(appID: appID, site: site, url: url),
+           let hit = resolve(overrides.pages[page.rawValue]) {
             return hit
         }
         if let address, let match = groups.first(where: { $0.rule?.blocks(address) == true }) {
@@ -110,6 +121,19 @@ struct ActivityCategorizer: Sendable {
         if let hit = resolve(overrides.apps[appID]) { return hit }
         return groups.first { $0.apps.contains(appID) }?.id
     }
+
+    /// What time in a group means: the Work group and any category set to work
+    /// are `.work`, neutral ones never count as drift, the rest are
+    /// `.distracting`. nil for Uncategorized (nil or an unknown id), which is
+    /// none of the three. Every caller that asks "is this work / a
+    /// distraction?" goes through here.
+    func role(forGroup id: String?) -> FocusCategory.Role? {
+        guard let id else { return nil }
+        return groups.first { $0.id == id }?.role
+    }
+
+    /// True when time in the group counts as a distraction.
+    func isDistracting(group id: String?) -> Bool { role(forGroup: id) == .distracting }
 
     /// The same, as a group.
     func group(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {

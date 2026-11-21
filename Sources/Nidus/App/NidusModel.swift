@@ -25,6 +25,11 @@ final class NidusModel: NSObject, ObservableObject {
     fileprivate var lastPublishedFocus: FocusFile?
     /// One current result per surface, discarded when Settings closes.
     var historySummaryCache = HistorySummaryCache()
+    /// The drift-to-block offer (DriftBlockSuggestion.swift), its last
+    /// computation and the day digests it reads.
+    @Published var driftSuggestion: DriftBlockSuggestion?
+    var driftComputedAt: Date?
+    let driftDigests = ActivityDigestCache()
     /// A widget only needs a few setup labels, not decoded workspaces per tick.
     var widgetSetupCache = WidgetSetupCache()
     /// Today for the widget, and when it was last worked out (WidgetBridge.swift).
@@ -807,6 +812,17 @@ extension NidusModel {
         activityOverrides = overrides
     }
 
+    /// The same for a subject the Sort card names directly: a whole domain or
+    /// a bucket of browser pages.
+    func countActivity(subject: ActivityOverrides.Subject, name: String, as target: ActivityGroup) {
+        if case .category(let id) = target, id != ActivityCategorizer.workID, !categories.contains(where: { $0.id == id }) {
+            return
+        }
+        var overrides = activityOverrides
+        overrides.set(target, subject: subject, name: name)
+        activityOverrides = overrides
+    }
+
     func removeActivityOverride(_ subject: ActivityOverrides.Subject) {
         var overrides = activityOverrides
         overrides.remove(subject)
@@ -1019,6 +1035,8 @@ extension NidusModel {
         controller?.clearHistory()
         recentGoals = []
         clearPlanStarts()
+        driftSuggestion = nil
+        driftComputedAt = nil
         resumeNotes?.clear()
         cards.nextStep = nil
         resumeNotice = nil

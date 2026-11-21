@@ -29,6 +29,17 @@ struct SnoozeWait: Equatable, Sendable {
     /// back at it and press Snooze.
     static let readyWindow: TimeInterval = 10
 
+    /// How long the wait is for a snooze of an item already snoozed `prior`
+    /// times this session: the configured wait the first time, then 30 s, 60 s
+    /// and 120 s (the cap), never shorter than the configured wait. 0 means
+    /// snooze at once.
+    static func escalatedSeconds(configured: Int, prior: Int) -> Int {
+        let base = normalized(configured)
+        guard prior > 0 else { return base }
+        let steps = [30, 60, 120]
+        return max(base, steps[min(prior, steps.count) - 1])
+    }
+
     /// A stray value (a hand-edited preference, a choice a later version
     /// dropped) means no wait rather than a Picker with nothing selected.
     static func normalized(_ seconds: Int) -> Int {
@@ -131,7 +142,7 @@ struct SnoozeWait: Equatable, Sendable {
     static func decide(key: String, name: String, waitSeconds: Int, session: SessionState?,
                        existing: SnoozeWait?, now: Date) -> Decision {
         guard let session, case .running = session.phase, !session.plan.strict else { return .refuse }
-        let pause = normalized(waitSeconds)
+        let pause = escalatedSeconds(configured: waitSeconds, prior: session.snoozeCounts[key] ?? 0)
         guard pause > 0 else { return .snoozeNow }
         guard session.snoozes[key] == nil else { return .refuse }
         if let existing, existing.key == key, !existing.isLapsed(at: now) { return .wait(existing) }

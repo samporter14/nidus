@@ -142,7 +142,7 @@ struct SnoozeRequestTests {
         h.engine.start(plan())
         h.engine.snooze(Self.key)
         #expect(decide(h, wait: 10) == .refuse)
-        #expect(decide(h, wait: 0) == .snoozeNow, "without a wait a snooze can still be taken again, as before")
+        #expect(decide(h, wait: 0) == .refuse, "a second snooze of the same item is a repeat, so it has a wait even when none is set")
     }
 
     @Test func askingAgainKeepsTheCountdownItHas() throws {
