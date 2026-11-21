@@ -26,6 +26,33 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
     var websites: [String]
     /// Pages let through although one of `websites` covers them. 0.4.
     var websiteExceptions: [WebsiteException] = []
+    /// What time in this category means for Activity: work, neutral (neither
+    /// good nor drift) or a distraction. Never affects blocking.
+    var role: Role = .distracting
+
+    /// How Activity reads time in a category. Work is the Work group and any
+    /// category the user sets to work; neutral time is never drift.
+    enum Role: String, Codable, CaseIterable, Sendable {
+        case work, neutral, distracting
+
+        var title: String {
+            switch self {
+            case .work: return "Work"
+            case .neutral: return "Neutral"
+            case .distracting: return "Distracting"
+            }
+        }
+
+        /// The role a category has when none was saved: the Work group is
+        /// work, the built-in AI chat, mail and messaging are neutral, and
+        /// everything else distracts, as before roles existed.
+        static func fallback(forID id: String) -> Role {
+            if id == ActivityCategorizer.workID { return .work }
+            return neutralPresetIDs.contains(id) ? .neutral : .distracting
+        }
+
+        static let neutralPresetIDs: Set<String> = ["ai-chat", "mail", "messaging"]
+    }
 
     var isEmpty: Bool { apps.isEmpty && websites.isEmpty }
 
@@ -43,7 +70,7 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
 }
 
 extension FocusCategory {
-    enum CodingKeys: String, CodingKey { case id, name, symbol, apps, websites, websiteExceptions }
+    enum CodingKeys: String, CodingKey { case id, name, symbol, apps, websites, websiteExceptions, role }
 
     /// 0.3's fields as before; the exceptions on their own, so a category
     /// saved before 0.4 (or one exception written wrongly) still loads.
@@ -55,6 +82,7 @@ extension FocusCategory {
         apps = try c.decode([BlockedApp].self, forKey: .apps)
         websites = try c.decode([String].self, forKey: .websites)
         websiteExceptions = c.decodeLossy([WebsiteException].self, forKey: .websiteExceptions)
+        role = c.decodeTolerant(Role.self, forKey: .role) ?? Role.fallback(forID: id)
     }
 }
 
@@ -73,7 +101,8 @@ extension FocusCategory {
                    BlockedApp(bundleID: "com.hnc.Discord", name: "Discord"),
                    BlockedApp(bundleID: "net.whatsapp.WhatsApp", name: "WhatsApp"),
                    BlockedApp(bundleID: "ru.keepcoder.Telegram", name: "Telegram")],
-            websites: ["messenger.com", "web.whatsapp.com", "discord.com"]
+            websites: ["messenger.com", "web.whatsapp.com", "discord.com"],
+            role: .neutral
         ),
         FocusCategory(
             id: "video", name: "Video", symbol: "play.rectangle",
@@ -91,7 +120,8 @@ extension FocusCategory {
             id: "mail", name: "Mail", symbol: "envelope",
             apps: [BlockedApp(bundleID: "com.apple.mail", name: "Mail"),
                    BlockedApp(bundleID: "com.microsoft.Outlook", name: "Outlook")],
-            websites: ["mail.google.com", "outlook.live.com", "outlook.office.com"]
+            websites: ["mail.google.com", "outlook.live.com", "outlook.office.com"],
+            role: .neutral
         ),
     ] + PresetUpdates.suggestedCategories, since: 1)
 
@@ -100,7 +130,7 @@ extension FocusCategory {
     /// own matching reads it; it is stored apart from `categories` and is
     /// never offered for a session.
     static let workSeed = FocusCategory(id: ActivityCategorizer.workID, name: "Work", symbol: "briefcase",
-                                        apps: [], websites: [])
+                                        apps: [], websites: [], role: .work)
 
     /// What a session blocks when the user has picked no category yet.
     static let defaultSelection: [String] = ["social", "video"]
@@ -195,7 +225,7 @@ enum PresetUpdates {
         .init(id: "forums", name: "Forums and Q&A", symbol: "text.bubble", apps: [], websites:
             ["reddit.com", "quora.com", "news.ycombinator.com"]),
         .init(id: "ai-chat", name: "AI chat", symbol: "sparkles", apps: aiChatApps, websites:
-            ["chatgpt.com", "claude.ai", "gemini.google.com", "perplexity.ai"]),
+            ["chatgpt.com", "claude.ai", "gemini.google.com", "perplexity.ai"], role: .neutral),
     ]
 
     static let currentVersion = 2

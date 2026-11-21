@@ -54,10 +54,11 @@ struct ActivityHeatmap: Equatable, Sendable {
                 groups[key] = .some(group)
             }
             Self.forEachHour(of: stretch, calendar: calendar) { slot, seconds in
-                switch group {
-                case ActivityCategorizer.workID: self[weekday: slot.weekday, hour: slot.hour].work += seconds
-                case nil: self[weekday: slot.weekday, hour: slot.hour].other += seconds
-                default: self[weekday: slot.weekday, hour: slot.hour].distraction += seconds
+                // Neutral time is "other": it is not a distraction.
+                switch categorizer.role(forGroup: group) {
+                case .work?: self[weekday: slot.weekday, hour: slot.hour].work += seconds
+                case .distracting?: self[weekday: slot.weekday, hour: slot.hour].distraction += seconds
+                case .neutral?, nil: self[weekday: slot.weekday, hour: slot.hour].other += seconds
                 }
             }
         }

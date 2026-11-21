@@ -25,6 +25,7 @@ struct ActivityTodaySummaryTests {
         var work = FocusCategory.workSeed
         work.apps = [BlockedApp(bundleID: "work.app", name: "Work")]
         var social = FocusCategory.workSeed
+        social.role = .distracting
         social.id = "social"
         social.apps = [BlockedApp(bundleID: "social.app", name: "Social")]
         return ActivityCategorizer(categories: [social], work: work)
@@ -85,6 +86,7 @@ struct ActivityTodaySummaryTests {
 
     @Test func bandsAreClassifiedFirstSoTwoAppsOfOneKindAreOneBand() {
         var other = FocusCategory.workSeed
+        other.role = .distracting
         other.id = "video"
         other.apps = [BlockedApp(bundleID: "video.app", name: "Video")]
         var social = other

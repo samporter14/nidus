@@ -584,6 +584,16 @@ struct FocusCategoryPage: View {
                     NidusControlRow(title: "Symbol") {
                         NidusSymbolPicker(selection: symbolBinding)
                     }
+                    if !isWork {
+                        NidusControlRow(title: "Counts as",
+                                        infoTip: "How Activity reads time here. Work counts as work, Neutral is never drift, Distracting is what drift and the hour grid flag. It doesn't change what a session blocks.") {
+                            Picker("Counts as", selection: roleBinding) {
+                                ForEach(FocusCategory.Role.allCases, id: \.self) { Text($0.title).tag($0) }
+                            }
+                            .labelsHidden()
+                            .frame(width: 140)
+                        }
+                    }
                 }
 
                 if !isWork, let target = category.mergeTarget(in: model.categories) {
@@ -678,6 +688,11 @@ struct FocusCategoryPage: View {
             get: { category?.name ?? "" },
             set: { name in update { $0.name = name } }
         )
+    }
+
+    private var roleBinding: Binding<FocusCategory.Role> {
+        Binding(get: { category?.role ?? .distracting },
+                set: { role in update { $0.role = role } })
     }
 
     private var symbolBinding: Binding<String> {
