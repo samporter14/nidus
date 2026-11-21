@@ -23,6 +23,23 @@ enum ActivityDomain {
         return host.hasPrefix("www.") && isDomain(String(host.dropFirst(4))) ? String(host.dropFirst(4)) : host
     }
 
+    /// Second-level labels that sit under a two-letter country code
+    /// (`bbc.co.uk`, `unsw.edu.au`). No public-suffix list ships with the app,
+    /// so this short list stands in for it.
+    private static let countrySecondLevels: Set<String> = ["co", "com", "org", "net", "ac", "gov", "edu", "ne", "or", "go", "sch"]
+
+    /// The registrable domain of a host from `site(from:)` (`google.com` for
+    /// `docs.google.com`), or nil for a host that is not a domain. A host that
+    /// is already registrable gives itself.
+    static func registrable(of host: String) -> String? {
+        guard isDomain(host) else { return nil }
+        let labels = host.split(separator: ".")
+        var keep = 2
+        if labels.count >= 3, let tld = labels.last, tld.count == 2,
+           countrySecondLevels.contains(String(labels[labels.count - 2])) { keep = 3 }
+        return labels.suffix(keep).joined(separator: ".")
+    }
+
     /// Whether a string could only be a bare domain: dotted, ASCII, no scheme,
     /// path or port, and not an address. Punycode names pass as written.
     static func isDomain(_ text: String) -> Bool {

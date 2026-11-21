@@ -807,6 +807,17 @@ extension NidusModel {
         activityOverrides = overrides
     }
 
+    /// The same for a subject the Sort card names directly: a whole domain or
+    /// a bucket of browser pages.
+    func countActivity(subject: ActivityOverrides.Subject, name: String, as target: ActivityGroup) {
+        if case .category(let id) = target, id != ActivityCategorizer.workID, !categories.contains(where: { $0.id == id }) {
+            return
+        }
+        var overrides = activityOverrides
+        overrides.set(target, subject: subject, name: name)
+        activityOverrides = overrides
+    }
+
     func removeActivityOverride(_ subject: ActivityOverrides.Subject) {
         var overrides = activityOverrides
         overrides.remove(subject)

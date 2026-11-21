@@ -65,7 +65,7 @@ extension NidusModel {
         let group = workGroup
         let overrides = activityOverrides
         return !group.apps.isEmpty || !group.websites.isEmpty
-            || overrides.apps.values.contains { $0.group == .work } || overrides.sites.values.contains { $0.group == .work }
+            || overrides.countsAnythingAsWork
     }
 
     /// Whether the day's ribbon is colored by category rather than by app.
