@@ -51,6 +51,9 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
     /// Its place in a sequence run, when it was a work block of one.
     var sequenceStep: SequenceStepRef?
 
+    /// App or site to times snoozed. Older entries have none: empty.
+    var snoozeCounts: [String: Int] = [:]
+
     /// The entry for a session that just ended, or nil for one too short to
     /// count (started by mistake and ended at once).
     init?(ended state: SessionState, outcome: SessionEndReason) {
@@ -73,13 +76,15 @@ struct SessionEntry: Codable, Equatable, Sendable, Identifiable {
         projectName = state.plan.projectName
         setupID = state.plan.setupID
         sequenceStep = state.plan.sequenceStep
+        snoozeCounts = state.snoozeCounts
     }
 
     init(start: Date, end: Date, focused: TimeInterval, planned: TimeInterval?, outcome: SessionEndReason, goal: String = "",
          blocks: [String: Int] = [:], quits: [String: Int] = [:], foreground: [String: TimeInterval] = [:],
          names: [String: String] = [:], finished: Bool? = nil, projectID: UUID? = nil, projectName: String? = nil,
          activity: [FocusActivity]? = nil, activitySegments: [FocusActivitySegment]? = nil,
-         activityTimelineTruncated: Bool? = nil) {
+         activityTimelineTruncated: Bool? = nil, snoozeCounts: [String: Int] = [:]) {
+        self.snoozeCounts = snoozeCounts
         self.projectID = projectID
         self.projectName = projectName
         self.finished = finished
@@ -121,7 +126,7 @@ extension SessionEntry {
 extension SessionEntry {
     enum CodingKeys: String, CodingKey {
         case id, start, end, focused, planned, outcome, goal, blocks, quits, foreground, activity, activitySegments, activityTimelineTruncated, names, finished
-        case projectID, projectName, setupID, sequenceStep
+        case projectID, projectName, setupID, sequenceStep, snoozeCounts
     }
 
     /// 0.3's fields as before; 0.4's each on its own, so one written wrongly
@@ -147,6 +152,23 @@ extension SessionEntry {
         projectName = c.decodeTolerant(String.self, forKey: .projectName)
         setupID = c.decodeTolerant(UUID.self, forKey: .setupID)
         sequenceStep = c.decodeTolerant(SequenceStepRef.self, forKey: .sequenceStep)
+        snoozeCounts = c.decodeTolerant([String: Int].self, forKey: .snoozeCounts) ?? [:]
+    }
+}
+
+/// How the snooze counts read on the finish card and in the recap.
+enum SnoozeSummary {
+    /// "Snoozed reddit.com 4 times" or "Snoozed reddit.com 4 times, Slack 1 time":
+    /// the top `limit` items, most first (ties by name). nil when nothing was
+    /// snoozed.
+    static func text(counts: [String: Int], names: [String: String] = [:], limit: Int = 2) -> String? {
+        let top = counts.filter { $0.value > 0 }
+            .map { (name: names[$0.key] ?? $0.key, count: $0.value) }
+            .sorted { $0.count != $1.count ? $0.count > $1.count : $0.name < $1.name }
+            .prefix(limit)
+        guard !top.isEmpty else { return nil }
+        let items = top.map { "\($0.name) \($0.count) \($0.count == 1 ? "time" : "times")" }
+        return "Snoozed " + items.joined(separator: ", ")
     }
 }
 

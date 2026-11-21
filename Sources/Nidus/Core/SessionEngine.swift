@@ -101,6 +101,9 @@ struct SessionState: Codable, Equatable, Sendable {
     var budget: TimeInterval
     /// Item (bundle identifier or domain) to the moment its snooze ends.
     var snoozes: [String: Date] = [:]
+    /// How often each item was snoozed this session. It sets how long the
+    /// next snooze of the same item makes you wait (see `SnoozeWait`).
+    var snoozeCounts: [String: Int] = [:]
     /// Bundle identifiers this session quit, oldest first.
     var quitApps: [String] = []
     /// How often each app (bundle identifier) or site (domain) was blocked.
@@ -655,6 +658,7 @@ final class SessionEngine {
     func snooze(_ item: String, for seconds: TimeInterval = defaultSnooze) {
         guard var session, case .running = session.phase, seconds > 0, !session.plan.strict else { return }
         session.snoozes[item] = clockNow().addingTimeInterval(seconds)
+        session.snoozeCounts[item, default: 0] += 1
         self.session = session
         commit(.snoozed(item))
     }
@@ -1244,7 +1248,7 @@ extension SessionRecord {
 
 extension SessionState {
     enum CodingKeys: String, CodingKey {
-        case plan, startedAt, phase, budget, snoozes, quitApps, blocks, quitCounts, foreground, activity, activitySegments, activityTimelineTruncated, activityContinuity, activityContinuityStartedAt, names
+        case plan, startedAt, phase, budget, snoozes, snoozeCounts, quitApps, blocks, quitCounts, foreground, activity, activitySegments, activityTimelineTruncated, activityContinuity, activityContinuityStartedAt, names
         case seenElapsed, endedAt, focusedTime, pausedAt, pauseReminded
     }
 
@@ -1257,6 +1261,7 @@ extension SessionState {
         // Everything below is bookkeeping: one field written wrongly loses
         // itself, not the running session.
         snoozes = c.decodeTolerant([String: Date].self, forKey: .snoozes) ?? [:]
+        snoozeCounts = c.decodeTolerant([String: Int].self, forKey: .snoozeCounts) ?? [:]
         quitApps = c.decodeTolerant([String].self, forKey: .quitApps) ?? []
         blocks = c.decodeTolerant([String: Int].self, forKey: .blocks) ?? [:]
         quitCounts = c.decodeTolerant([String: Int].self, forKey: .quitCounts) ?? [:]

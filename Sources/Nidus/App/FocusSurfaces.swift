@@ -260,7 +260,8 @@ extension NidusModel {
         // inbox opens when its button is pressed, never by itself.
         let saved = savedForLater(since: final.startedAt)
         let offersButton = following == nil && !(completed && step != nil && breakMinutes == nil)
-        let detail = [ "\(time) focused", blocks, days, rest ].compactMap { $0 }.joined(separator: " \u{00B7} ")
+        let snoozedLine = SnoozeSummary.text(counts: final.snoozeCounts, names: final.names)
+        let detail = [ "\(time) focused", blocks, snoozedLine, days, rest ].compactMap { $0 }.joined(separator: " \u{00B7} ")
         let mediumDetail = [ "\(time) focused", days ?? (rest == nil ? blocks : nil), rest ].compactMap { $0 }.joined(separator: " \u{00B7} ")
         let shortDetail = rest.map { "\(time) \u{00B7} \($0)" } ?? streak.map { "\(time) \u{00B7} day \($0)" }
             ?? (blocked == 0 ? "\(time) focused" : "\(time) \u{00B7} \(blocked) blocked")
@@ -272,7 +273,7 @@ extension NidusModel {
             // button for what was saved.
             duration: goal != nil ? 12 : (nextStep != nil ? FinishReply.noteLinger : (saved > 0 ? 10 : notes.isEmpty ? 6 : 9)),
             accessibilityLabel: "\(title). \(time) focused, \(blocks)\(days.map { ", \($0)" } ?? "")\(rest.map { ". \($0.hasSuffix("break") ? "A " : "")\($0) now" } ?? "")."
-                + spokenNotes + (goal.map { " Did you finish \($0)?" } ?? "")
+                + (snoozedLine.map { ". \($0)" } ?? "") + spokenNotes + (goal.map { " Did you finish \($0)?" } ?? "")
                 + (nextStep != nil && goal == nil ? " What\u{2019}s the next step? Optional." : "")
                 + (Self.savedForLaterText(saved).map { " \($0)." } ?? "")
                 + (cards.undoOffered ? " Undo is available for a few seconds." : "")
