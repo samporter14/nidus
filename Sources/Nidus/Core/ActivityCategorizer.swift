@@ -57,6 +57,7 @@ struct ActivityCategorizer: Sendable {
         let name: String
         let symbol: String
         let apps: Set<String>
+        let role: FocusCategory.Role
         /// nil when the group lists no websites.
         let rule: WebsiteRule?
 
@@ -64,6 +65,7 @@ struct ActivityCategorizer: Sendable {
             id = category.id
             name = category.name
             symbol = category.symbol
+            role = category.id == ActivityCategorizer.workID ? .work : category.role
             apps = Set(category.apps.map(\.bundleID))
             rule = category.websites.isEmpty
                 ? nil
@@ -110,6 +112,19 @@ struct ActivityCategorizer: Sendable {
         if let hit = resolve(overrides.apps[appID]) { return hit }
         return groups.first { $0.apps.contains(appID) }?.id
     }
+
+    /// What time in a group means: the Work group and any category set to work
+    /// are `.work`, neutral ones never count as drift, the rest are
+    /// `.distracting`. nil for Uncategorized (nil or an unknown id), which is
+    /// none of the three. Every caller that asks "is this work / a
+    /// distraction?" goes through here.
+    func role(forGroup id: String?) -> FocusCategory.Role? {
+        guard let id else { return nil }
+        return groups.first { $0.id == id }?.role
+    }
+
+    /// True when time in the group counts as a distraction.
+    func isDistracting(group id: String?) -> Bool { role(forGroup: id) == .distracting }
 
     /// The same, as a group.
     func group(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {

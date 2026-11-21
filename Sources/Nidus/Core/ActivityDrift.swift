@@ -100,7 +100,7 @@ enum ActivityDrift {
             && run.follows(origin, within: reach) {
             guard let from = top(origin.labels), let to = top(run.labels) else { continue }
             chains.append(ActivityDriftChain(origin: from, target: to, groups: run.groups,
-                                             fromWork: top(origin.groups) == ActivityCategorizer.workID, seconds: run.seconds))
+                                             fromWork: categorizer.role(forGroup: top(origin.groups)) == .work, seconds: run.seconds))
         }
         return chains
     }
@@ -117,7 +117,7 @@ enum ActivityDrift {
                 group = categorizer.category(appID: stretch.appID, site: stretch.site, url: stretch.url)
                 groups[key] = .some(group)
             }
-            let distracting = group != nil && group != ActivityCategorizer.workID
+            let distracting = categorizer.isDistracting(group: group)
             let next = Run(stretch, group: group, distracting: distracting)
             if let last = runs.last, last.distracting == distracting, next.follows(last, within: join) {
                 runs[runs.count - 1].add(stretch, group: group)
