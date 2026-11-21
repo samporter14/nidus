@@ -250,7 +250,7 @@ struct FocusWidget: View {
             // While a custom length is being typed it is not committed;
             // its own caption previews it until Return sets the choice.
             if model.customLengthDraft == nil, let preview = model.sessionPreview() {
-                SessionPreviewRow(preview: preview)
+                SessionPreviewRow(preview: preview, blockedList: { [model] in model.blockedList() })
             }
             if nudge == .resume { ResumePopoverRow(model: model) }
             footerNudge
