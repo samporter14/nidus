@@ -89,7 +89,9 @@ struct ActivityCategorizer: Sendable {
     /// one; it is preferred over `site`.
     ///
     /// Order, first hit wins:
-    ///  1. an override on the page's host;
+    ///  1. an override on the page's exact host, then one on its registrable
+    ///     domain (which covers subdomains), then one on the bucket of browser
+    ///     pages with no website (local pages, Claude Science);
     ///  2. a group whose website rules match the page;
     ///  3. an override on the app;
     ///  4. a group that lists the app;
@@ -100,8 +102,15 @@ struct ActivityCategorizer: Sendable {
     /// Uncategorized is a hit: it beats a list that holds the item.
     func category(appID: String, site: String?, url: String? = nil) -> String? {
         let address = Self.address(site: site, url: url)
-        if !overrides.sites.isEmpty, let address, let host = ActivityDomain.site(from: address),
-           let hit = resolve(overrides.sites[host]) {
+        if let address, let host = ActivityDomain.site(from: address) {
+            if let hit = resolve(overrides.sites[host]) { return hit }
+            if !overrides.domains.isEmpty, let domain = ActivityDomain.registrable(of: host),
+               let hit = resolve(overrides.domains[domain]) {
+                return hit
+            }
+        }
+        if !overrides.pages.isEmpty, let page = ActivityOverrides.browserPage(appID: appID, site: site, url: url),
+           let hit = resolve(overrides.pages[page.rawValue]) {
             return hit
         }
         if let address, let match = groups.first(where: { $0.rule?.blocks(address) == true }) {
