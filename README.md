@@ -5,7 +5,7 @@
 **Block the apps and websites that pull you away, for as long as you say.** A
 Solanum product.
 
-<img src="docs/popover-idle.png" width="440" alt="The Nidus popover under the menu bar: New session, a goal field reading What are you working on?, a 25 minute length, a clay Start focus button, More, Blocks Social, Video, and Today: nothing counted yet">
+<img src="docs/popover-idle.png" width="440" alt="The Nidus popover under the menu bar: New session, a goal field reading What are you working on?, a 25 minute length, a clay Start focus button, More, Blocks Social, and Today: 4 hr 48 min, 53 min in focus, a timeline of the day and the top apps">
 
 **Install in one line**: paste into Terminal (Apple silicon, macOS 27):
 
@@ -72,7 +72,7 @@ and the categories to block, and press Start. Until the session ends:
   during a strict session, and comes back if it's killed; see
   [Strict sessions](#strict-sessions).
 
-  <img src="docs/popover-running.png" width="440" alt="The popover during a session: Focusing, Update Specific Aims, until 12:04 PM, 25:00 with pause, +5 and stop buttons, a progress track, Save a thought, and Today with an empty timeline">
+  <img src="docs/popover-running.png" width="440" alt="The popover during a session: Focusing, Update Specific Aims, until 12:17 PM, 25:00 with pause, +5 and stop buttons, a progress track, Save a thought, and Today with the day’s timeline and top apps">
 - **A card says what happened**, at the top of your screen: what was blocked,
   a snooze about to run out, and how the session went.
 

@@ -402,8 +402,8 @@ struct NidusTodayView: View {
             }
             GeometryReader { proxy in
                 ZStack(alignment: .leading) {
-                    RoundedRectangle(cornerRadius: 2).fill(ink.track)
-                    RoundedRectangle(cornerRadius: 2).fill(ink.tint(category.tint))
+                    RoundedRectangle(cornerRadius: Solanum.markRadius).fill(ink.track)
+                    RoundedRectangle(cornerRadius: Solanum.markRadius).fill(ink.tint(category.tint))
                         .frame(width: max(2, min(1, Double(category.minutes) / biggest) * proxy.size.width))
                 }
             }
@@ -457,7 +457,7 @@ private struct DayRibbon: View {
             if !focus.isEmpty {
                 GeometryReader { proxy in
                     ForEach(focus.indices, id: \.self) { index in
-                        RoundedRectangle(cornerRadius: 1.5)
+                        RoundedRectangle(cornerRadius: Solanum.markRadius)
                             .fill(ink.focus)
                             .frame(width: max(2, (focus[index].1 - focus[index].0) * proxy.size.width), height: 3)
                             .offset(x: focus[index].0 * proxy.size.width)

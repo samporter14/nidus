@@ -41,6 +41,14 @@ struct ActivityDayRibbon: View {
     private var compactBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             focusBars
+            if ribbon.blocks.isEmpty {
+                // Too small for a line over the track: the faint track, then
+                // the line under it, in the axis's place.
+                track.opacity(0.35).accessibilityHidden(true)
+                Text(Self.emptyMessage)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+            } else {
             VStack(alignment: .leading, spacing: 4) {
                 track
                 HStack {
@@ -54,7 +62,7 @@ struct ActivityDayRibbon: View {
                 .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 12, alignment: .leading)
                 .accessibilityHidden(true)
             }
-            .chartEmptyState(ribbon.blocks.isEmpty, Self.emptyMessage)
+            }
         }
         .coordinateSpace(name: Self.space)
         .activityHoverCallout(callout, at: pointer)
