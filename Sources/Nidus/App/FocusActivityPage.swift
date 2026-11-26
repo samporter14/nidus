@@ -15,6 +15,7 @@ struct FocusActivityPage: View {
     var now: Date? = nil
     var calendar: Calendar = .current
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
     var initialSessionID: UUID? = nil
 
     init(model: NidusModel, now: Date? = nil, calendar: Calendar = .current,
@@ -56,6 +57,12 @@ struct FocusActivityPage: View {
     @State private var displayedHeatmap = ActivityHeatmap()
     @State private var displayedWeek: ActivityWeek?
     @State private var displayedChains: [ActivityDriftChain]?
+    /// Whether the week, hour and drift digest has arrived: until it has,
+    /// their cards hold their height as an empty track.
+    @State private var digestLoaded = false
+    /// The same weekday's earlier figures, for the comparison lines.
+    @State private var comparisonHistory = ActivityComparisonHistory()
+    @State private var tracker = ActivitySectionTracker()
     /// Open rows of the ranked list: app ids, and app and site together.
     @State private var openRows: Set<String> = []
 
@@ -95,35 +102,52 @@ struct FocusActivityPage: View {
     var body: some View {
         let rangeSessions = displayedSessions
         let scope = displayedScope
-        return NidusSettingsPage {
-            hero
-            filters(scope)
-            if rangeSessions.isEmpty && !scope.hasStretches && scope.totals.observed == 0 {
-                emptyState
-            } else {
-                overview(scope, sessions: rangeSessions)
-                if period == .today {
-                    dayRibbon(scope, sessions: rangeSessions)
+        let isEmpty = rangeSessions.isEmpty && !scope.hasStretches && scope.totals.observed == 0
+        return ScrollViewReader { proxy in
+            NidusSettingsPage {
+                hero
+                filters(scope)
+                if isEmpty {
+                    emptyState
                 } else {
-                    dailyPattern(scope.totals, sessions: rangeSessions)
+                    overview(scope, sessions: rangeSessions)
+                    if period == .today {
+                        dayRibbon(scope, sessions: rangeSessions)
+                    } else {
+                        dailyPattern(scope.totals, sessions: rangeSessions)
+                    }
+                    weekGlance
+                    hourHeatmap
+                    drift
+                    ActivitySortCard(model: model, items: displayedUncategorized)
+                    rankedList(displayedFiltered ?? scope.totals)
+                    projectInsights
+                    sessionList(rangeSessions)
                 }
-                weekGlance
-                hourHeatmap
-                drift
-                ActivitySortCard(model: model, items: displayedUncategorized)
-                rankedList(displayedFiltered ?? scope.totals)
-                projectInsights
-                sessionList(rangeSessions)
+                NidusSettingsCard { ActivityTrackingControls(model: model) }
             }
-            NidusSettingsCard { ActivityTrackingControls(model: model) }
+            .safeAreaInset(edge: .top, spacing: 0) {
+                if !isEmpty {
+                    ActivitySectionBar(sections: ActivitySection.shown(for: period), tracker: tracker) { jump(to: $0, using: proxy) }
+                }
+            }
         }
         .sheet(item: $selectedSession) { entry in
             ActivitySessionRecap(entry: entry)
                 .frame(minWidth: 430, minHeight: 440)
         }
         .onAppear { refreshProjects(); openInitialSession() }
+        .onChange(of: period, initial: true) { _, value in tracker.order = ActivitySection.shown(for: value) }
         .task(id: requestedCacheKey) { await reload(requestedCacheKey) }
         .task(id: digestRequest) { await reloadDigest(digestRequest) }
+        .task(id: comparisonRequest) { await reloadComparison(comparisonRequest) }
+    }
+
+    /// Scrolls a section to the top, and names it in the bar at once.
+    private func jump(to section: ActivitySection, using proxy: ScrollViewProxy) {
+        tracker.choose(section)
+        if reduceMotion { proxy.scrollTo(section, anchor: .top) }
+        else { withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo(section, anchor: .top) } }
     }
 
     private var hero: some View {
@@ -140,11 +164,11 @@ struct FocusActivityPage: View {
                     HStack(spacing: 8) {
                         Text("Paused until \(end.formatted(date: .omitted, time: .shortened))")
                             .font(.solanum(.label))
-                            .foregroundStyle(ActivityInk.clay)
+                            .foregroundStyle(Solanum.clayText)
                         Button("Resume", action: model.resumeActivity)
                             .buttonStyle(.plain)
                             .font(.solanum(.label))
-                            .foregroundStyle(ActivityInk.clay)
+                            .foregroundStyle(Solanum.clayText)
                             .underline()
                     }
                     .padding(.top, 4)
@@ -220,9 +244,9 @@ struct FocusActivityPage: View {
             VStack(spacing: 8) {
                 Image(systemName: "rectangle.stack.badge.clock")
                     .font(.system(size: 26, weight: .light))
-                    .foregroundStyle(ActivityInk.clay)
+                    .foregroundStyle(Solanum.clayText)
                 Text("No activity in this view")
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.solanum(.title, weight: .medium))
                     .foregroundStyle(Solanum.ink)
                 Text(model.activityAllDayEnabled
                      ? "Nothing was counted in the selected time range and project."
@@ -240,13 +264,17 @@ struct FocusActivityPage: View {
     private func overview(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
         let totals = scope.totals
         let allDay = scope.hasDailyRecords && !focusOnly && projectID == nil
+        let lines = comparisonLines(totals, allDay: allDay)
         return NidusSettingsCard {
             HStack(alignment: .center, spacing: 0) {
-                ActivityFigure(label: allDay ? "At the Mac" : "Observed", value: ActivityDuration.string(totals.observed), color: ActivityInk.blue)
+                ActivityFigure(label: allDay ? "At the Mac" : "Observed", value: ActivityDuration.string(totals.observed),
+                               color: Solanum.ink, comparison: lines.observed)
                 Divider().frame(height: 42)
-                ActivityFigure(label: "In focus", value: ActivityDuration.string(totals.focused), color: ActivityInk.clay)
+                ActivityFigure(label: "In focus", value: ActivityDuration.string(totals.focused),
+                               color: Solanum.clayText, comparison: lines.focused)
             }
             .padding(.top, 8)
+            .activitySectionAnchor(.overview, tracker: tracker)
             Text(verbatim: ActivityOverviewLine.text(lead: totals.lead, sessions: sessions.count, withinFocus: !allDay))
                 .font(.solanum(.label, weight: .regular))
                 .foregroundStyle(Solanum.inkMuted)
@@ -280,11 +308,97 @@ struct FocusActivityPage: View {
                 .accessibilityLabel("Color the day by")
             }
             .padding(.top, 8)
+            .activitySectionAnchor(.day, tracker: tracker)
             ActivityDayRibbon(ribbon: ribbon, calendar: calendar) { id in
                 selectedSession = sessions.first { $0.id == id }
             }
             .padding(.vertical, 8)
         }
+    }
+
+    // MARK: Comparison with the usual weekday
+
+    private struct ComparisonRequest: Equatable {
+        let day: Date?
+        let version: Int
+        let projectID: UUID?
+        let excluded: Set<String>
+        let allDay: Bool
+    }
+
+    /// Only a single day is set against its weekday.
+    private var comparisonRequest: ComparisonRequest {
+        ComparisonRequest(day: period == .today ? requestedInterval.start : nil,
+                          version: model.controller?.historyVersion ?? 0, projectID: projectID,
+                          excluded: model.activityExcludedApps,
+                          allDay: displayedScope.hasDailyRecords && !focusOnly && projectID == nil)
+    }
+
+    /// The quiet lines under the figures, or nil for a figure with too little
+    /// history behind it.
+    private func comparisonLines(_ totals: ActivityTotals, allDay: Bool) -> (observed: String?, focused: String?) {
+        let day = requestedInterval.start
+        guard period == .today, comparisonHistory.day == day else { return (nil, nil) }
+        let weekday = ActivityComparison.weekdayName(of: day, calendar: calendar)
+        let observed = allDay
+            ? ActivityComparison.phrase(value: totals.observed, history: comparisonHistory.observed, weekday: weekday,
+                                        format: ActivityDuration.string)
+            : nil
+        let focused = ActivityComparison.phrase(value: totals.focused, history: comparisonHistory.focused, weekday: weekday,
+                                                format: ActivityDuration.string)
+        return (observed, focused)
+    }
+
+    /// The earlier same weekdays' figures: focus from the saved sessions, and
+    /// what was at the Mac from the saved day files.
+    private func reloadComparison(_ request: ComparisonRequest) async {
+        guard let day = request.day else {
+            if comparisonHistory != ActivityComparisonHistory() { comparisonHistory = ActivityComparisonHistory() }
+            return
+        }
+        let calendar = calendar
+        let earlier = ActivityComparison.sameWeekdayDays(before: day, calendar: calendar)
+        let wanted = Set(earlier)
+        var focusedByDay: [Date: TimeInterval] = [:]
+        for entry in sessions where request.projectID == nil || entry.projectID == request.projectID {
+            let start = calendar.startOfDay(for: entry.start)
+            if wanted.contains(start) { focusedByDay[start, default: 0] += max(0, entry.focused) }
+        }
+        var observedByDay: [Date: TimeInterval] = [:]
+        if request.allDay, let recorder = model.controller?.activityRecorder {
+            var dates: [String: Date] = [:]
+            for date in earlier { dates[ActivityDayLog.key(for: date, calendar: calendar)] = date }
+            let logs = await recorder.store.load(days: Array(dates.keys))
+            let excluded = request.excluded
+            let seconds = await Task.detached(priority: .utility) {
+                logs.map { ($0.day, $0.hiding(excluded).seconds) }
+            }.value
+            guard !Task.isCancelled else { return }
+            for (key, value) in seconds { if let date = dates[key] { observedByDay[date] = value } }
+        }
+        let history = ActivityComparisonHistory(
+            day: day,
+            observed: ActivityComparison.history(of: day, in: observedByDay, calendar: calendar),
+            focused: ActivityComparison.history(of: day, in: focusedByDay, calendar: calendar))
+        if history != comparisonHistory { comparisonHistory = history }
+    }
+
+    /// Holds a card's height while its data loads: an empty track, then the
+    /// card fades in over it once.
+    private func reserved<Content: View>(_ loaded: Bool, minHeight: CGFloat,
+                                         @ViewBuilder content: () -> Content) -> some View {
+        ZStack(alignment: .top) {
+            if !loaded {
+                RoundedRectangle(cornerRadius: Solanum.frameRadius)
+                    .fill(Solanum.track(contrast))
+                    .frame(height: minHeight)
+                    .accessibilityHidden(true)
+            } else {
+                content().transition(.opacity)
+            }
+        }
+        .frame(minHeight: minHeight, alignment: .top)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: loaded)
     }
 
     /// Today alone says little about the shape of a week, so that view looks
@@ -323,21 +437,23 @@ struct FocusActivityPage: View {
             .foregroundStyle(Solanum.inkMuted)
     }
 
-    @ViewBuilder
     private var weekGlance: some View {
-        if let displayedWeek {
-            NidusSettingsSection {
-                VStack(alignment: .leading, spacing: 3) {
-                    settingsSectionHeader("Week at a glance")
-                    Text("Seven days by category, against the seven before.")
-                        .font(.solanum(.caption))
-                        .foregroundStyle(Solanum.inkMuted)
-                    if chartsIgnoreFilters { unfilteredNote }
-                }
-            } content: {
-                ActivityWeekGlance(week: displayedWeek, calendar: calendar, openDay: open(day:))
-                    .padding(.vertical, 8)
+        NidusSettingsSection {
+            VStack(alignment: .leading, spacing: 3) {
+                settingsSectionHeader("Week at a glance")
+                Text("Seven days by category, against the seven before.")
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+                if chartsIgnoreFilters { unfilteredNote }
             }
+            .activitySectionAnchor(.week, tracker: tracker)
+        } content: {
+            reserved(displayedWeek != nil, minHeight: 230) {
+                if let displayedWeek {
+                    ActivityWeekGlance(week: displayedWeek, calendar: calendar, openDay: open(day:))
+                }
+            }
+            .padding(.vertical, 8)
         }
     }
 
@@ -357,9 +473,12 @@ struct FocusActivityPage: View {
                     .foregroundStyle(Solanum.inkMuted)
                 if chartsIgnoreFilters { unfilteredNote }
             }
+            .activitySectionAnchor(.hours, tracker: tracker)
         } content: {
-            ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar, loadDetail: hourDetail)
-                .padding(.vertical, 8)
+            reserved(digestLoaded, minHeight: 200) {
+                ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar, loadDetail: hourDetail)
+            }
+            .padding(.vertical, 8)
         }
     }
 
@@ -389,21 +508,23 @@ struct FocusActivityPage: View {
         }.value
     }
 
-    @ViewBuilder
     private var drift: some View {
-        if let displayedChains {
-            NidusSettingsSection {
-                VStack(alignment: .leading, spacing: 3) {
-                    settingsSectionHeader("Drift")
-                    Text("Three minutes or more on one thing, then as long on a distraction straight after.")
-                        .font(.solanum(.caption))
-                        .foregroundStyle(Solanum.inkMuted)
-                    if chartsIgnoreFilters { unfilteredNote }
-                }
-            } content: {
-                ActivityDriftList(chains: displayedChains, categorizer: displayedCategorizer)
-                    .padding(.vertical, 8)
+        NidusSettingsSection {
+            VStack(alignment: .leading, spacing: 3) {
+                settingsSectionHeader("Drift")
+                Text("Three minutes or more on one thing, then as long on a distraction straight after.")
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+                if chartsIgnoreFilters { unfilteredNote }
             }
+            .activitySectionAnchor(.drift, tracker: tracker)
+        } content: {
+            reserved(displayedChains != nil, minHeight: 120) {
+                if let displayedChains {
+                    ActivityDriftList(chains: displayedChains, categorizer: displayedCategorizer)
+                }
+            }
+            .padding(.vertical, 8)
         }
     }
 
@@ -424,6 +545,7 @@ struct FocusActivityPage: View {
         }
         guard !Task.isCancelled else { return }
         if digest.heatmap != displayedHeatmap { displayedHeatmap = digest.heatmap }
+        if !digestLoaded { digestLoaded = true }
         let shown = ActivityWeek(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
         if shown != displayedWeek { displayedWeek = shown }
         let chains = ActivityDrift.top(digest.chains.values)
@@ -431,23 +553,28 @@ struct FocusActivityPage: View {
     }
 
     private func dailyPattern(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
-        NidusSettingsSection {
+        let colors = totals.serviceColors
+        let parts = totals.services.map { item in
+            ActivityDailyBars.Part(id: item.id == "__other__" ? "__other__" : item.name, name: item.name,
+                                   color: colors[item.id] ?? Solanum.other)
+        }
+        return NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Daily pattern")
                 Text("Observed time by the app or service in front.")
                     .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.inkMuted)
             }
+            .activitySectionAnchor(.bars, tracker: tracker)
         } content: {
             NidusSettingsCard {
-                ActivityDailyChart(buckets: totals.chartBuckets, period: period,
-                                   anchor: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar),
-                                   calendar: calendar, series: totals.services, selectedDay: $selectedDay)
-                    .frame(height: period == .today ? 106 : 144)
+                ActivityDailyBars(buckets: totals.chartBuckets, period: period,
+                                  anchor: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar),
+                                  calendar: calendar, parts: parts, selectedDay: $selectedDay)
                     .padding(.top, 6)
                 HStack(spacing: 14) {
-                    ForEach(Array(totals.services.enumerated()), id: \.element.id) { index, item in
-                        ActivityLegend(color: ActivityInk.series(index), title: item.name)
+                    ForEach(parts) { part in
+                        ActivityLegend(color: part.color, title: part.name)
                     }
                 }
                 .font(.solanum(.caption))
@@ -489,7 +616,7 @@ struct FocusActivityPage: View {
                             VStack(alignment: .trailing, spacing: 3) {
                                 Text(ActivityDuration.string(item.observed))
                                     .font(.solanum(.caption, weight: .medium, design: .rounded))
-                                    .foregroundStyle(ActivityInk.blue)
+                                    .foregroundStyle(Solanum.inkMuted)
                                     .monospacedDigit()
                                 Text("\(item.sessionCount) \(item.sessionCount == 1 ? "session" : "sessions")")
                                     .font(.solanum(.caption))
@@ -527,6 +654,7 @@ struct FocusActivityPage: View {
             }
             .pickerStyle(.segmented)
             .labelsHidden()
+            .activitySectionAnchor(.apps, tracker: tracker)
             .accessibilityLabel("Rank activity by")
             .onChange(of: listKind) { _, _ in expandedList = false }
             .padding(.vertical, 6)
@@ -539,7 +667,8 @@ struct FocusActivityPage: View {
             }
             if listKind == .categories {
                 ForEach(Array(categories.prefix(limit))) { item in
-                    ActivityCategoryRow(item: item, selected: item.id == categoryFilter) {
+                    ActivityCategoryRow(item: item, selected: item.id == categoryFilter,
+                                        tint: ActivityInk.series(displayedCategorizer.tint(of: item.id))) {
                         categoryFilter = item.id
                         listKind = .apps
                     }
@@ -547,7 +676,8 @@ struct FocusActivityPage: View {
             } else {
                 ForEach(Array(rows.prefix(limit).enumerated()), id: \.element.id) { index, row in
                     let details = listKind == .apps ? totals.appDetails[row.id] ?? [] : []
-                    ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds, tint: listKind.tint,
+                    ActivityRankRow(rank: index + 1, item: row, maximum: rows.first?.seconds ?? row.seconds,
+                                    tint: listKind == .apps ? ActivityInk.app(row.id) : Solanum.inkMuted,
                                     reopen: listKind == .apps ? nil : row.reopenTarget.map { target in { target.perform() } },
                                     expansion: details.isEmpty ? nil : openRows.contains(row.id),
                                     toggle: { toggle(row.id) })
@@ -564,7 +694,7 @@ struct FocusActivityPage: View {
                 }
                 .buttonStyle(.plain)
                 .font(.solanum(.caption, weight: .medium))
-                .foregroundStyle(ActivityInk.clay)
+                .foregroundStyle(Solanum.clayText)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, 3)
                 .accessibilityHint("Expands the ranked list")
@@ -583,11 +713,11 @@ struct FocusActivityPage: View {
         return HStack(spacing: 6) {
             Image(systemName: label.symbol)
                 .font(.solanum(.caption, weight: .medium))
-                .foregroundStyle(ActivityInk.clay)
+                .foregroundStyle(Solanum.clayText)
                 .accessibilityHidden(true)
             Text(verbatim: "Only \(label.name)")
                 .font(.solanum(.caption, weight: .medium))
-                .foregroundStyle(ActivityInk.clay)
+                .foregroundStyle(Solanum.clayText)
                 .lineLimit(1)
             Button {
                 categoryFilter = nil
@@ -617,6 +747,7 @@ struct FocusActivityPage: View {
                     .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.inkMuted)
             }
+            .activitySectionAnchor(.sessions, tracker: tracker)
         } content: {
             NidusSettingsCard {
                 if let selectedDay {
@@ -643,7 +774,7 @@ struct FocusActivityPage: View {
                     }
                     .buttonStyle(.plain)
                     .font(.solanum(.caption, weight: .medium))
-                    .foregroundStyle(ActivityInk.clay)
+                    .foregroundStyle(Solanum.clayText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
@@ -799,14 +930,9 @@ enum ActivityListKind: String, CaseIterable, Identifiable {
     var title: String { rawValue.capitalized }
     /// The popover ranks these; categories are a line there, not a list.
     static let popoverKinds: [ActivityListKind] = [.apps, .websites, .documents]
-    var tint: Color {
-        switch self {
-        case .apps: return ActivityInk.blue
-        case .websites: return ActivityInk.sage
-        case .documents: return ActivityInk.clay
-        case .categories: return ActivityInk.series(4)
-        }
-    }
+    /// Neutral ink: a list's own colour means nothing. Apps and categories
+    /// take their stable hue per row instead (the popover keeps this one).
+    var tint: Color { Solanum.inkMuted }
     var emptyNote: String {
         switch self {
         case .apps: return "No apps were counted here."
@@ -900,7 +1026,7 @@ enum ActivityDuration {
     static func string(_ seconds: TimeInterval) -> String {
         let totalSeconds = max(0, Int(seconds.rounded()))
         guard totalSeconds < 60 else { return FocusFormat.long(TimeInterval(totalSeconds)) }
-        return "\(totalSeconds) \(totalSeconds == 1 ? "sec" : "sec")"
+        return "\(totalSeconds) sec"
     }
 }
 
@@ -909,8 +1035,9 @@ enum ActivityDuration {
 enum ActivityInk {
     /// Focus, and only focus.
     static let clay = Solanum.focus
-    /// Transitional names, kept until every chart reads Solanum directly.
-    static let blue = Solanum.inkMuted
+    /// Transitional, for ActivityHourHeatmap until it reads `Solanum.work`
+    /// itself; nothing here uses it.
+    @available(*, deprecated, message: "Use Solanum.work")
     static let sage = Solanum.work
     /// The tint for time that belongs to no one thing.
     nonisolated static let quietTint = ActivityTint.quiet
@@ -1060,6 +1187,20 @@ struct ActivityTotals {
     }
 }
 
+extension ActivityTotals {
+    /// Each service's colour by id, the same wherever it is drawn: an app's
+    /// is its bundle id's hue, a site's its name's, and Other is quiet. Never
+    /// the service's rank.
+    var serviceColors: [String: Color] {
+        let appIDs = Dictionary(apps.map { ($0.name, $0.id) }, uniquingKeysWith: { first, _ in first })
+        return Dictionary(services.map { service -> (String, Color) in
+            let color = service.id == "__other__" ? ActivityInk.series(ActivityTint.quiet)
+                                                  : ActivityInk.app(appIDs[service.name] ?? service.id)
+            return (service.id, color)
+        }, uniquingKeysWith: { first, _ in first })
+    }
+}
+
 struct ActivityRank: Identifiable {
     var id: String
     var name: String
@@ -1092,6 +1233,8 @@ extension ActivityCategoryTotal {
 private struct ActivityCategoryRow: View {
     let item: ActivityCategoryTotal
     let selected: Bool
+    /// The category's stable hue.
+    let tint: Color
     let choose: () -> Void
 
     var body: some View {
@@ -1100,7 +1243,7 @@ private struct ActivityCategoryRow: View {
                 HStack(spacing: 9) {
                     Image(systemName: item.symbol)
                         .font(.solanum(.caption))
-                        .foregroundStyle(selected ? ActivityInk.clay : Solanum.inkMuted)
+                        .foregroundStyle(selected ? Solanum.clayText : Solanum.inkMuted)
                         .frame(width: 22, alignment: .leading)
                         .accessibilityHidden(true)
                     Text(verbatim: item.name)
@@ -1119,15 +1262,8 @@ private struct ActivityCategoryRow: View {
                         .monospacedDigit()
                         .frame(minWidth: 52, alignment: .trailing)
                 }
-                GeometryReader { proxy in
-                    Capsule().fill(Solanum.track)
-                        .overlay(alignment: .leading) {
-                            Capsule().fill(ActivityListKind.categories.tint.opacity(0.85))
-                                .frame(width: Swift.max(4, proxy.size.width * min(1, item.share)))
-                        }
-                }
-                .frame(height: 4)
-                .padding(.leading, 31)
+                SolanumMagnitudeBar(fraction: item.share, color: tint)
+                    .padding(.leading, 31)
             }
             .padding(.vertical, 5)
             .contentShape(Rectangle())
@@ -1140,122 +1276,35 @@ private struct ActivityCategoryRow: View {
     }
 }
 
-private struct ActivityDay: Identifiable {
-    let date: Date
-    var values: [String: TimeInterval] = [:]
-    var total: TimeInterval { values.values.reduce(0, +) }
-    var id: Date { date }
-}
-
 private struct ActivityFigure: View {
     let label: String
     let value: String
     let color: Color
+    /// One quiet line under the figure ("40 min more than your usual
+    /// Tuesday"); nil leaves none.
+    var comparison: String? = nil
+    var small = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(label).font(.solanum(.caption)).foregroundStyle(Solanum.inkMuted)
             Text(verbatim: value)
-                .font(.solanum(.display))
+                .font(small ? .solanumFigureSmall : .solanumFigure)
+                .monospacedDigit()
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
+            if let comparison {
+                Text(verbatim: comparison)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .accessibilityElement(children: .combine)
-    }
-}
-
-private struct ActivityDailyChart: View {
-    let buckets: [Date: [String: TimeInterval]]
-    let period: ActivityPeriod
-    let anchor: Date
-    let calendar: Calendar
-    let series: [ActivityRank]
-    @Binding var selectedDay: Date?
-
-    private var days: [ActivityDay] {
-        let interval = period.interval(around: anchor, calendar: calendar)
-        let count = period == .today ? 1 : (period == .week ? 7 : (calendar.range(of: .day, in: .month, for: anchor)?.count ?? 30))
-        let first = calendar.startOfDay(for: interval.start)
-        var result = (0..<count).compactMap { index -> ActivityDay? in
-            guard let date = calendar.date(byAdding: .day, value: index, to: first) else { return nil }
-            return ActivityDay(date: date)
-        }
-        for index in result.indices {
-            result[index].values = buckets[result[index].date] ?? [:]
-        }
-        return result
-    }
-
-    private var ceiling: TimeInterval { max(1, days.map(\.total).max() ?? 1) }
-
-    var body: some View {
-        VStack(spacing: 7) {
-            HStack(alignment: .bottom, spacing: period == .month ? 2 : 6) {
-                ForEach(days) { day in
-                    Button { selectedDay = day.date } label: {
-                        VStack(spacing: 4) {
-                            GeometryReader { proxy in
-                                let available = max(8, proxy.size.height)
-                                VStack(spacing: 1) {
-                                    ForEach(Array(series.enumerated()), id: \.element.id) { index, item in
-                                        bar(day.values[item.id == "__other__" ? "__other__" : item.name, default: 0], height: available, color: ActivityInk.series(index))
-                                    }
-                                }
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-                            }
-                            .frame(height: 85)
-                            Text(axisLabel(day.date))
-                                .font(.system(size: period == .month ? 8 : 9, weight: .medium))
-                                .foregroundStyle(selectedDay.map { calendar.isDate($0, inSameDayAs: day.date) } == true ? ActivityInk.clay : Solanum.inkMuted)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.65)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .frame(maxWidth: .infinity)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(accessibilityLabel(day))
-                    .accessibilityAddTraits(selectedDay.map { calendar.isDate($0, inSameDayAs: day.date) } == true ? .isSelected : [])
-                }
-            }
-            HStack {
-                Text("Daily scale")
-                Spacer()
-                Text("Up to " + ActivityDuration.string(ceiling))
-            }
-            .font(.solanum(.caption))
-            .foregroundStyle(Solanum.inkFaint)
-        }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Daily observed activity chart")
-    }
-
-    private func bar(_ seconds: TimeInterval, height: CGFloat, color: Color) -> some View {
-        RoundedRectangle(cornerRadius: 3, style: .continuous)
-            .fill(seconds > 0 ? color.opacity(0.88) : Color.clear)
-            .frame(height: seconds > 0 ? max(2, height * CGFloat(seconds / ceiling)) : 0)
-    }
-
-    private func axisLabel(_ date: Date) -> String {
-        switch period {
-        case .today: return "Today"
-        case .week: return date.formatted(.dateTime.weekday(.narrow))
-        case .month:
-            let day = calendar.component(.day, from: date)
-            return day == 1 || day == days.count ? "\(day)" : (day.isMultiple(of: 5) ? "\(day)" : "")
-        }
-    }
-
-    private func accessibilityLabel(_ day: ActivityDay) -> String {
-        let date = day.date.formatted(date: .complete, time: .omitted)
-        let detail = series.compactMap { item -> String? in
-            guard let value = day.values[item.id == "__other__" ? "__other__" : item.name], value > 0 else { return nil }
-            return "\(item.name), \(ActivityDuration.string(value))"
-        }.joined(separator: "; ")
-        return "\(date), \(ActivityDuration.string(day.total)) observed. \(detail). Activate to filter sessions for this day."
     }
 }
 
@@ -1316,7 +1365,7 @@ private struct ActivityRankRow: View {
                 if reopen != nil {
                     Image(systemName: "arrow.up.right")
                         .font(.solanum(.caption, weight: .semibold))
-                        .foregroundStyle(ActivityInk.clay)
+                        .foregroundStyle(Solanum.clayText)
                         .opacity(hovering ? 1 : 0)
                         .accessibilityHidden(true)
                 }
@@ -1339,15 +1388,8 @@ private struct ActivityRankRow: View {
                     .lineLimit(1)
                     .padding(.leading, 31)
             }
-            GeometryReader { proxy in
-                Capsule().fill(Solanum.track)
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(tint.opacity(0.85))
-                            .frame(width: Swift.max(4, proxy.size.width * min(1, item.seconds / maximum)))
-                    }
-            }
-            .frame(height: 4)
-            .padding(.leading, 31)
+            SolanumMagnitudeBar(fraction: maximum > 0 ? item.seconds / maximum : 0, color: tint)
+                .padding(.leading, 31)
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
@@ -1365,7 +1407,7 @@ private struct ActivitySessionRow: View {
 
     var body: some View {
         HStack(spacing: 11) {
-            RoundedRectangle(cornerRadius: 2).fill(hasDetails ? ActivityInk.clay : ActivityInk.blue)
+            RoundedRectangle(cornerRadius: Solanum.markRadius).fill(hasDetails ? Solanum.focus : Solanum.other)
                 .frame(width: 3, height: 32)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
@@ -1379,10 +1421,10 @@ private struct ActivitySessionRow: View {
                         Text("APP ONLY")
                             .font(.solanum(.caption, weight: .semibold, design: .rounded))
                             .tracking(0.4)
-                            .foregroundStyle(ActivityInk.blue)
+                            .foregroundStyle(Solanum.inkMuted)
                             .padding(.horizontal, 5)
                             .padding(.vertical, 2)
-                            .background(ActivityInk.blue.opacity(0.12), in: Capsule())
+                            .background(Solanum.track, in: Capsule())
                     }
                 }
                 Text(entry.goal.isEmpty ? (entry.projectName ?? "Focus session") : entry.goal)
@@ -1397,7 +1439,7 @@ private struct ActivitySessionRow: View {
                     .foregroundStyle(Solanum.ink)
                 Text("\(ActivityDuration.string(observed)) observed")
                     .font(.solanum(.caption))
-                    .foregroundStyle(Solanum.inkFaint)
+                    .foregroundStyle(Solanum.inkMuted)
             }
             Image(systemName: "chevron.right")
                 .font(.solanum(.caption, weight: .semibold))
@@ -1448,9 +1490,9 @@ struct ActivitySessionRecap: View {
                             .foregroundStyle(Solanum.inkMuted)
                     }
                     HStack(spacing: 0) {
-                        ActivityFigure(label: "Focused", value: ActivityDuration.string(entry.focused), color: ActivityInk.clay)
+                        ActivityFigure(label: "Focused", value: ActivityDuration.string(entry.focused), color: Solanum.clayText)
                         Divider().frame(height: 40)
-                        ActivityFigure(label: "Observed", value: ActivityDuration.string(observed), color: ActivityInk.blue)
+                        ActivityFigure(label: "Observed", value: ActivityDuration.string(observed), color: Solanum.ink)
                     }
                     .padding(.vertical, 8)
                     composition
@@ -1474,7 +1516,9 @@ struct ActivitySessionRecap: View {
     }
 
     private var composition: some View {
-        let services = ActivityTotals(sessions: [entry]).services
+        let sessionTotals = ActivityTotals(sessions: [entry])
+        let services = sessionTotals.services
+        let colors = sessionTotals.serviceColors
         let total = services.reduce(0) { $0 + $1.seconds }
         return VStack(alignment: .leading, spacing: 9) {
             if total > 0 {
@@ -1483,9 +1527,9 @@ struct ActivitySessionRecap: View {
                     .foregroundStyle(Solanum.inkMuted)
                 GeometryReader { proxy in
                     HStack(spacing: 3) {
-                        ForEach(Array(services.enumerated()), id: \.element.id) { index, service in
-                            RoundedRectangle(cornerRadius: 5)
-                                .fill(ActivityInk.series(index))
+                        ForEach(services) { service in
+                            RoundedRectangle(cornerRadius: Solanum.markRadius)
+                                .fill(colors[service.id] ?? Solanum.other)
                                 .frame(width: max(0, proxy.size.width - CGFloat(services.count - 1) * 3) * service.seconds / total)
                                 .help("\(service.name): \(ActivityDuration.string(service.seconds))")
                         }
@@ -1519,7 +1563,7 @@ struct ActivitySessionRecap: View {
     private var legacyRecap: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("App-only coverage", systemImage: "info.circle")
-                .font(.solanum(.label)).foregroundStyle(ActivityInk.blue)
+                .font(.solanum(.label)).foregroundStyle(Solanum.inkMuted)
             Text("Detailed activity was not recorded for this session. Any available app totals are shown below.")
                 .font(.solanum(.label, weight: .regular)).foregroundStyle(Solanum.inkMuted)
             recapGroup("Apps observed", rows: legacyApps)
@@ -1567,6 +1611,7 @@ private struct ActivityRecapGroup: View {
     let rows: [ActivityRank]
     @State private var expanded = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -1599,19 +1644,20 @@ private struct ActivityRecapGroup: View {
                     }
                     .buttonStyle(.plain)
                     .font(.solanum(.caption, weight: .medium))
-                    .foregroundStyle(ActivityInk.clay)
+                    .foregroundStyle(Solanum.clayText)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }
         .padding(12)
-        .background(Solanum.track, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Solanum.track(contrast), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
 private struct ActivitySessionTimeline: View {
     let entry: SessionEntry
     @State private var expanded = false
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private var segments: [FocusActivitySegment] {
         (entry.activitySegments ?? []).sorted { $0.start < $1.start }
@@ -1647,12 +1693,12 @@ private struct ActivitySessionTimeline: View {
                 .foregroundStyle(Solanum.inkMuted)
             if let segments = entry.activitySegments {
                 HStack(spacing: 0) {
-                    ActivityTimelineMetric(label: "Context switches", value: "\(entry.activitySwitchCount ?? 0)", color: ActivityInk.clay)
+                    ActivityTimelineMetric(label: "Context switches", value: "\(entry.activitySwitchCount ?? 0)", color: Solanum.ink)
                     Divider().frame(height: 34)
-                    ActivityTimelineMetric(label: "Document switches", value: "\(documentSwitches)", color: ActivityInk.clay)
+                    ActivityTimelineMetric(label: "Document switches", value: "\(documentSwitches)", color: Solanum.ink)
                     Divider().frame(height: 34)
                     ActivityTimelineMetric(label: entry.activityTimelineTruncated == true ? "Longest retained context stretch" : "Longest same-context stretch",
-                                           value: ActivityDuration.string(entry.longestObservedStretch ?? 0), color: ActivityInk.blue)
+                                           value: ActivityDuration.string(entry.longestObservedStretch ?? 0), color: Solanum.ink)
                 }
                 .padding(.vertical, 4)
                 if entry.activityTimelineTruncated == true {
@@ -1664,7 +1710,7 @@ private struct ActivitySessionTimeline: View {
                 if segments.isEmpty {
                     Text("No activity intervals were observed during this session.")
                         .font(.solanum(.caption))
-                        .foregroundStyle(Solanum.inkFaint)
+                        .foregroundStyle(Solanum.inkMuted)
                 } else {
                     let visible = expanded ? blocks : Array(blocks.prefix(12))
                     VStack(spacing: 0) {
@@ -1681,14 +1727,14 @@ private struct ActivitySessionTimeline: View {
                         }
                         .buttonStyle(.plain)
                         .font(.solanum(.caption, weight: .medium))
-                        .foregroundStyle(ActivityInk.clay)
+                        .foregroundStyle(Solanum.clayText)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
             } else {
                 Label("Timeline unavailable for this older session", systemImage: "clock.badge.questionmark")
                     .font(.solanum(.caption, weight: .medium))
-                    .foregroundStyle(ActivityInk.blue)
+                    .foregroundStyle(Solanum.inkMuted)
                 Text("This session has app totals, but no ordered observations were saved. Context switches and uninterrupted stretches cannot be determined.")
                     .font(.solanum(.caption))
                     .foregroundStyle(Solanum.inkMuted)
@@ -1696,7 +1742,7 @@ private struct ActivitySessionTimeline: View {
             }
         }
         .padding(12)
-        .background(Solanum.track, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Solanum.track(contrast), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -1713,7 +1759,7 @@ private struct ActivityTimelineMetric: View {
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Text(verbatim: value)
-                .font(.system(size: 15, weight: .regular, design: .serif))
+                .font(.solanumFigureSmall)
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -1751,8 +1797,8 @@ private struct ActivityTimelineRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 0) {
-                Circle().fill(ActivityInk.blue).frame(width: 7, height: 7)
-                Rectangle().fill(ActivityInk.blue.opacity(0.2)).frame(width: 1).frame(minHeight: 30)
+                Circle().fill(Solanum.inkMuted).frame(width: 7, height: 7)
+                Rectangle().fill(Solanum.hairline).frame(width: 1).frame(minHeight: 30)
                     .opacity(isLast ? 0 : 1)
             }
             .frame(width: 8)
@@ -1760,11 +1806,11 @@ private struct ActivityTimelineRow: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(block.start.formatted(.dateTime.hour().minute()) + "–" + block.end.formatted(.dateTime.hour().minute()))
                         .font(.solanum(.overline, weight: .medium))
-                        .foregroundStyle(Solanum.inkFaint)
+                        .foregroundStyle(Solanum.inkMuted)
                     Spacer(minLength: 4)
                     Text(ActivityDuration.string(block.seconds))
                         .font(.solanum(.caption, weight: .medium, design: .rounded))
-                        .foregroundStyle(ActivityInk.blue)
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                 }
                 Text(block.contextName)
@@ -1795,7 +1841,7 @@ private struct ActivityTimelineGap: View {
             Spacer(minLength: 0)
         }
         .font(.solanum(.caption, weight: .medium))
-        .foregroundStyle(Solanum.inkFaint)
+        .foregroundStyle(Solanum.inkMuted)
         .padding(.leading, 18)
         .padding(.bottom, 8)
         .accessibilityElement(children: .combine)
