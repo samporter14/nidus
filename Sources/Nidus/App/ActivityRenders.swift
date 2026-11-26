@@ -107,6 +107,41 @@ extension NidusModel {
         add(18.35, 12, messages)
         recorder.store.enqueue(.write(log))
     }
+
+    /// A fictional coding day for today, for the projects render: one
+    /// project in Xcode and a terminal, another in VS Code. Replaces the
+    /// seeded today, so it runs after every other Activity render.
+    func seedCodingDay() {
+        guard Demo.isActive, let recorder = controller?.activityRecorder else { return }
+        let xcode = (ActivityProjectTitle.xcodeID, "Xcode"), terminal = (ActivityProjectTitle.terminalID, "Terminal")
+        let code = ("com.microsoft.VSCode", "Visual Studio Code"), safari = ("com.apple.Safari", "Safari")
+        let word = ("com.microsoft.Word", "Microsoft Word")
+        let date = Calendar.current.startOfDay(for: Date())
+        var log = ActivityDayLog(day: ActivityDayLog.key(for: date, calendar: .current))
+        let sinceMidnight = Date().timeIntervalSince(date) / 3600
+        let squeeze = min(1, max(0.2, (sinceMidnight - 0.5) / 19))
+        var run = 0
+        func add(_ hour: Double, _ minutes: Double, _ app: (String, String), site: String? = nil, title: String? = nil) {
+            let start = date.addingTimeInterval(hour * squeeze * 3600)
+            let end = min(start.addingTimeInterval(minutes * squeeze * 60), Date())
+            guard end > start else { return }
+            run += 1
+            log.add(FocusActivitySegment(start: start, end: end, appID: app.0, appName: app.1, site: site, title: title, continuity: run))
+        }
+        add(8.5, 70, xcode, title: "Plate Reader")
+        add(9.7, 20, terminal, title: "Plate Reader")
+        add(10.1, 25, safari, site: "developer.apple.com", title: "A fictional API page")
+        add(10.6, 55, code, title: "analysis-scripts")
+        add(11.6, 15, terminal, title: "analysis-scripts")
+        add(13.0, 40, word, title: "Specific Aims")
+        add(13.8, 65, xcode, title: "Plate Reader")
+        add(15.0, 35, code, title: "lab-website")
+        add(15.7, 12, terminal)
+        recorder.store.enqueue(.write(log))
+        recorder.store.flush()
+        controller?.bumpActivityDayVersion()
+        objectWillChange.send()
+    }
 }
 
 extension RenderSurfaces {
@@ -150,6 +185,12 @@ extension RenderSurfaces {
         await shoot(NidusSettingsPage { ActivitySortCard(model: model, items: unsorted) }, width: 640, height: 420,
                     name: "activity-sort-uncategorized", in: directory)
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
+        // Coding time by project (0.7.1): last, as it replaces the seeded today.
+        model.seedCodingDay()
+        await shoot(FocusActivityPage(model: model, initialListKind: .documents), width: 640, height: 2900,
+                    name: "activity-projects", in: directory)
+        await shoot(FocusActivityPage(model: model, initialListKind: .apps), width: 640, height: 2900,
+                    name: "activity-projects-apps", in: directory)
     }
 }
 

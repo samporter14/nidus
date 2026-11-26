@@ -83,6 +83,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        // Saves first, so nothing in the teardown can keep them from disk.
+        model?.flushPendingSaves()
         model?.deactivate()
     }
 
@@ -165,13 +167,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         powerOffObserver = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main
         ) { [weak self] _ in
-            MainActor.assumeIsolated { self?.systemIsEnding = true }
+            MainActor.assumeIsolated {
+                self?.systemIsEnding = true
+                // The Mac may not wait for a quit: save what is queued now.
+                self?.model?.flushPendingSaves()
+            }
         }
     }
 }
 
 extension NidusModel {
     func showPopover() { menuBarItem?.showPopover() }
+    /// See FocusController.flushPendingSaves.
+    func flushPendingSaves() { controller?.flushPendingSaves() }
 }
 
 /// The popover under the menu bar item: a small place to start a session,

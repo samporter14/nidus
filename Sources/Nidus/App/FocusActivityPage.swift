@@ -938,7 +938,7 @@ enum ActivityListKind: String, CaseIterable, Identifiable {
         switch self {
         case .apps: return "No apps were counted here."
         case .websites: return "No websites here. Allow website access browser by browser under Tracking."
-        case .documents: return "No documents here. Allow window-title access under Tracking."
+        case .documents: return "No documents or coding projects here. Allow window-title access under Tracking."
         case .categories: return "Nothing to sort into categories here."
         }
     }
@@ -1095,6 +1095,8 @@ struct ActivityTotals {
         var documentApps: [String: String] = [:]
         var documentSites: [String: String] = [:]
         var documentAppNames: [String: String] = [:]
+        var projectAppSeconds: [String: [String: TimeInterval]] = [:]
+        var projectAppIDs: [String: [String: String]] = [:]
         var siteApps: [String: (id: String, name: String)] = [:]
         var appNames: [String: String] = [:]
         var serviceSeconds: [String: TimeInterval] = [:]
@@ -1114,14 +1116,27 @@ struct ActivityTotals {
             if let title = ActivityTimeline.documentName(appID: item.appID, title: item.title, site: item.site),
                !title.isEmpty {
                 let key = Self.documentKey(appID: item.appID, site: item.site, title: title)
-                let source = [item.site, item.appName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 documentSeconds[key, default: 0] += item.seconds
                 documentTitles[key] = title
-                documentSources[key] = source
-                documentApps[key] = item.appID
-                documentAppNames[key] = item.appName
-                documentSites[key] = item.site
+                if ActivityProjectTitle.isProjectApp(item.appID) {
+                    // One project across Xcode, VS Code and a terminal.
+                    projectAppSeconds[key, default: [:]][item.appName, default: 0] += item.seconds
+                    projectAppIDs[key, default: [:]][item.appName] = item.appID
+                } else {
+                    documentSources[key] = [item.site, item.appName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                    documentApps[key] = item.appID
+                    documentAppNames[key] = item.appName
+                    documentSites[key] = item.site
+                }
             }
+        }
+        for (key, byApp) in projectAppSeconds {
+            // Named after its apps, longest first; it counts as the app it
+            // had the most time in.
+            let ordered = byApp.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map(\.key)
+            documentSources[key] = "Project · " + ordered.joined(separator: ", ")
+            documentAppNames[key] = ordered.first
+            documentApps[key] = ordered.first.flatMap { projectAppIDs[key]?[$0] }
         }
         apps = Self.ranked(appSeconds, names: appNames)
         appDetails = ActivityDrill.tree(rows.map(\.row))
@@ -1152,8 +1167,11 @@ struct ActivityTotals {
         }
     }
 
-    private static func documentKey(appID: String, site: String?, title: String) -> String {
-        "\(appID)\u{1F}\(site ?? "")\u{1F}\(title)"
+    /// A document is its app's, site's and title's; a coding project is its
+    /// name alone, whichever coding app it was open in.
+    static func documentKey(appID: String, site: String?, title: String) -> String {
+        if ActivityProjectTitle.isProjectApp(appID) { return "project\u{1F}\(title)" }
+        return "\(appID)\u{1F}\(site ?? "")\u{1F}\(title)"
     }
 
     /// Gives sites and documents the last address each was seen at, from
