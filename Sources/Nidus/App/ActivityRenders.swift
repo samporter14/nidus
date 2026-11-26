@@ -150,6 +150,50 @@ extension RenderSurfaces {
         await shoot(NidusSettingsPage { ActivitySortCard(model: model, items: unsorted) }, width: 640, height: 420,
                     name: "activity-sort-uncategorized", in: directory)
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
+        await renderActivityTrends(model: model, in: directory)
+    }
+}
+
+extension RenderSurfaces {
+    /// The Trends card: a month and a quarter over ninety fictional days, a
+    /// history only eighteen days long, and none at all.
+    static func renderActivityTrends(model: NidusModel, in directory: URL) async {
+        let calendar = Calendar.current
+        let categorizer = ActivityCategorizer(categories: model.categories, work: model.workGroup)
+        let today = calendar.startOfDay(for: Date())
+        let ids = [ActivityCategorizer.workID] + model.categories.map(\.id) + [ActivityCategorizer.uncategorizedID]
+        func history(days: Int) -> [String: [String: TimeInterval]] {
+            var result: [String: [String: TimeInterval]] = [:]
+            for back in 0..<days {
+                guard let date = calendar.date(byAdding: .day, value: -back, to: today) else { continue }
+                let weekend = calendar.isDateInWeekend(date)
+                let drift = 1 + 0.25 * sin(Double(back) / 9)
+                var row: [String: TimeInterval] = [:]
+                for (offset, id) in ids.enumerated() {
+                    let base = offset == 0 ? (weekend ? 0.8 : 4.6) : 1.4 / Double(offset + 1)
+                    let wave = 1 + 0.35 * sin(Double(back) / 4 + Double(offset) * 1.7)
+                    // Work swells over the quarter while the social categories ease off.
+                    let slope = offset == 0 ? 1 - Double(back) / 400 : 1 + Double(back) / 300
+                    row[id] = 3600 * max(0, base * wave * slope * drift * (weekend && offset > 0 ? 1.3 : 1))
+                }
+                result[ActivityDayLog.key(for: date, calendar: calendar)] = row
+            }
+            return result
+        }
+        func card(_ byDay: [String: [String: TimeInterval]], _ span: ActivityTrend.Span) -> some View {
+            let trends = ActivityTrends(ending: today, byDay: byDay, categorizer: categorizer, calendar: calendar)
+            return NidusSettingsPage {
+                NidusSettingsSection {
+                    settingsSectionHeader("Trends")
+                } content: {
+                    ActivityTrendChart(trends: trends, calendar: calendar, span: span).padding(.vertical, 8)
+                }
+            }
+        }
+        await shoot(card(history(days: 90), .month), width: 640, height: 330, name: "activity-trend-month", in: directory)
+        await shoot(card(history(days: 90), .quarter), width: 640, height: 330, name: "activity-trend-quarter", in: directory)
+        await shoot(card(history(days: 18), .quarter), width: 640, height: 330, name: "activity-trend-short", in: directory)
+        await shoot(card([:], .month), width: 640, height: 330, name: "activity-trend-empty", in: directory)
     }
 }
 
