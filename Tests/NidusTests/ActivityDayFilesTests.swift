@@ -201,7 +201,10 @@ struct ActivityProbePureTests {
 
     @Test func onlyDocumentAppsAndBrowsersAreRead() {
         #expect(!ActivityProbe.needsProbe("com.apple.finder", titles: true))
-        #expect(!ActivityProbe.needsProbe("com.apple.Terminal", titles: true))
+        #expect(!ActivityProbe.needsProbe("com.apple.Notes", titles: true))
+        // Since 0.7.1 a terminal is read, for its project alone (ActivityProjectTitle).
+        #expect(ActivityProbe.needsProbe("com.apple.Terminal", titles: true))
+        #expect(!ActivityProbe.needsProbe("com.apple.Terminal", titles: false))
         #expect(ActivityProbe.needsProbe("com.microsoft.Excel", titles: true))
         #expect(ActivityProbe.needsProbe(ActivityProbe.capsidID, titles: true))
         #expect(ActivityProbe.needsProbe(BrowserProfile.safari.bundleID, titles: false))
