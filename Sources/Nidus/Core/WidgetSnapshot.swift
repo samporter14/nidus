@@ -39,6 +39,55 @@ struct WidgetToday: Codable, Equatable, Sendable {
         var tint: Int
     }
 
+    /// The first category with a daily target, for a progress line. `tint` is
+    /// the same as a `Category`'s. Seconds throughout.
+    struct Target: Codable, Equatable, Sendable {
+        var name: String
+        var seconds: Int
+        var target: Int
+        var tint: Int
+
+        /// The longest a target can be: a day (CategoryTarget.maximum, which
+        /// the widget doesn't compile).
+        static let limit = 86_400
+
+        /// 0 to 1. Both are compared as the whole minutes the widget shows, so
+        /// "4h of 4h" is never short (CategoryTarget.fraction).
+        var fraction: Double {
+            let goal = Self.shown(target)
+            return goal > 0 ? min(1, max(0, Self.shown(seconds) / goal)) : 0
+        }
+
+        var isMet: Bool { Self.shown(target) > 0 && Self.shown(seconds) >= Self.shown(target) }
+
+        private static func shown(_ seconds: Int) -> Double {
+            let value = Double(max(0, seconds))
+            return value < 60 ? value : (value / 60).rounded() * 60
+        }
+
+        init(name: String, seconds: Int, target: Int, tint: Int) {
+            self.name = name
+            self.seconds = max(0, seconds)
+            self.target = target
+            self.tint = tint
+        }
+
+        /// A target that is not a positive length within a day is no target:
+        /// the decode fails and `WidgetToday` drops it.
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            name = try c.decode(String.self, forKey: .name)
+            let seconds = try c.decode(Int.self, forKey: .seconds)
+            let target = try c.decode(Int.self, forKey: .target)
+            guard target > 0, target <= Self.limit else {
+                throw DecodingError.dataCorruptedError(forKey: .target, in: c, debugDescription: "Not a daily target")
+            }
+            self.seconds = max(0, seconds)
+            self.target = target
+            tint = (try? c.decodeIfPresent(Int.self, forKey: .tint)) ?? -1
+        }
+    }
+
     /// The most a day draws, which is also what keeps widget.json small.
     static let bandLimit = 24
     /// The most focus spans and categories the large widget is given.
@@ -56,6 +105,9 @@ struct WidgetToday: Codable, Equatable, Sendable {
     var focus: [Span]?
     /// The day's three biggest categories, biggest first. nil likewise.
     var top: [Category]?
+    /// The first category with a daily target. nil with none, and in a file
+    /// from before this was kept.
+    var target: Target?
 
     var total: Int { work + distracting + other }
 
@@ -78,6 +130,7 @@ extension WidgetToday {
         bands = (try? c.decodeIfPresent([Band].self, forKey: .bands)) ?? []
         focus = try? c.decodeIfPresent([Span].self, forKey: .focus)
         top = try? c.decodeIfPresent([Category].self, forKey: .top)
+        target = try? c.decodeIfPresent(Target.self, forKey: .target)
     }
 }
 

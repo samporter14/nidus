@@ -252,6 +252,7 @@ struct NidusTodayProvider: TimelineProvider {
         today.focus = [.init(startMinute: 555, endMinute: 600), .init(startMinute: 790, endMinute: 850)]
         today.top = [.init(name: "Work", minutes: 270, tint: -2), .init(name: "Writing", minutes: 60, tint: 3),
                      .init(name: "Social", minutes: 30, tint: -1)]
+        today.target = .init(name: "Work", seconds: 16_200, target: 21_600, tint: -2)
         return NidusEntry(date: .now, snapshot: WidgetSnapshot(today: today))
     }
 
@@ -334,6 +335,10 @@ struct NidusTodayView: View {
             column("Other", today.other, .other)
         }
         Spacer(minLength: 0)
+        if let target = today.target {
+            targetRow(target)
+            Spacer(minLength: 0)
+        }
         ribbon(today, height: 8, marksFocus: false)
     }
 
@@ -345,6 +350,10 @@ struct NidusTodayView: View {
         }
         Spacer(minLength: 0)
         ribbon(today, height: 14, marksFocus: true)
+        if let target = today.target {
+            Spacer(minLength: 0)
+            targetRow(target)
+        }
         if let top = today.top, !top.isEmpty {
             Spacer(minLength: 0)
             VStack(alignment: .leading, spacing: 8) {
@@ -410,6 +419,30 @@ struct NidusTodayView: View {
             .frame(height: 4)
             .accessibilityHidden(true)
         }
+    }
+
+    /// A category's daily target: "Work   2h 40m of 4h" over a 4 pt track in
+    /// the category's own colour, never clay.
+    private func targetRow(_ target: WidgetToday.Target) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Circle().fill(ink.tint(target.tint)).frame(width: 7, height: 7)
+                Text(verbatim: target.name).font(.solanum(.label)).foregroundStyle(ink.primary).lineLimit(1)
+                Spacer(minLength: 4)
+                Text(verbatim: "\(Self.time(target.seconds)) of \(Self.time(target.target))")
+                    .font(.solanum(.label).monospacedDigit()).foregroundStyle(ink.muted).lineLimit(1)
+            }
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: Solanum.markRadius).fill(ink.track)
+                    RoundedRectangle(cornerRadius: Solanum.markRadius).fill(ink.tint(target.tint))
+                        .frame(width: max(2, target.fraction * proxy.size.width))
+                }
+            }
+            .frame(height: 4)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(Text(verbatim: "\(target.name), \(Self.time(target.seconds)) of \(Self.time(target.target))\(target.isMet ? ", target met" : "")"))
     }
 
     /// Each part's place along the bar, in the order the rows give them.

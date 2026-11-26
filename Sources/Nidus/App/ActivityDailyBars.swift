@@ -25,6 +25,10 @@ struct ActivityDailyBars: View {
     let calendar: Calendar
     let parts: [Part]
     @Binding var selectedDay: Date?
+    /// A daily target in seconds (CategoryTarget), drawn as a dashed line
+    /// when the chart is of the one category that has it. The scale grows to
+    /// include it.
+    var target: TimeInterval? = nil
 
     @Environment(\.colorSchemeContrast) private var contrast
     @State private var hover: (day: Int, point: CGPoint)?
@@ -54,7 +58,7 @@ struct ActivityDailyBars: View {
 
     var body: some View {
         let days = days
-        let ceiling = max(1, days.map(\.total).max() ?? 1)
+        let ceiling = Self.ceiling(totals: days.map(\.total), target: target)
         VStack(spacing: 7) {
             HStack(alignment: .top, spacing: 4) {
                 gridLabels(ceiling: ceiling)
@@ -71,6 +75,7 @@ struct ActivityDailyBars: View {
         .zIndex(hover == nil ? 0 : 1)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Daily observed activity chart")
+        .accessibilityValue(CategoryTarget.valid(target).map(Self.targetCaption) ?? "")
     }
 
     // MARK: Grid
@@ -84,9 +89,19 @@ struct ActivityDailyBars: View {
         return [step, step * 2]
     }
 
+    /// The top of the scale: the tallest day, or the target when that is taller.
+    nonisolated static func ceiling(totals: [TimeInterval], target: TimeInterval?) -> TimeInterval {
+        max(1, totals.max() ?? 1, CategoryTarget.valid(target) ?? 0)
+    }
+
+    /// The gridlines to draw: not one the target's own line sits on.
+    nonisolated static func gridlines(ceiling: TimeInterval, target: TimeInterval?) -> [TimeInterval] {
+        gridlines(ceiling: ceiling).filter { target == nil || abs($0 - (target ?? 0)) > ceiling * 0.03 }
+    }
+
     private func gridLabels(ceiling: TimeInterval) -> some View {
         ZStack(alignment: .topTrailing) {
-            ForEach(Self.gridlines(ceiling: ceiling), id: \.self) { line in
+            ForEach(Self.gridlines(ceiling: ceiling, target: target), id: \.self) { line in
                 Text(verbatim: ActivityDuration.string(line))
                     .font(.solanum(.caption))
                     .foregroundStyle(Solanum.inkMuted)
@@ -105,7 +120,7 @@ struct ActivityDailyBars: View {
         VStack(spacing: 4) {
             ZStack(alignment: .top) {
                 Canvas { context, size in
-                    for line in Self.gridlines(ceiling: ceiling) {
+                    for line in Self.gridlines(ceiling: ceiling, target: target) {
                         let y = size.height * (1 - CGFloat(line / ceiling))
                         var path = Path()
                         path.move(to: CGPoint(x: 0, y: y))
@@ -119,6 +134,7 @@ struct ActivityDailyBars: View {
                         column(day, ceiling: ceiling)
                     }
                 }
+                targetLine(ceiling: ceiling)
             }
             .frame(height: Self.plotHeight)
             .onContinuousHover { phase in
@@ -144,6 +160,42 @@ struct ActivityDailyBars: View {
     }
 
     @State private var width: CGFloat = 0
+
+    // MARK: Target
+
+    /// "4 hr target", the words under the line.
+    nonisolated static func targetCaption(_ target: TimeInterval) -> String {
+        "\(ActivityDuration.string(target)) target"
+    }
+
+    /// A thin dashed line at the target, with its words at the right: above
+    /// the line, or below it when the line is at the very top, so the words
+    /// never leave the plot. It does not take clicks, and the columns keep
+    /// theirs.
+    @ViewBuilder private func targetLine(ceiling: TimeInterval) -> some View {
+        if let target = CategoryTarget.valid(target) {
+            let y = Self.plotHeight * (1 - CGFloat(target / ceiling))
+            let below = y < 15
+            ZStack(alignment: .topTrailing) {
+                Canvas { context, size in
+                    var path = Path()
+                    path.move(to: CGPoint(x: 0, y: y))
+                    path.addLine(to: CGPoint(x: size.width, y: y))
+                    context.stroke(path, with: .color(Solanum.inkMuted.opacity(Solanum.fillOpacity(0.85, contrast))),
+                                   style: StrokeStyle(lineWidth: 1, dash: [5, 3]))
+                }
+                Text(verbatim: Self.targetCaption(target))
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+                    .lineLimit(1)
+                    .fixedSize()
+                    .padding(.trailing, 2)
+                    .offset(y: below ? y + 2 : y - 15)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
+        }
+    }
 
     private func index(at x: CGFloat, count: Int) -> Int {
         let column = (width - gap * CGFloat(count - 1)) / CGFloat(count)

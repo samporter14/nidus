@@ -281,7 +281,22 @@ struct FocusActivityPage: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
+            let targets = targetRows(allDay: allDay)
+            if !targets.isEmpty {
+                CategoryTargetList(rows: targets)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+            }
         }
+    }
+
+    /// Daily targets for the range shown: the day's own time, or the average
+    /// day in a week or month. Not for a view cut to focus or a project, whose
+    /// totals are narrower than a day.
+    private func targetRows(allDay: Bool) -> [CategoryTargetProgress] {
+        guard allDay else { return [] }
+        let days = period == .today ? 1 : CategoryTarget.elapsedDays(in: requestedInterval, now: effectiveNow, calendar: calendar)
+        return CategoryTargetProgress.rows(totals: displayedCategories, categorizer: displayedCategorizer, days: days)
     }
 
     private func dayRibbon(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
@@ -553,7 +568,12 @@ struct FocusActivityPage: View {
         if chains != displayedChains { displayedChains = chains }
     }
 
-    private func dailyPattern(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
+    private func dailyPattern(_ allTotals: ActivityTotals, sessions: [SessionEntry]) -> some View {
+        // Cut to one category that has a daily target, the bars are that
+        // category's own time, with its target as a line.
+        let goal = categoryFilter.flatMap { id in displayedCategorizer.targets.first { $0.id == id }?.target }
+        let cut = goal == nil ? nil : displayedFiltered
+        let totals = cut ?? allTotals
         let colors = totals.serviceColors
         let parts = totals.services.map { item in
             ActivityDailyBars.Part(id: item.id == "__other__" ? "__other__" : item.name, name: item.name,
@@ -562,7 +582,8 @@ struct FocusActivityPage: View {
         return NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Daily pattern")
-                Text("Observed time by the app or service in front.")
+                Text(cut == nil ? "Observed time by the app or service in front."
+                     : "Only \(displayedCategorizer.label(of: categoryFilter).name), by the app or service in front.")
                     .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.inkMuted)
             }
@@ -571,7 +592,8 @@ struct FocusActivityPage: View {
             NidusSettingsCard {
                 ActivityDailyBars(buckets: totals.chartBuckets, period: period,
                                   anchor: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar),
-                                  calendar: calendar, parts: parts, selectedDay: $selectedDay)
+                                  calendar: calendar, parts: parts, selectedDay: $selectedDay,
+                                  target: cut == nil ? nil : goal)
                     .padding(.top, 6)
                 HStack(spacing: 14) {
                     ForEach(parts) { part in

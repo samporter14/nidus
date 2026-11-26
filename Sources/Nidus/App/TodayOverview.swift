@@ -68,6 +68,9 @@ struct TodayOverview {
     let documents: [ActivityRank]
     /// nil until something is sorted into a group.
     let categorySplit: CategorySplit?
+    /// The first category with a daily target, and today's progress in it.
+    /// nil when no category has one.
+    let target: CategoryTargetProgress?
     /// The top of each uncapped list, so bars across a list share one scale.
     private let leaders: [ActivityListKind: TimeInterval]
 
@@ -108,7 +111,9 @@ struct TodayOverview {
         apps = Array(scope.totals.apps.prefix(Self.rowLimit))
         websites = Array(scope.totals.sites.prefix(Self.rowLimit))
         documents = Array(scope.totals.documents.prefix(Self.rowLimit))
-        categorySplit = CategorySplit(totals: scope.categoryTotals(using: categorizer))
+        let categoryTotals = scope.categoryTotals(using: categorizer)
+        categorySplit = CategorySplit(totals: categoryTotals)
+        target = CategoryTargetProgress.rows(totals: categoryTotals, categorizer: categorizer).first
         leaders = [.apps: scope.totals.apps.first?.seconds ?? 0, .websites: scope.totals.sites.first?.seconds ?? 0,
                    .documents: scope.totals.documents.first?.seconds ?? 0]
 

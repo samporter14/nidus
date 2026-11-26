@@ -598,6 +598,18 @@ struct FocusCategoryPage: View {
                             .frame(width: 140)
                         }
                     }
+                    NidusControlRow(title: "Daily target",
+                                    infoTip: "How long a day in this category is aimed for. Activity and Today show your progress. It doesn't change what a session blocks.") {
+                        Picker("Daily target", selection: targetBinding) {
+                            Text("Off").tag(TimeInterval?.none)
+                            Divider()
+                            ForEach(CategoryTarget.choices(including: category.dailyTarget), id: \.self) { seconds in
+                                Text(FocusFormat.duration(minutes: max(1, Int(seconds / 60)))).tag(TimeInterval?.some(seconds))
+                            }
+                        }
+                        .labelsHidden()
+                        .frame(width: 140)
+                    }
                 }
 
                 if !isWork, let target = category.mergeTarget(in: model.categories) {
@@ -692,6 +704,11 @@ struct FocusCategoryPage: View {
             get: { category?.name ?? "" },
             set: { name in update { $0.name = name } }
         )
+    }
+
+    private var targetBinding: Binding<TimeInterval?> {
+        Binding(get: { CategoryTarget.valid(category?.dailyTarget) },
+                set: { seconds in update { $0.dailyTarget = CategoryTarget.valid(seconds) } })
     }
 
     private var roleBinding: Binding<FocusCategory.Role> {
