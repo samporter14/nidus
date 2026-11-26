@@ -22,7 +22,7 @@ struct ActivitySortCard: View {
                 VStack(alignment: .leading, spacing: 3) {
                     settingsSectionHeader("Sort uncategorized")
                     Text("Where should these count? It changes Activity only, never what a session blocks.")
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -33,7 +33,7 @@ struct ActivitySortCard: View {
                     }
                     if items.count > shown {
                         Text("\(items.count - shown) more")
-                            .font(.system(size: 10))
+                            .font(.solanum(.caption))
                             .foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity, alignment: .trailing)
                             .padding(.top, 2)
@@ -72,18 +72,18 @@ private struct ActivitySortRow: View {
     private var row: some View {
         HStack(spacing: 9) {
             Image(systemName: item.isWebsite ? "globe" : "app.dashed")
-                .font(.system(size: 11))
+                .font(.solanum(.caption))
                 .foregroundStyle(.secondary)
                 .frame(width: 18, alignment: .leading)
                 .accessibilityHidden(true)
             Text(verbatim: item.name)
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             Text(ActivityDuration.string(item.seconds))
-                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .font(.solanum(.caption, weight: .medium, design: .rounded))
                 .foregroundStyle(.secondary)
                 .monospacedDigit()
             Button(model.workGroup.name) { count(.work) }

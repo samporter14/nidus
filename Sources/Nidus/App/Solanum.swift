@@ -2,59 +2,11 @@
 // (https://claude.ai/artifact/BjQZQTY4NYmLcz39pHWmQE): its colours in both
 // themes, and the pieces the popover, the cards and Settings are built from.
 // Structure comes from hairline borders, not shadows; clay is a fill, and
-// clay words use `clayText`. Text on a clay fill is `onClay`.
+// clay words use `clayText`. Text on a clay fill is `onClay`. The colours,
+// chart palette and type scale are in SolanumTokens.swift (the widget shares
+// that file); this one holds the pieces built from them.
 import AppKit
 import SwiftUI
-
-enum Solanum {
-    /// Ivory in light, slate in dark: the ground of every tab.
-    static let page = adaptive(light: 0xFAF9F5, dark: 0x141413)
-    /// Cards on the page.
-    static let raised = adaptive(light: 0xFFFFFF, dark: 0x262625)
-    static let ink = adaptive(light: 0x141413, dark: 0xFAF9F5)
-    /// Hints and secondary words. 6.3:1 light, 8.4:1 dark.
-    static let inkMuted = adaptive(light: 0x5E5D59, dark: 0xB0AEA5)
-    /// Mono overlines only, 11 pt and up, on the page.
-    static let inkFaint = adaptive(light: 0x73726C, dark: 0x91918D)
-    static let hairline = adaptive(light: (31, 30, 29, 0.15), dark: (250, 249, 245, 0.18))
-    /// Control borders and focus rings.
-    static let strong = adaptive(light: (31, 30, 29, 0.3), dark: (250, 249, 245, 0.32))
-    /// The accent, as a fill only: 2.96:1 on the page, so never text.
-    static let clay = Color(nsColor: NSColor(srgbRed: 0xD9 / 255, green: 0x77 / 255, blue: 0x57 / 255, alpha: 1))
-    /// Words and symbols on a clay fill: ink, in both themes (6:1).
-    static let onClay = Color(nsColor: NSColor(srgbRed: 0x14 / 255, green: 0x14 / 255, blue: 0x13 / 255, alpha: 1))
-    /// Clay read as words: clay itself is too faint for text.
-    static let clayText = adaptive(light: 0x9C4221, dark: 0xE4927A)
-    /// The raised segment of a segmented control, and its well.
-    static let segmentOn = adaptive(light: 0xFFFFFF, dark: 0x3A3935)
-    static let segmentWell = adaptive(light: (31, 30, 29, 0.06), dark: (250, 249, 245, 0.08))
-
-    /// Serif for display (the system's New York), sans for reading.
-    static func serif(_ size: CGFloat) -> Font { .system(size: size, design: .serif) }
-
-    private static func adaptive(light: Int, dark: Int) -> Color {
-        adaptive(light: rgb(light), dark: rgb(dark))
-    }
-
-    private static func adaptive(light: (Int, Int, Int, Double), dark: (Int, Int, Int, Double)) -> Color {
-        adaptive(light: rgba(light), dark: rgba(dark))
-    }
-
-    private static func adaptive(light: NSColor, dark: NSColor) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? dark : light
-        })
-    }
-
-    private static func rgb(_ hex: Int) -> NSColor {
-        NSColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255,
-                blue: CGFloat(hex & 0xFF) / 255, alpha: 1)
-    }
-
-    private static func rgba(_ c: (Int, Int, Int, Double)) -> NSColor {
-        NSColor(srgbRed: CGFloat(c.0) / 255, green: CGFloat(c.1) / 255, blue: CGFloat(c.2) / 255, alpha: c.3)
-    }
-}
 
 /// A section's label: mono, uppercase, letterspaced, faint. Never a sentence.
 struct Overline: View {
@@ -63,7 +15,7 @@ struct Overline: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 11, design: .monospaced))
+            .font(.solanum(.overline))
             .tracking(0.9)
             .foregroundStyle(Solanum.inkFaint)
             .padding(.leading, 2)
@@ -72,10 +24,92 @@ struct Overline: View {
 }
 
 extension View {
-    /// A raised card with a hairline edge.
+    /// A raised card with a hairline edge (a firmer one under Increased
+    /// Contrast).
     func solanumCard(radius: CGFloat = 12) -> some View {
-        background(Solanum.raised, in: .rect(cornerRadius: radius))
-            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Solanum.hairline))
+        modifier(SolanumCardSurface(radius: radius))
+    }
+
+    /// The one empty-state pattern for a chart: its real frame drawn faintly,
+    /// and one line saying what will fill it. The faint chart is hidden from
+    /// VoiceOver, which reads the line.
+    func chartEmptyState(_ isEmpty: Bool, _ message: String) -> some View {
+        modifier(ChartEmptyState(isEmpty: isEmpty, message: message))
+    }
+
+    /// Data arriving: fades in over 0.2 s once, when `shown` turns true.
+    /// Instant under Reduce Motion.
+    func dataFadeIn(_ shown: Bool) -> some View {
+        modifier(DataFadeIn(shown: shown))
+    }
+}
+
+private struct SolanumCardSurface: ViewModifier {
+    let radius: CGFloat
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    func body(content: Content) -> some View {
+        content
+            .background(Solanum.raised, in: .rect(cornerRadius: radius))
+            .overlay(RoundedRectangle(cornerRadius: radius).strokeBorder(Solanum.edge(contrast)))
+    }
+}
+
+private struct ChartEmptyState: ViewModifier {
+    let isEmpty: Bool
+    let message: String
+
+    func body(content: Content) -> some View {
+        if isEmpty {
+            content
+                .opacity(0.35)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+                .overlay {
+                    Text(message)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(Solanum.raised.opacity(0.85), in: .rect(cornerRadius: Solanum.frameRadius))
+                }
+        } else {
+            content
+        }
+    }
+}
+
+private struct DataFadeIn: ViewModifier {
+    let shown: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: shown)
+    }
+}
+
+/// A 4 pt magnitude bar: how big a row is next to the biggest, on an empty
+/// track. Lists of ranked things (categories, apps, sites, drift) share it.
+struct SolanumMagnitudeBar: View {
+    /// 0 to 1; anything above 1 is drawn full.
+    let fraction: Double
+    let color: Color
+    var opacity: Double = 0.85
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        GeometryReader { proxy in
+            Capsule().fill(Solanum.track(contrast))
+                .overlay(alignment: .leading) {
+                    Capsule().fill(color.opacity(Solanum.fillOpacity(opacity, contrast)))
+                        .frame(width: Swift.max(4, proxy.size.width * Swift.min(1, Swift.max(0, fraction))))
+                }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
     }
 }
 
@@ -89,11 +123,11 @@ struct SettingsRow<Trailing: View>: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.solanum(.title, weight: .medium))
                     .foregroundStyle(Solanum.ink)
                 if let hint {
                     Text(hint)
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(Solanum.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -138,7 +172,7 @@ struct SolanumSegmented<Value: Hashable, Label: View>: View {
                 let on = option == selection
                 Button { selection = option } label: {
                     label(option)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.solanum(.body, weight: .medium))
                         .foregroundStyle(on ? Solanum.ink : Solanum.inkMuted)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 24)
@@ -170,7 +204,7 @@ struct SolanumButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.solanum(.body, weight: .medium))
             .foregroundStyle(isEnabled ? Solanum.ink : Solanum.inkFaint)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

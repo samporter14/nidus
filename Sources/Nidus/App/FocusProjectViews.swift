@@ -103,7 +103,7 @@ struct ResumePopoverRow: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.clayText)
                     .padding(.leading, NidusSpacing.md)
                     .accessibilityHint("Choose which note to show. No session starts until you press Resume.")
@@ -130,17 +130,17 @@ struct ResumeNoteRow: View {
             HStack(spacing: NidusSpacing.sm) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text(verbatim: quietLine)
-                        .font(.system(size: 11))
+                        .font(.solanum(.caption))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                     HStack(spacing: NidusSpacing.xs) {
                         Text(verbatim: note.headline)
-                            .font(.system(size: 13, weight: .medium))
+                            .font(.solanum(.body, weight: .medium))
                             .lineLimit(1)
                             .truncationMode(.tail)
                         if let resource = note.resource {
                             Image(systemName: ResumeResources.symbol(for: resource.kind))
-                                .font(.system(size: 11))
+                                .font(.solanum(.caption))
                                 .foregroundStyle(.secondary)
                                 .help("Opens \(resource.displayName) when you resume")
                                 .accessibilityLabel("Opens \(resource.displayName)")
@@ -160,7 +160,7 @@ struct ResumeNoteRow: View {
                     model.dismissResumeNote(note.id)
                 } label: {
                     Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
+                        .font(.solanum(.caption, weight: .semibold))
                 }
                 .buttonStyle(.borderless)
                 .foregroundStyle(.secondary)
@@ -169,7 +169,7 @@ struct ResumeNoteRow: View {
             }
             if let reason = notice ?? (compact ? nil : busyReason) {
                 Text(verbatim: reason)
-                    .font(.system(size: 11))
+                    .font(.solanum(.caption))
                     .foregroundStyle(.secondary)
             }
         }

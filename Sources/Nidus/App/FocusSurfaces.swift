@@ -388,7 +388,7 @@ struct FocusWrapUpCard: View {
                 } icon: {
                     Image(systemName: note.symbol).frame(width: 14)
                 }
-                .font(.system(size: 12))
+                .font(.solanum(.label, weight: .regular))
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 // In line with the title above, past the mark.
                 .padding(.leading, 28 + NidusSpacing.md)
@@ -418,7 +418,7 @@ struct FocusWrapUpCard: View {
             } else if let openActivity {
                 Button(action: openActivity) {
                     Label("View session activity", systemImage: "chart.bar.xaxis")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(.solanum(.label))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(Solanum.clayText)
@@ -443,7 +443,7 @@ struct FocusWrapUpCard: View {
                     .font(Solanum.serif(17))
                     .foregroundStyle(Solanum.ink)
                 Text(verbatim: detail)
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
@@ -473,7 +473,7 @@ extension FocusWrapUpCard {
     fileprivate func questionRow(_ text: String, last: Bool) -> some View {
         HStack(spacing: NidusSpacing.sm) {
             Text(verbatim: text)
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 .lineLimit(1)
                 .truncationMode(.middle)
@@ -496,7 +496,7 @@ extension FocusWrapUpCard {
     fileprivate func repliedRow(_ finished: Bool) -> some View {
         HStack(spacing: NidusSpacing.sm) {
             Text(verbatim: FinishReply.confirmation(finished))
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .lineLimit(1)
             Spacer(minLength: NidusSpacing.sm)
@@ -565,10 +565,10 @@ struct FocusWelcomeCard: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: "Nidus is ready")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.solanum(.title, weight: .medium))
                     .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 Text(verbatim: detail)
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
@@ -615,10 +615,10 @@ struct FocusNoticeCard: View {
             }
             VStack(alignment: .leading, spacing: 2) {
                 v.title
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.solanum(.title, weight: .medium))
                     .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 v.detail
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
@@ -654,10 +654,10 @@ struct FocusBlockedCard: View {
             if !last { SettingsTile(symbol: "nosign", size: 28) }
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.solanum(.title, weight: .medium))
                     .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 Text(verbatim: detail)
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
             }
             .lineLimit(1)
@@ -846,10 +846,10 @@ struct FocusSnoozeWaitCard: View {
                 FocusCountdownRing(secondsLeft: left, progress: wait.progress(at: now))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: wait.title)
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.solanum(.title, weight: .medium))
                         .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                     Text(verbatim: wait.detail(at: now))
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 }
                 .lineLimit(1)
@@ -896,7 +896,7 @@ struct FocusCountdownRing: View {
                 Circle()
                     .fill(FocusPalette.clay.gradient)
                 Image(systemName: "checkmark")
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.solanum(.label, weight: .bold))
                     .foregroundStyle(.white)
             }
         }

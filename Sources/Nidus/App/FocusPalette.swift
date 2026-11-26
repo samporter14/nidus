@@ -2,24 +2,27 @@
 //  FocusPalette.swift
 //  Nidus
 //
-//  Clay, Solanum's one accent, and the stats graph's shades of it. The rest
-//  of the palette is the system's own.
+//  A thin façade over Solanum's one palette: clay is `Solanum.focus`, and
+//  the stats graph's shades are focus at rising strength on the empty track.
 //
 
 import SwiftUI
 
 enum FocusPalette {
-    /// Clay, #d97757.
-    static let clay = Color(.sRGB, red: 217 / 255, green: 119 / 255, blue: 87 / 255, opacity: 1)
+    /// Clay, Solanum's focus colour.
+    static let clay = Solanum.focus
 
-    /// The stats graph's five shades: none, then clay at rising strength.
-    static func graphShade(level: Int) -> Color {
-        switch level {
-        case 0: return Color.primary.opacity(0.08)
-        case 1: return clay.opacity(0.3)
-        case 2: return clay.opacity(0.5)
-        case 3: return clay.opacity(0.75)
-        default: return clay
-        }
+    /// How strong clay is at a graph level (1 through 4); the top level is
+    /// full under Increased Contrast, and the lower ones are raised.
+    static func graphOpacity(level: Int, contrast: ColorSchemeContrast = .standard) -> Double {
+        let normal = [0.3, 0.5, 0.75, 1.0]
+        let increased = [0.55, 0.7, 0.85, 1.0]
+        let steps = contrast == .increased ? increased : normal
+        return steps[min(max(level, 1), 4) - 1]
+    }
+
+    /// The stats graph's five shades: the empty track, then focus at rising strength.
+    static func graphShade(level: Int, contrast: ColorSchemeContrast = .standard) -> Color {
+        level <= 0 ? Solanum.track(contrast) : Solanum.focus.opacity(graphOpacity(level: level, contrast: contrast))
     }
 }

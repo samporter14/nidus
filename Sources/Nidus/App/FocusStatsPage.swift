@@ -37,17 +37,27 @@ struct FocusStatsPage: View {
     /// What Clear history says it clears.
     static let clearHistoryMessage = "Every recorded session, the stats worked out from them (each project\u{2019}s time and unfinished goals too), all-day activity, app activity and document names, your recent goals and your resume notes are removed from this Mac. Your projects stay."
 
-    /// With nothing recorded there is nothing to count: one line, not a page
-    /// of empty rows. History's own controls stay below it.
+    /// With nothing recorded there is nothing to count: the graph's real
+    /// frame, faint, and one line saying what fills it. History's own
+    /// controls stay below.
     private var emptyState: some View {
-        NidusSettingsCard {
-            Text(model.recordsHistory
-                 ? "Your first session will show up here."
-                 : "History is off. Turn it on below to see your sessions here.")
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, NidusSpacing.md)
+        Section {
+            graphCard(FocusStats(sessions: []))
+                .chartEmptyState(true, model.recordsHistory
+                                 ? "Each day you focus fills a square"
+                                 : "History is off. Turn it on below to see your sessions here.")
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
         }
+    }
+
+    /// "Last six months" and its graph, on its section's card (as on Activity).
+    private func graphCard(_ stats: FocusStats) -> some View {
+        VStack(alignment: .leading, spacing: NidusSpacing.sm) {
+            Overline("Last six months")
+            ContributionGraph(stats: stats)
+        }
+        .padding(14)
     }
 
     @ViewBuilder
@@ -61,13 +71,15 @@ struct FocusStatsPage: View {
                 figure("Sessions", "\(stats.sessionCount)", caption: "\(stats.completedCount) completed")
             }
             .fixedSize(horizontal: false, vertical: true)
+            .padding(.vertical, 6)
+            .listRowBackground(Color.clear)
+            .listRowInsets(EdgeInsets())
         }
 
-        NidusSettingsCard {
-            NidusStackedRow(title: "Last six months") {
-                ContributionGraph(stats: stats)
-                    .padding(.vertical, NidusSpacing.xs)
-            }
+        Section {
+            graphCard(stats)
+                .listRowBackground(Color.clear)
+                .listRowInsets(EdgeInsets())
         }
 
         NidusSettingsCard {
@@ -97,22 +109,57 @@ struct FocusStatsPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 settingsSectionHeader("Where you focused")
                 Text("The apps in front while a session ran.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
-            NidusSettingsCard {
-                if stats.topApps.isEmpty {
-                    NidusControlRow(title: model.activityTrackingEnabled ? "Nothing yet" : "Activity tracking is off") {
-                        Button("Open Activity") { model.openActivity() }
+            Section {
+                whereYouFocused(stats)
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets())
+            }
+        }
+    }
+
+    /// The apps in front, as the shared ranked bars. Apps are not
+    /// categories, so the bars take the neutral ink.
+    private func whereYouFocused(_ stats: FocusStats) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if stats.topApps.isEmpty {
+                HStack {
+                    Text(model.activityTrackingEnabled ? "Nothing yet" : "Activity tracking is off")
+                        .font(.solanum(.body, weight: .regular))
+                        .foregroundStyle(Solanum.inkMuted)
+                    Spacer(minLength: 12)
+                    Button("Open Activity") { model.openActivity() }
+                }
+                .padding(14)
+            } else {
+                let longest = max(1, stats.topApps.map(\.value).max() ?? 1)
+                ForEach(stats.topApps, id: \.key) { app in
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            Text(verbatim: app.name)
+                                .font(.solanum(.body, weight: .regular))
+                                .foregroundStyle(Solanum.ink)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            Text(verbatim: FocusFormat.long(app.value))
+                                .font(.solanum(.caption, weight: .medium))
+                                .monospacedDigit()
+                                .foregroundStyle(Solanum.inkMuted)
+                        }
+                        SolanumMagnitudeBar(fraction: app.value / longest, color: Solanum.inkMuted)
                     }
-                } else {
-                    ForEach(stats.topApps, id: \.key) { app in
-                        NidusControlRow(title: app.name) { NidusValuePill(text: FocusFormat.long(app.value)) }
-                    }
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .accessibilityElement(children: .combine)
                 }
             }
         }
+        .padding(.vertical, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func history(_ stats: FocusStats) -> some View {
@@ -120,8 +167,8 @@ struct FocusStatsPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 settingsSectionHeader("History")
                 Text("Kept on this Mac only. Nothing is sent anywhere.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
             NidusSettingsCard {
@@ -153,22 +200,20 @@ struct FocusStatsPage: View {
     /// more to say about it.
     private func figure(_ label: String, _ value: String, caption: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.callout)
-                .foregroundStyle(.secondary)
+            Overline(label)
             Text(verbatim: value)
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.primary)
+                .font(.solanumFigure)
+                .foregroundStyle(Solanum.ink)
                 .lineLimit(1)
-                .minimumScaleFactor(0.7)
+                .minimumScaleFactor(0.6)
             if let caption {
                 Text(verbatim: caption)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .combine)
     }
@@ -246,16 +291,19 @@ struct ContributionGraph: View {
     let stats: FocusStats
 
     private let gap: CGFloat = 3
+    private var calendar: Calendar { .current }
+    @Environment(\.colorSchemeContrast) private var contrast
 
     var body: some View {
         VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             ContributionLayout(columns: stats.weeks.count, gap: gap) {
                 // In the order the layout places them: a month over each
                 // column, a weekday beside each row, then the days by column.
+                let labelled = Self.monthLabelColumns(firstDays: stats.weeks.map { $0.first?.date ?? .distantPast }, calendar: calendar)
                 ForEach(0..<stats.weeks.count, id: \.self) { index in
-                    Text(verbatim: month(index))
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                    Text(verbatim: labelled.contains(index) ? monthName(index) : "")
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -263,14 +311,14 @@ struct ContributionGraph: View {
                     // Every other row, starting with the second, as GitHub does:
                     // Mon, Wed, Fri when weeks start on Sunday.
                     Text(verbatim: row % 2 == 1 ? weekday(row) : "")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                         .lineLimit(1)
                 }
                 ForEach(Array(stats.weeks.enumerated()), id: \.offset) { _, week in
                     ForEach(week) { day in
-                        RoundedRectangle(cornerRadius: 3, style: .continuous)
-                            .fill(day.isFuture ? Color.clear : FocusPalette.graphShade(level: FocusStats.level(for: day.focused)))
+                        RoundedRectangle(cornerRadius: Solanum.markRadius, style: .continuous)
+                            .fill(day.isFuture ? Color.clear : FocusPalette.graphShade(level: FocusStats.level(for: day.focused), contrast: contrast))
                             .help(day.isFuture ? "" : tooltip(day))
                     }
                 }
@@ -279,17 +327,54 @@ struct ContributionGraph: View {
                 Spacer(minLength: 0)
                 Text("Less").padding(.trailing, 2)
                 ForEach(0..<5, id: \.self) { level in
-                    RoundedRectangle(cornerRadius: 3, style: .continuous)
-                        .fill(FocusPalette.graphShade(level: level))
+                    RoundedRectangle(cornerRadius: Solanum.markRadius, style: .continuous)
+                        .fill(FocusPalette.graphShade(level: level, contrast: contrast))
                         .frame(width: 12, height: 12)
                 }
                 Text("More").padding(.leading, 2)
             }
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+            .font(.solanum(.caption))
+            .foregroundStyle(Solanum.inkMuted)
         }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken)
+        // One element per week, under a label for the graph as a whole.
+        .accessibilityRepresentation {
+            VStack(alignment: .leading) {
+                ForEach(Array(stats.weeks.enumerated()), id: \.offset) { _, week in
+                    Text(verbatim: Self.weekSummary(week, calendar: calendar))
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(spoken)
+        }
+    }
+
+    /// The columns that carry a month's name: the first column of each month,
+    /// and the very first column too unless the next month starts within two
+    /// columns of it, where the two names would run together.
+    static func monthLabelColumns(firstDays: [Date], calendar: Calendar) -> Set<Int> {
+        var starts: [Int] = []
+        var previous: Int?
+        for (index, date) in firstDays.enumerated() {
+            let month = calendar.component(.month, from: date)
+            if month != previous { starts.append(index) }
+            previous = month
+        }
+        if starts.count > 1, starts[0] == 0, starts[1] - starts[0] <= 2 { starts.removeFirst() }
+        return Set(starts)
+    }
+
+    /// "Week of 3 March: 4 hr 10 min over 5 days, best Tuesday 1 hr 20 min",
+    /// or "Week of 3 March: no focus". Days still to come are left out.
+    static func weekSummary(_ week: [FocusStats.Day], calendar: Calendar, locale: Locale = .current) -> String {
+        guard let first = week.first else { return "" }
+        let style = { Date.FormatStyle(locale: locale, calendar: calendar, timeZone: calendar.timeZone) }
+        let start = first.date.formatted(style().day().month(.wide))
+        let past = week.filter { !$0.isFuture }
+        let active = past.filter { FocusStats.level(for: $0.focused) > 0 }
+        guard let best = active.max(by: { $0.focused < $1.focused }) else { return "Week of \(start): no focus" }
+        let total = active.reduce(0) { $0 + $1.focused }
+        let weekday = best.date.formatted(style().weekday(.wide))
+        return "Week of \(start): \(FocusFormat.long(total)) over \(FocusFormat.days(active.count)), best \(weekday) \(FocusFormat.long(best.focused))"
     }
 
     private var spoken: String {
@@ -302,13 +387,8 @@ struct ContributionGraph: View {
         return date.formatted(.dateTime.weekday(.abbreviated))
     }
 
-    /// The month's name above the first column that starts in it.
-    private func month(_ index: Int) -> String {
+    private func monthName(_ index: Int) -> String {
         guard let first = stats.weeks[index].first?.date else { return "" }
-        let calendar = Calendar.current
-        if index > 0, let previous = stats.weeks[index - 1].first?.date,
-           calendar.component(.month, from: previous) == calendar.component(.month, from: first) { return "" }
-        if index == 0 { return "" }
         return first.formatted(.dateTime.month(.abbreviated))
     }
 

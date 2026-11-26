@@ -124,7 +124,7 @@ struct SessionPreviewRow: View {
             Text(verbatim: preview.summary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12))
+        .font(.solanum(.label, weight: .regular))
         .foregroundStyle(Solanum.inkMuted)
         .tint(Solanum.clayText)
         .help("Review this session’s rules, break and actions")

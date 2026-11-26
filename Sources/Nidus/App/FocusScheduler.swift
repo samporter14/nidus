@@ -695,10 +695,10 @@ struct FocusScheduleHeadsUpCard: View {
     private func texts(lines: Int) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(verbatim: title)
-                .font(.system(size: 14, weight: .medium))
+                .font(.solanum(.title, weight: .medium))
                 .foregroundStyle(AdaptiveColors.surfacePrimaryText)
             Text(verbatim: detail)
-                .font(.system(size: 12))
+                .font(.solanum(.label, weight: .regular))
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .lineLimit(lines)
         }

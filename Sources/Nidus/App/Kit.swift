@@ -88,7 +88,7 @@ func settingsSectionHeader(_ title: String, detail: String) -> some View {
     VStack(alignment: .leading, spacing: 2) {
         settingsSectionHeader(title)
         Text(detail)
-            .font(.system(size: 12))
+            .font(.solanum(.label, weight: .regular))
             .foregroundStyle(.secondary)
     }
 }
@@ -244,7 +244,7 @@ struct NidusSettingsPageLink<Tile: View>: View {
                 }
                 Spacer(minLength: 12)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.solanum(.label, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }
             .contentShape(.rect)

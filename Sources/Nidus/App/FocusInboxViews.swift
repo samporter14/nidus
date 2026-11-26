@@ -143,7 +143,7 @@ struct FocusInboxRow: View {
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
-            .font(.system(size: 12))
+            .font(.solanum(.label, weight: .regular))
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -162,7 +162,7 @@ struct QuickInboxView: View {
             let items = Array((model.inbox?.openItems ?? []).prefix(5))
             if items.isEmpty {
                 Text("Nothing waiting. A little more room to think.")
-                    .font(.system(size: 13))
+                    .font(.solanum(.body))
                     .foregroundStyle(Solanum.inkMuted)
             }
             ForEach(items) { item in
@@ -185,10 +185,10 @@ struct QuickInboxView: View {
                             }
                         }
                         .buttonStyle(.borderless)
-                        .font(.system(size: 11))
+                        .font(.solanum(.caption))
                     }
                 }
-                .font(.system(size: 13))
+                .font(.solanum(.body))
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             Divider()
@@ -213,12 +213,12 @@ struct FocusSavedForLaterRow: View {
     var body: some View {
         HStack(spacing: NidusSpacing.md) {
             Image(systemName: NidusSymbols.inbox)
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                 .frame(width: 28)
                 .accessibilityHidden(true)
             Text(verbatim: NidusModel.savedForLaterText(count) ?? "")
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 .lineLimit(1)
             Spacer(minLength: NidusSpacing.sm)
@@ -241,7 +241,7 @@ struct FocusWrapUpFooter: View {
     var body: some View {
         HStack(spacing: NidusSpacing.sm) {
             Text(verbatim: NidusModel.savedForLaterText(saved) ?? "")
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(AdaptiveColors.surfacePrimaryText)
                 .lineLimit(1)
                 .truncationMode(.tail)

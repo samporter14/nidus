@@ -15,29 +15,39 @@ struct ActivityWeekGlance: View {
     let openDay: (Date) -> Void
 
     @State private var hovered: Int?
+    @State private var pointer: CGPoint?
+    @Environment(\.colorSchemeContrast) private var contrast
 
     private let chartHeight: CGFloat = 96
     private let gap: CGFloat = 8
 
+    static let emptyMessage = "Each day's bar fills in as the week goes"
+
     var body: some View {
-        if week.isEmpty {
-            Text("Nothing was counted in these seven days.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        } else {
+        VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 8) {
                 chart
+                    .activityHoverCallout(callout, at: pointer)
+                    .zIndex(callout == nil ? 0 : 1)
                 labels
-                Text(verbatim: readout)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .accessibilityHidden(true)
+            }
+            .chartEmptyState(week.isEmpty, Self.emptyMessage)
+            if !week.isEmpty {
                 Divider()
                 totals
             }
         }
+    }
+
+    /// The hovered day, for the shared callout.
+    private var callout: ActivityCallout? {
+        guard let hovered, week.days.indices.contains(hovered) else { return nil }
+        return Self.callout(of: week.days[hovered])
+    }
+
+    static func callout(of day: ActivityWeek.Day) -> ActivityCallout {
+        .ranked(title: day.date.formatted(.dateTime.weekday(.wide).day().month(.wide)),
+                items: day.parts.map { ($0.id, $0.name, $0.seconds, ActivityInk.series($0.tint)) })
     }
 
     private var chart: some View {
@@ -48,10 +58,11 @@ struct ActivityWeekGlance: View {
                 for (index, day) in week.days.enumerated() {
                     let x = CGFloat(index) * (width + gap)
                     let track = CGRect(x: x, y: 0, width: width, height: size.height)
-                    context.fill(Path(roundedRect: track, cornerRadius: 3, style: .continuous), with: .color(.primary.opacity(0.04)))
+                    let shape = Path(roundedRect: track, cornerRadius: Solanum.markRadius, style: .continuous)
+                    context.fill(shape, with: .color(Solanum.track(contrast)))
                     var bottom = size.height
                     context.drawLayer { layer in
-                        layer.clip(to: Path(roundedRect: track, cornerRadius: 3, style: .continuous))
+                        layer.clip(to: shape)
                         for part in day.parts {
                             let height = size.height * part.seconds / peak
                             layer.fill(Path(CGRect(x: x, y: bottom - height, width: width, height: height)),
@@ -60,7 +71,9 @@ struct ActivityWeekGlance: View {
                         }
                     }
                     if hovered == index {
-                        context.stroke(Path(roundedRect: track, cornerRadius: 3, style: .continuous), with: .color(.primary.opacity(0.4)), lineWidth: 1)
+                        context.stroke(shape, with: .color(Solanum.ink.opacity(0.4)), lineWidth: 1)
+                    } else if contrast == .increased {
+                        context.stroke(shape, with: .color(Solanum.edge(contrast)), lineWidth: 1)
                     }
                 }
             }
@@ -70,8 +83,10 @@ struct ActivityWeekGlance: View {
                 case .active(let point):
                     let index = dayIndex(at: point, width: proxy.size.width)
                     if index != hovered { hovered = index }
+                    pointer = index == nil ? nil : point
                 case .ended:
                     if hovered != nil { hovered = nil }
+                    pointer = nil
                 }
             }
             .onTapGesture { point in
@@ -102,11 +117,11 @@ struct ActivityWeekGlance: View {
             ForEach(week.days) { day in
                 VStack(spacing: 1) {
                     Text(verbatim: name(of: day))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption, weight: .medium))
+                        .foregroundStyle(Solanum.inkFaint)
                     Text(day.parts.isEmpty ? "\u{2013}" : ActivityDuration.string(day.seconds))
-                        .font(.system(size: 9, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption, design: .rounded))
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -123,40 +138,35 @@ struct ActivityWeekGlance: View {
                 HStack(spacing: 6) {
                     Circle().fill(ActivityInk.series(delta.tint)).frame(width: 6, height: 6)
                     Text(verbatim: delta.name)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Solanum.ink)
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Text(ActivityDuration.string(delta.thisWeek))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                     if week.hasLastWeek {
                         Text(verbatim: delta.changeText)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Solanum.inkMuted)
                             .monospacedDigit()
-                            .frame(width: 66, alignment: .trailing)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .frame(minWidth: 66, alignment: .trailing)
                     }
                 }
-                .font(.system(size: 11))
+                .font(.solanum(.caption))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(description(of: delta))
             }
             if !week.hasLastWeek {
                 Text("Nothing to compare with yet: the seven days before are empty.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         }
     }
 
     private func name(of day: ActivityWeek.Day) -> String {
         calendar.shortWeekdaySymbols[calendar.component(.weekday, from: day.date) - 1]
-    }
-
-    private var readout: String {
-        guard let hovered, week.days.indices.contains(hovered) else { return "Hover a day for what filled it. Click to open it." }
-        let day = week.days[hovered]
-        guard !day.parts.isEmpty else { return "\(day.date.formatted(date: .abbreviated, time: .omitted)) · Nothing counted" }
-        return ([day.date.formatted(date: .abbreviated, time: .omitted)] + Self.parts(of: day)).joined(separator: " · ")
     }
 
     private static func parts(of day: ActivityWeek.Day) -> [String] {

@@ -24,8 +24,26 @@ struct WidgetToday: Codable, Equatable, Sendable {
         var kind: Kind
     }
 
+    /// A stretch of focus sessions today, in minutes since the day began.
+    struct Span: Codable, Equatable, Sendable {
+        var startMinute: Int
+        var endMinute: Int
+    }
+
+    /// One of the day's biggest categories, for the large widget. `tint` is
+    /// what the app's charts use: 0 or more is a palette slot, -1 the quiet
+    /// "other", -2 the Work group.
+    struct Category: Codable, Equatable, Sendable {
+        var name: String
+        var minutes: Int
+        var tint: Int
+    }
+
     /// The most a day draws, which is also what keeps widget.json small.
     static let bandLimit = 24
+    /// The most focus spans and categories the large widget is given.
+    static let spanLimit = 24
+    static let topLimit = 3
 
     /// `YYYY-MM-DD`, as a day's record names itself.
     var day: String
@@ -34,6 +52,10 @@ struct WidgetToday: Codable, Equatable, Sendable {
     var distracting = 0
     var other = 0
     var bands: [Band] = []
+    /// When today's focus sessions ran. nil in a file from before this was kept.
+    var focus: [Span]?
+    /// The day's three biggest categories, biggest first. nil likewise.
+    var top: [Category]?
 
     var total: Int { work + distracting + other }
 
@@ -41,6 +63,21 @@ struct WidgetToday: Codable, Equatable, Sendable {
     static func key(for date: Date, calendar: Calendar = .current) -> String {
         let parts = calendar.dateComponents([.year, .month, .day], from: date)
         return String(format: "%04d-%02d-%02d", parts.year ?? 0, parts.month ?? 0, parts.day ?? 0)
+    }
+}
+
+extension WidgetToday {
+    /// Tolerant: a field that is missing or malformed falls back to its default
+    /// and never takes the rest of the day with it. Only `day` is required.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = try c.decode(String.self, forKey: .day)
+        work = (try? c.decodeIfPresent(Int.self, forKey: .work)) ?? 0
+        distracting = (try? c.decodeIfPresent(Int.self, forKey: .distracting)) ?? 0
+        other = (try? c.decodeIfPresent(Int.self, forKey: .other)) ?? 0
+        bands = (try? c.decodeIfPresent([Band].self, forKey: .bands)) ?? []
+        focus = try? c.decodeIfPresent([Span].self, forKey: .focus)
+        top = try? c.decodeIfPresent([Category].self, forKey: .top)
     }
 }
 
@@ -93,4 +130,20 @@ struct WidgetSnapshot: Codable, Equatable, Sendable {
 
     static let endURL = URL(string: "nidus://end")!
     static let popoverURL = URL(string: "nidus://popover")!
+}
+
+extension WidgetSnapshot {
+    /// Tolerant: a malformed `today` is dropped rather than blanking the
+    /// session and the setups, which the controls need.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        version = (try? c.decodeIfPresent(Int.self, forKey: .version)) ?? 1
+        state = (try? c.decodeIfPresent(State.self, forKey: .state)) ?? .idle
+        goal = (try? c.decodeIfPresent(String.self, forKey: .goal)) ?? ""
+        endsAt = try? c.decodeIfPresent(Double.self, forKey: .endsAt)
+        secondsLeft = try? c.decodeIfPresent(Double.self, forKey: .secondsLeft)
+        strict = (try? c.decodeIfPresent(Bool.self, forKey: .strict)) ?? false
+        setups = (try? c.decodeIfPresent([Setup].self, forKey: .setups)) ?? []
+        today = try? c.decodeIfPresent(WidgetToday.self, forKey: .today)
+    }
 }

@@ -243,7 +243,7 @@ struct SettingsRoot: View {
         HStack(spacing: 8) {
             Button(action: router.back) {
                 Image(systemName: "chevron.left")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(.solanum(.title))
                     .frame(width: 24, height: 24)
                     .contentShape(.rect)
             }

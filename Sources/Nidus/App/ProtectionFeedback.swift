@@ -96,9 +96,9 @@ final class ProtectionFeedback: ObservableObject {
                 Image(systemName: "exclamationmark.shield")
                     .foregroundStyle(Solanum.clayText)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: title).font(.system(size: 14, weight: .medium))
+                    Text(verbatim: title).font(.solanum(.title, weight: .medium))
                     Text("Fixes are always in the protection line.")
-                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .font(.solanum(.label, weight: .regular)).foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
                 Spacer(minLength: 0)
@@ -168,23 +168,23 @@ struct ProtectionFixesView: View {
         VStack(alignment: .leading, spacing: NidusSpacing.md) {
             Text("Protection").font(.system(size: 15, weight: .semibold))
             if let status = model.protectionStatus {
-                Text(verbatim: status.line).font(.system(size: 12)).foregroundStyle(.secondary)
+                Text(verbatim: status.line).font(.solanum(.label, weight: .regular)).foregroundStyle(.secondary)
             }
             ForEach(model.protectionIssues) { issue in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: issue.name).font(.system(size: 13, weight: .medium))
+                    Text(verbatim: issue.name).font(.solanum(.body, weight: .medium))
                     switch issue.kind {
                     case .consent:
-                        Text("Allow Nidus to check this browser’s tabs.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Allow Nidus to check this browser’s tabs.").font(.solanum(.label, weight: .regular)).foregroundStyle(.secondary)
                         Button("Allow…") {
                             guard let browser = BrowserProfile.known.first(where: { $0.bundleID == issue.bundleID }) else { return }
                             model.askBrowserAccess(browser) { model.protectionFeedback.refresh() }
                         }
                     case .denied:
-                        Text("Enable this browser under Nidus in Automation.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("Enable this browser under Nidus in Automation.").font(.solanum(.label, weight: .regular)).foregroundStyle(.secondary)
                         Button("Open System Settings…", action: model.openAutomationSettings)
                     case .unsupported:
-                        Text("This browser doesn’t support website blocking.").font(.system(size: 12)).foregroundStyle(.secondary)
+                        Text("This browser doesn’t support website blocking.").font(.solanum(.label, weight: .regular)).foregroundStyle(.secondary)
                         Button("Block for this session") {
                             model.engine?.blockAppsForSession([issue.bundleID])
                             model.protectionFeedback.refresh()
@@ -195,8 +195,8 @@ struct ProtectionFixesView: View {
             }
             ForEach((model.controller?.refusedApps ?? [:]).keys.sorted(), id: \.self) { id in
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(verbatim: model.controller?.refusedApps[id] ?? id).font(.system(size: 13, weight: .medium))
-                    Text("The app may be waiting for unsaved changes before it can quit.").font(.system(size: 12)).foregroundStyle(.secondary)
+                    Text(verbatim: model.controller?.refusedApps[id] ?? id).font(.solanum(.body, weight: .medium))
+                    Text("The app may be waiting for unsaved changes before it can quit.").font(.solanum(.label, weight: .regular)).foregroundStyle(.secondary)
                     Button("Ask to quit again") {
                         NSRunningApplication.runningApplications(withBundleIdentifier: id).first?.terminate()
                     }

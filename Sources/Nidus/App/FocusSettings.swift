@@ -571,8 +571,8 @@ struct FocusCategoryPage: View {
             if let category {
                 if isWork {
                     Text("Work is for counting time. It is never blocked and never offered when you start a session.")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.label, weight: .regular))
+                        .foregroundStyle(Solanum.inkMuted)
                 }
                 NidusSettingsCard {
                     NidusControlRow(title: "Name") {
@@ -585,6 +585,10 @@ struct FocusCategoryPage: View {
                         NidusSymbolPicker(selection: symbolBinding)
                     }
                     if !isWork {
+                        // Work is always drawn in work's own colour.
+                        NidusControlRow(title: "Colour", infoTip: CategoryColourPicker.hint) {
+                            CategoryColourPicker(selection: colourBinding)
+                        }
                         NidusControlRow(title: "Counts as",
                                         infoTip: "How Activity reads time here. Work counts as work, Neutral is never drift, Distracting is what drift and the hour grid flag. It doesn't change what a session blocks.") {
                             Picker("Counts as", selection: roleBinding) {
@@ -636,7 +640,7 @@ struct FocusCategoryPage: View {
                         Text(isWork
                              ? "Each one also covers its subdomains, so github.com includes gist.github.com. Add a path, like github.com/my-lab, to count only that part of it."
                              : "Each one also covers its subdomains, so youtube.com includes m.youtube.com. Add a path, like youtube.com/shorts, to block only that part of it.")
-                            .font(.system(size: 12))
+                            .font(.solanum(.label, weight: .regular))
                             .foregroundStyle(.secondary)
                     }
                 } content: {
@@ -695,6 +699,15 @@ struct FocusCategoryPage: View {
                 set: { role in update { $0.role = role } })
     }
 
+    /// The category's chart hue: its saved one, else the one Activity gives it.
+    private var colourBinding: Binding<Int> {
+        Binding(get: {
+                    if let saved = category?.color, (0..<Solanum.seriesCount).contains(saved) { return saved }
+                    return CategoryPalette.slots(for: model.categories)[categoryID] ?? 0
+                },
+                set: { slot in update { $0.color = slot } })
+    }
+
     private var symbolBinding: Binding<String> {
         Binding(get: { category?.symbol ?? "square.grid.2x2" },
                 set: { symbol in update { $0.symbol = symbol } })
@@ -745,7 +758,7 @@ struct FocusLaunchAppsPage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     settingsSectionHeader("Apps to open")
                     Text("Opened when a session starts, the first one in front. A session never blocks the apps it opened.")
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(.secondary)
                 }
             } content: {
@@ -916,7 +929,7 @@ struct ActivityOverridesPage: View {
     var body: some View {
         NidusSettingsPage {
             Text("Choose \"Count as\" on an app or website in Activity. It changes how time is counted, never what a session blocks.")
-                .font(.system(size: 12))
+                .font(.solanum(.label, weight: .regular))
                 .foregroundStyle(.secondary)
             let items = model.activityOverrides.items
             NidusSettingsCard {

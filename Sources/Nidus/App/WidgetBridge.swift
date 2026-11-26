@@ -108,8 +108,9 @@ extension NidusModel {
         // Tracking off, the recorder still holds the day it stopped on.
         if log.day != day { log = ActivityDayLog(day: day) }
         let categorizer = activityCategorizer
+        let sessions = activitySessions.filter { $0.end > now.addingTimeInterval(-86_400 * 2) }
         return await Task.detached(priority: .utility) {
-            ActivityTodaySummary.build(log: log, categorizer: categorizer)
+            ActivityTodaySummary.build(log: log, categorizer: categorizer, sessions: sessions, now: now)
         }.value
     }
 }

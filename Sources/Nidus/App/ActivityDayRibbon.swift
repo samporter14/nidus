@@ -14,12 +14,16 @@ struct ActivityDayRibbon: View {
     var calendar: Calendar = .current
     let openSession: (UUID) -> Void
     /// The popover's small ribbon: a thin track, bars without names, one axis
-    /// row that gives way to the hover text, and no legend.
+    /// row, and no legend. Hover details come in the shared callout.
     var compact = false
 
     @State private var hovered: ActivityRibbon.Block?
     @State private var hoveredFocus: ActivityRibbon.Focus?
+    @State private var pointer: CGPoint?
     @State private var width: CGFloat = 0
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    private static let space = "ribbon"
 
     private var trackHeight: CGFloat { compact ? 16 : 26 }
     /// Hover finds a stretch within this many points, however narrow it is.
@@ -33,50 +37,54 @@ struct ActivityDayRibbon: View {
         if compact { compactBody } else { fullBody }
     }
 
-    /// One row of 12pt under the track: where the day starts and "now", or
-    /// what is under the pointer, so the height never changes on hover.
+    /// One row of 12pt under the track: where the day starts and "now".
     private var compactBody: some View {
         VStack(alignment: .leading, spacing: 4) {
             focusBars
-            track
-            ZStack(alignment: .leading) {
-                if hovered != nil || hoveredFocus != nil {
-                    Text(verbatim: readout)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                } else {
-                    HStack {
-                        Text(verbatim: ribbon.span.start.formatted(date: .omitted, time: .shortened))
-                        Spacer(minLength: 0)
-                        Text(verbatim: abs(ribbon.span.end.timeIntervalSinceNow) < 600
-                             ? "now" : ribbon.span.end.formatted(date: .omitted, time: .shortened))
-                    }
+            if ribbon.blocks.isEmpty {
+                // Too small for a line over the track: the faint track, then
+                // the line under it, in the axis's place.
+                track.opacity(0.35).accessibilityHidden(true)
+                Text(Self.emptyMessage)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+            } else {
+            VStack(alignment: .leading, spacing: 4) {
+                track
+                HStack {
+                    Text(verbatim: ribbon.span.start.formatted(date: .omitted, time: .shortened))
+                    Spacer(minLength: 0)
+                    Text(verbatim: abs(ribbon.span.end.timeIntervalSinceNow) < 600
+                         ? "now" : ribbon.span.end.formatted(date: .omitted, time: .shortened))
                 }
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkMuted)
+                .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 12, alignment: .leading)
+                .accessibilityHidden(true)
             }
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
-            .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 12, alignment: .leading)
-            .clipped()
-            .accessibilityHidden(true)
+            }
         }
+        .coordinateSpace(name: Self.space)
+        .activityHoverCallout(callout, at: pointer)
+        .zIndex(callout == nil ? 0 : 1)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
+
+    static let emptyMessage = "The timeline appears once something is counted"
 
     private var fullBody: some View {
         VStack(alignment: .leading, spacing: 5) {
             focusBars
-            track
-            axis
-            Text(verbatim: readout)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.top, 2)
-                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 5) {
+                track
+                axis
+            }
+            .chartEmptyState(ribbon.blocks.isEmpty, Self.emptyMessage)
             legend
         }
+        .coordinateSpace(name: Self.space)
+        .activityHoverCallout(callout, at: pointer)
+        .zIndex(callout == nil ? 0 : 1)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
     }
 
@@ -91,16 +99,25 @@ struct ActivityDayRibbon: View {
         return ribbon.focus.contains { barWidth($0, in: width) >= nameWidth } ? 22 : barHeight
     }
 
-    private var readout: String {
+    /// What the pointer is over, for the shared hover callout.
+    private var callout: ActivityCallout? {
         if let hoveredFocus {
-            let times = hoveredFocus.start.formatted(date: .omitted, time: .shortened) + "–" + hoveredFocus.end.formatted(date: .omitted, time: .shortened)
-            return "\(times) · \(hoveredFocus.name)"
+            return ActivityCallout(
+                title: ActivityCallout.timeRange(hoveredFocus.start, hoveredFocus.end, calendar: calendar),
+                rows: [.init(id: hoveredFocus.id, name: hoveredFocus.name,
+                             value: ActivityDuration.string(hoveredFocus.end.timeIntervalSince(hoveredFocus.start)),
+                             color: Solanum.focus)],
+                footnote: "Focus session")
         }
-        guard let hovered else {
-            if ribbon.blocks.isEmpty { return "Nothing was counted on this day." }
-            return ribbon.focus.isEmpty ? "Hover a stretch for what was in front." : "Hover a stretch for what was in front. Click a session for its recap."
-        }
-        return Self.description(of: hovered)
+        guard let hovered else { return nil }
+        return Self.callout(of: hovered, color: ActivityInk.series(ribbon.tint(ofSeries: hovered.series)), calendar: calendar)
+    }
+
+    static func callout(of block: ActivityRibbon.Block, color: Color, calendar: Calendar = .current) -> ActivityCallout {
+        ActivityCallout(
+            title: ActivityCallout.timeRange(block.start, block.end, calendar: calendar),
+            rows: [.init(id: block.id, name: block.name, value: ActivityDuration.string(block.seconds), color: color)],
+            footnote: [block.detail, block.absorbedNote].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " \u{00B7} ").nilIfEmpty)
     }
 
     static func description(of block: ActivityRibbon.Block) -> String {
@@ -121,11 +138,11 @@ struct ActivityDayRibbon: View {
                         Spacer(minLength: 0)
                         if !compact, width >= nameWidth {
                             Text(verbatim: bar.name)
-                                .font(.system(size: 9))
-                                .foregroundStyle(ActivityInk.clay)
+                                .font(.solanum(.caption))
+                                .foregroundStyle(Solanum.clayText)
                                 .lineLimit(1)
                         }
-                        Capsule().fill(ActivityInk.clay).frame(height: barHeight)
+                        Capsule().fill(Solanum.focus).frame(height: barHeight)
                     }
                     .frame(width: width, height: focusHeight, alignment: .leading)
                     .contentShape(Rectangle())
@@ -134,7 +151,16 @@ struct ActivityDayRibbon: View {
                 .disabled(bar.sessionID == nil)
                 .offset(x: min(x, max(0, proxy.size.width - width)))
                 .help(bar.name)
-                .onHover { hoveredFocus = $0 ? bar : nil }
+                .onContinuousHover(coordinateSpace: .named(Self.space)) { phase in
+                    switch phase {
+                    case .active(let point):
+                        hoveredFocus = bar
+                        hovered = nil
+                        pointer = point
+                    case .ended:
+                        if hoveredFocus == bar { hoveredFocus = nil; pointer = nil }
+                    }
+                }
                 .accessibilityLabel("Focus session, \(bar.name), \(bar.start.formatted(date: .omitted, time: .shortened)) to \(bar.end.formatted(date: .omitted, time: .shortened))")
                 .accessibilityHint(bar.sessionID == nil ? "Still running" : "Opens the session recap")
             }
@@ -145,8 +171,8 @@ struct ActivityDayRibbon: View {
     private var track: some View {
         GeometryReader { proxy in
             Canvas { context, size in
-                let shape = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: 6, style: .continuous)
-                context.fill(shape, with: .color(.primary.opacity(0.06)))
+                let shape = Path(roundedRect: CGRect(origin: .zero, size: size), cornerRadius: Solanum.frameRadius, style: .continuous)
+                context.fill(shape, with: .color(Solanum.track(contrast)))
                 context.clip(to: shape)
                 for block in ribbon.blocks {
                     let rect = frame(of: block, in: size)
@@ -156,23 +182,29 @@ struct ActivityDayRibbon: View {
                     for strip in block.absorbed {
                         let rect = frame(of: strip, in: size)
                         // A hairline over it, so a color shared with the block still shows.
-                        context.fill(Path(rect.insetBy(dx: 0, dy: -0.5).offsetBy(dx: 0, dy: -0.5)), with: .color(Color(nsColor: .windowBackgroundColor)))
+                        context.fill(Path(rect.insetBy(dx: 0, dy: -0.5).offsetBy(dx: 0, dy: -0.5)), with: .color(Solanum.raised))
                         context.fill(Path(rect), with: .color(ActivityInk.series(ribbon.tint(ofSeries: strip.series))))
                     }
                 }
                 if let hovered {
                     let rect = frame(of: hovered, in: size)
-                    context.fill(Path(rect), with: .color(.primary.opacity(0.18)))
+                    context.fill(Path(rect), with: .color(Solanum.ink.opacity(0.18)))
+                }
+                if contrast == .increased {
+                    context.stroke(shape, with: .color(Solanum.edge(contrast)), lineWidth: 1)
                 }
             }
             .contentShape(Rectangle())
-            .onContinuousHover { phase in
+            .onContinuousHover(coordinateSpace: .named(Self.space)) { phase in
                 switch phase {
                 case .active(let point):
                     let width = max(1, proxy.size.width)
+                    hoveredFocus = nil
                     hovered = ribbon.block(at: Double(point.x / width), reach: Double(hoverReach / width))
+                    pointer = hovered == nil ? nil : point
                 case .ended:
                     hovered = nil
+                    pointer = nil
                 }
             }
         }
@@ -203,13 +235,13 @@ struct ActivityDayRibbon: View {
             ForEach(ribbon.ticks(calendar: calendar), id: \.self) { tick in
                 let x = proxy.size.width * ribbon.position(of: tick)
                 Text(tick.formatted(.dateTime.hour()))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption, weight: .medium))
+                    .foregroundStyle(Solanum.inkFaint)
                     .fixedSize()
                     .position(x: min(max(x, 16), proxy.size.width - 16), y: 6)
             }
         }
-        .frame(height: 13)
+        .frame(height: 14)
         .accessibilityHidden(true)
     }
 
@@ -220,9 +252,13 @@ struct ActivityDayRibbon: View {
                     .lineLimit(1)
             }
         }
-        .font(.system(size: 10))
+        .font(.solanum(.caption))
         .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 3)
     }
+}
+
+private extension String {
+    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

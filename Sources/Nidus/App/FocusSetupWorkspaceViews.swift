@@ -110,7 +110,7 @@ struct SetupWorkspaceSections: View {
         } label: {
             HStack(spacing: NidusSpacing.sm) {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.solanum(.caption, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .rotationEffect(.degrees(isOpen ? 90 : 0))
                     .frame(width: 12)

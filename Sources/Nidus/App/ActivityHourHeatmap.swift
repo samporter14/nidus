@@ -3,8 +3,9 @@
 //  Nidus
 //
 //  Weekdays down, hours across. An hour takes the color of whatever filled
-//  most of it, sage for Work and clay for a distracting category, and a
-//  stronger color is more time. Drawn in one Canvas, with a row per weekday
+//  most of it, green for Work, plum for a distracting category and grey for
+//  the rest, and a stronger color is more time. With Differentiate Without
+//  Color on, a distracting hour also carries a corner mark. Drawn in one Canvas, with a row per weekday
 //  for VoiceOver. Clicking an hour lists what filled it, read only then.
 //
 
@@ -18,6 +19,14 @@ struct ActivityHourHeatmap: View {
     @State private var hovered: ActivityHourSlot?
     @State private var selected: ActivityHourSlot?
     @State private var detail: ActivityHourDetail?
+    @State private var pointer: CGPoint?
+    /// The cell the arrow keys are on.
+    @State private var keyboardSlot: ActivityHourSlot?
+    @FocusState private var gridFocused: Bool
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityDifferentiateWithoutColor) private var differentiateWithoutColor
+
+    static let emptyMessage = "Hours fill in as Nidus sees you work"
 
     private let rowHeight: CGFloat = 16
     private let labelWidth: CGFloat = 32
@@ -52,30 +61,21 @@ struct ActivityHourHeatmap: View {
     }
 
     var body: some View {
-        if map.isEmpty {
-            Text("Nothing was counted here.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-        } else {
+        VStack(alignment: .leading, spacing: 5) {
             VStack(alignment: .leading, spacing: 5) {
                 grid
                 axis
-                Text(verbatim: readout)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.tail)
-                    .accessibilityHidden(true)
-                HStack(spacing: 13) {
-                    ActivityLegend(color: ActivityInk.sage, title: "Work")
-                    ActivityLegend(color: ActivityInk.clay, title: "Distracting")
-                    ActivityLegend(color: ActivityInk.series(ActivityInk.quietTint), title: "Everything else")
-                }
-                .font(.system(size: 10))
-                if let selected { panel(selected) }
             }
-            .task(id: detailKey) { await reloadDetail() }
+            .chartEmptyState(map.isEmpty, Self.emptyMessage)
+            HStack(spacing: 13) {
+                ActivityLegend(color: Solanum.work, title: "Work")
+                ActivityLegend(color: Solanum.distracting, title: "Distracting")
+                ActivityLegend(color: Solanum.other, title: "Everything else")
+            }
+            .font(.solanum(.caption))
+            if let selected, !map.isEmpty { panel(selected) }
         }
+        .task(id: detailKey) { await reloadDetail() }
     }
 
     /// An hour the shown range no longer holds lets go of its selection.
@@ -103,16 +103,16 @@ struct ActivityHourHeatmap: View {
             Divider()
             HStack(spacing: 6) {
                 Text(verbatim: name(of: slot))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.solanum(.caption, weight: .medium))
                 Text(ActivityDuration.string(map[weekday: slot.weekday, hour: slot.hour].total))
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption, weight: .medium, design: .rounded))
+                    .foregroundStyle(Solanum.inkMuted)
                     .monospacedDigit()
                 Spacer(minLength: 8)
                 Button("Clear") { selected = nil }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
             }
             if let shown {
                 HStack(alignment: .top, spacing: 16) {
@@ -127,18 +127,18 @@ struct ActivityHourHeatmap: View {
     private func column(_ title: String, items: [ActivityHourDetail.Item]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkFaint)
             ForEach(items) { item in
                 HStack(spacing: 6) {
                     Text(verbatim: item.name)
-                        .font(.system(size: 11))
+                        .font(.solanum(.caption))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 8)
                     Text(ActivityDuration.string(item.seconds))
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption, weight: .medium, design: .rounded))
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
@@ -154,8 +154,8 @@ struct ActivityHourHeatmap: View {
             VStack(alignment: .leading, spacing: gap) {
                 ForEach(rows, id: \.self) { weekday in
                     Text(verbatim: calendar.shortWeekdaySymbols[weekday])
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption, weight: .medium))
+                        .foregroundStyle(Solanum.inkFaint)
                         .frame(height: rowHeight)
                 }
             }
@@ -167,30 +167,50 @@ struct ActivityHourHeatmap: View {
                     for (row, weekday) in rows.enumerated() {
                         for (column, hour) in columns.enumerated() {
                             let rect = cellFrame(row: row, column: column, width: width)
-                            let path = Path(roundedRect: rect, cornerRadius: 2.5, style: .continuous)
-                            context.fill(path, with: .color(.primary.opacity(0.04)))
+                            let path = Path(roundedRect: rect, cornerRadius: Solanum.markRadius, style: .continuous)
+                            context.fill(path, with: .color(Solanum.track(contrast)))
                             let cell = map[weekday: weekday, hour: hour]
                             guard cell.total > 0 else { continue }
-                            context.fill(path, with: .color(color(of: cell).opacity(Self.strength(of: cell, peak: peak))))
+                            let opacity = Solanum.fillOpacity(Self.strength(of: cell, peak: peak), contrast)
+                            context.fill(path, with: .color(color(of: cell).opacity(opacity)))
+                            if contrast == .increased {
+                                context.stroke(path, with: .color(Solanum.edge(contrast)), lineWidth: 0.5)
+                            }
+                            if differentiateWithoutColor, cell.leader == .distraction {
+                                let size = min(4, rect.height / 3)
+                                var corner = Path()
+                                corner.move(to: CGPoint(x: rect.maxX - size - 1, y: rect.minY + 1))
+                                corner.addLine(to: CGPoint(x: rect.maxX - 1, y: rect.minY + 1))
+                                corner.addLine(to: CGPoint(x: rect.maxX - 1, y: rect.minY + 1 + size))
+                                corner.closeSubpath()
+                                context.fill(corner, with: .color(Solanum.ink.opacity(0.7)))
+                            }
                         }
                     }
                     if let hovered, let row = rows.firstIndex(of: hovered.weekday), let column = columns.firstIndex(of: hovered.hour) {
                         let rect = cellFrame(row: row, column: column, width: width)
-                        context.stroke(Path(roundedRect: rect, cornerRadius: 2.5, style: .continuous), with: .color(.primary.opacity(0.5)), lineWidth: 1)
+                        context.stroke(Path(roundedRect: rect, cornerRadius: Solanum.markRadius, style: .continuous), with: .color(Solanum.ink.opacity(0.5)), lineWidth: 1)
                     }
                     if let selected, let row = rows.firstIndex(of: selected.weekday), let column = columns.firstIndex(of: selected.hour) {
                         let rect = cellFrame(row: row, column: column, width: width)
-                        context.stroke(Path(roundedRect: rect, cornerRadius: 2.5, style: .continuous), with: .color(.primary), lineWidth: 1.5)
+                        context.stroke(Path(roundedRect: rect, cornerRadius: Solanum.markRadius, style: .continuous), with: .color(Solanum.ink), lineWidth: 1.5)
+                    }
+                    if gridFocused, let keyboardSlot, let row = rows.firstIndex(of: keyboardSlot.weekday), let column = columns.firstIndex(of: keyboardSlot.hour) {
+                        let rect = cellFrame(row: row, column: column, width: width).insetBy(dx: -1, dy: -1)
+                        context.stroke(Path(roundedRect: rect, cornerRadius: Solanum.markRadius + 1, style: .continuous), with: .color(Solanum.clayText), lineWidth: 2)
                     }
                 }
+                .activityHoverCallout(callout(columns: columns, rows: rows, size: proxy.size), at: calloutPoint(columns: columns, rows: rows, size: proxy.size))
                 .contentShape(Rectangle())
                 .onContinuousHover { phase in
                     switch phase {
                     case .active(let point):
                         let slot = slot(at: point, width: proxy.size.width, rows: rows, columns: columns)
                         if slot != hovered { hovered = slot }
+                        pointer = slot == nil ? nil : point
                     case .ended:
                         if hovered != nil { hovered = nil }
+                        pointer = nil
                     }
                 }
                 .onTapGesture { point in
@@ -198,14 +218,87 @@ struct ActivityHourHeatmap: View {
                 }
             }
             .frame(height: CGFloat(rows.count) * (rowHeight + gap) - gap)
+            .focusable()
+            .focusEffectDisabled()
+            .focused($gridFocused)
+            .onChange(of: gridFocused) { _, focused in
+                if focused, keyboardSlot == nil || !isShown(keyboardSlot, rows: rows, columns: columns) {
+                    keyboardSlot = startingSlot(rows: rows, columns: columns)
+                }
+            }
+            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow, .return, .space]) { press in
+                handle(press.key, rows: rows, columns: columns)
+            }
             .accessibilityElement(children: .contain)
             .accessibilityLabel("Time by weekday and hour")
+            .accessibilityValue(gridFocused ? (keyboardSlot.map(spoken(of:)) ?? "") : "")
+            .accessibilityHint("Arrow keys move between hours. Return lists what filled the hour.")
             .accessibilityChildren {
                 ForEach(rows, id: \.self) { weekday in
                     rowEntry(weekday)
                 }
             }
         }
+    }
+
+    private func isShown(_ slot: ActivityHourSlot?, rows: [Int], columns: [Int]) -> Bool {
+        guard let slot else { return false }
+        return rows.contains(slot.weekday) && columns.contains(slot.hour)
+    }
+
+    /// Where the keys start: the busiest hour shown, else the first cell.
+    private func startingSlot(rows: [Int], columns: [Int]) -> ActivityHourSlot? {
+        var best: (slot: ActivityHourSlot, seconds: TimeInterval)?
+        for weekday in rows {
+            for hour in columns {
+                let total = map[weekday: weekday, hour: hour].total
+                if total > (best?.seconds ?? 0) { best = (ActivityHourSlot(weekday: weekday, hour: hour), total) }
+            }
+        }
+        if let best { return best.slot }
+        guard let weekday = rows.first, let hour = columns.first else { return nil }
+        return ActivityHourSlot(weekday: weekday, hour: hour)
+    }
+
+    private func handle(_ key: KeyEquivalent, rows: [Int], columns: [Int]) -> KeyPress.Result {
+        guard let current = keyboardSlot ?? startingSlot(rows: rows, columns: columns),
+              var row = rows.firstIndex(of: current.weekday), var column = columns.firstIndex(of: current.hour) else { return .ignored }
+        switch key {
+        case .upArrow: row = max(0, row - 1)
+        case .downArrow: row = min(rows.count - 1, row + 1)
+        case .leftArrow: column = max(0, column - 1)
+        case .rightArrow: column = min(columns.count - 1, column + 1)
+        case .return, .space:
+            toggle(current)
+            return .handled
+        default: return .ignored
+        }
+        let next = ActivityHourSlot(weekday: rows[row], hour: columns[column])
+        keyboardSlot = next
+        AccessibilityNotification.Announcement(spoken(of: next)).post()
+        return .handled
+    }
+
+    /// What the pointer, or failing that the keyboard, is on.
+    private func callout(columns: [Int], rows: [Int], size: CGSize) -> ActivityCallout? {
+        guard let slot = hovered ?? (gridFocused ? keyboardSlot : nil), isShown(slot, rows: rows, columns: columns) else { return nil }
+        return Self.callout(of: map[weekday: slot.weekday, hour: slot.hour], title: name(of: slot, short: true, calendar: calendar))
+    }
+
+    private func calloutPoint(columns: [Int], rows: [Int], size: CGSize) -> CGPoint? {
+        if hovered != nil { return pointer }
+        guard gridFocused, let slot = keyboardSlot, let row = rows.firstIndex(of: slot.weekday),
+              let column = columns.firstIndex(of: slot.hour) else { return nil }
+        let rect = cellFrame(row: row, column: column, width: size.width / CGFloat(columns.count))
+        return CGPoint(x: rect.midX, y: rect.minY)
+    }
+
+    static func callout(of cell: ActivityHeatmap.Cell, title: String) -> ActivityCallout {
+        .ranked(title: title, items: [
+            ("work", "Work", cell.work, Solanum.work),
+            ("distracting", "Distracting", cell.distraction, Solanum.distracting),
+            ("other", "Everything else", cell.other, Solanum.other),
+        ])
     }
 
     /// A weekday's row selects its busiest hour.
@@ -239,8 +332,8 @@ struct ActivityHourHeatmap: View {
             let width = (proxy.size.width - labelWidth) / CGFloat(columns.count)
             ForEach(columns.filter { $0 % 3 == 0 }, id: \.self) { hour in
                 Text(verbatim: Self.hourName(hour, calendar: calendar))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption, weight: .medium))
+                    .foregroundStyle(Solanum.inkFaint)
                     .fixedSize()
                     .position(x: labelWidth + (CGFloat(hour - columns[0]) + 0.5) * width, y: 6)
             }
@@ -251,16 +344,17 @@ struct ActivityHourHeatmap: View {
 
     private func color(of cell: ActivityHeatmap.Cell) -> Color {
         switch cell.leader {
-        case .work: ActivityInk.sage
-        case .distraction: ActivityInk.clay
-        case .other: ActivityInk.series(ActivityInk.quietTint)
+        case .work: Solanum.work
+        case .distraction: Solanum.distracting
+        case .other: Solanum.other
         }
     }
 
-    /// Softened, so a quiet hour still shows beside the busiest one.
+    /// Linear in time, from a floor that keeps a quiet hour visible beside
+    /// the busiest one.
     static func strength(of cell: ActivityHeatmap.Cell, peak: TimeInterval) -> Double {
         guard peak > 0 else { return 0 }
-        return 0.25 + 0.75 * (cell.total / peak).squareRoot()
+        return min(1, max(0, 0.35 + 0.65 * (cell.total / peak)))
     }
 
     static func hourName(_ hour: Int, calendar: Calendar) -> String {
@@ -268,16 +362,21 @@ struct ActivityHourHeatmap: View {
         return date.formatted(.dateTime.hour())
     }
 
-    private var readout: String {
-        guard let hovered else { return "Hover an hour for what filled it. Click for its apps and sites." }
-        let cell = map[weekday: hovered.weekday, hour: hovered.hour]
-        let when = name(of: hovered)
-        guard cell.total > 0 else { return "\(when) · Nothing counted" }
-        return ([when, ActivityDuration.string(cell.total)] + Self.parts(of: cell)).joined(separator: " · ")
-    }
-
     private func name(of slot: ActivityHourSlot) -> String {
         calendar.weekdaySymbols[slot.weekday] + " " + Self.hourName(slot.hour, calendar: calendar)
+    }
+
+    /// "Tue 9–10 AM".
+    private func name(of slot: ActivityHourSlot, short: Bool, calendar: Calendar) -> String {
+        let start = calendar.date(from: DateComponents(year: 2026, month: 1, day: 5, hour: slot.hour)) ?? Date()
+        return calendar.shortWeekdaySymbols[slot.weekday] + " " + ActivityCallout.hourRange(start, calendar: calendar)
+    }
+
+    /// One hour, read aloud.
+    private func spoken(of slot: ActivityHourSlot) -> String {
+        let cell = map[weekday: slot.weekday, hour: slot.hour]
+        guard cell.total > 0 else { return "\(name(of: slot)), nothing counted" }
+        return ([name(of: slot), ActivityDuration.string(cell.total)] + Self.parts(of: cell)).joined(separator: ", ")
     }
 
     private static func parts(of cell: ActivityHeatmap.Cell) -> [String] {
@@ -341,19 +440,19 @@ struct ActivityDrillList: View {
     private func row(_ item: ActivityDrill, indent: CGFloat, expansion: Bool?, key: String) -> some View {
         let line = HStack(spacing: 6) {
             Text(verbatim: item.name)
-                .font(.system(size: 11))
-                .foregroundStyle(item.id == ActivityDrill.unnamedID ? .secondary : .primary)
+                .font(.solanum(.caption))
+                .foregroundStyle(item.id == ActivityDrill.unnamedID ? Solanum.inkMuted : Solanum.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             Text(ActivityDuration.string(item.seconds))
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption, weight: .medium, design: .rounded))
+                .foregroundStyle(Solanum.inkMuted)
                 .monospacedDigit()
             if let expansion {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption, weight: .semibold))
+                    .foregroundStyle(Solanum.inkFaint)
                     .rotationEffect(.degrees(expansion ? 90 : 0))
                     .accessibilityHidden(true)
             }
@@ -377,8 +476,8 @@ struct ActivityDrillList: View {
     private func more(_ count: Int, indent: CGFloat) -> some View {
         if count > Self.rowLimit {
             Text("and \(count - Self.rowLimit) more")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkFaint)
                 .padding(.leading, indent)
                 .padding(.vertical, 3)
         }

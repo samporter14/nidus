@@ -409,6 +409,12 @@ final class FocusController: ObservableObject {
         historyVersion += 1
     }
 
+    /// For a demo or a render that rewrote `history` directly: summaries
+    /// worked out from the old record are stale.
+    func historyDidChange() {
+        historyVersion += 1
+    }
+
     /// Moves only when the record is wiped, unlike `historyVersion`.
     private(set) var historyClears = 0
 

@@ -378,7 +378,7 @@ struct FocusMenuHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: title)
-                .font(.system(size: 13, weight: .medium))
+                .font(.solanum(.body, weight: .medium))
                 .lineLimit(1)
             Text(verbatim: model.clockText)
                 .font(.system(size: 28, weight: .light))

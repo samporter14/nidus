@@ -17,7 +17,7 @@ struct BlockedListDisclosure: View {
         } label: {
             Text(verbatim: state.list?.mode == .allow ? "Show what's allowed" : "Show what's blocked")
         }
-        .font(.system(size: 12))
+        .font(.solanum(.label, weight: .regular))
         .foregroundStyle(Solanum.inkMuted)
         .tint(Solanum.clayText)
         .onDisappear { state.reset() }
@@ -38,13 +38,13 @@ struct BlockedListContentView: View {
             }
             ForEach(list.sections) { section in
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: section.title).font(.system(size: 12, weight: .semibold))
+                    Text(verbatim: section.title).font(.solanum(.label, weight: .semibold))
                     ForEach(section.apps) { app in
                         HStack(spacing: 6) {
                             BlockedAppIcon(bundleID: app.bundleID)
                             Text(verbatim: app.name)
                             if app.neverBlocked {
-                                Text("never blocked").font(.system(size: 11)).foregroundStyle(Solanum.inkMuted)
+                                Text("never blocked").font(.solanum(.caption)).foregroundStyle(Solanum.inkMuted)
                             }
                         }
                         .accessibilityElement(children: .combine)
@@ -58,7 +58,7 @@ struct BlockedListContentView: View {
                 }
             }
         }
-        .font(.system(size: 12))
+        .font(.solanum(.label, weight: .regular))
     }
 }
 
