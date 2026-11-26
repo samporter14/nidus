@@ -56,6 +56,7 @@ struct FocusActivityPage: View {
     @State private var digestCache = ActivityDigestCache()
     @State private var displayedHeatmap = ActivityHeatmap()
     @State private var displayedWeek: ActivityWeek?
+    @State private var displayedTrends: ActivityTrends?
     @State private var displayedChains: [ActivityDriftChain]?
     /// Whether the week, hour and drift digest has arrived: until it has,
     /// their cards hold their height as an empty track.
@@ -117,6 +118,7 @@ struct FocusActivityPage: View {
                         dailyPattern(scope.totals, sessions: rangeSessions)
                     }
                     weekGlance
+                    if period != .today { trendsCard }
                     hourHeatmap
                     drift
                     ActivitySortCard(model: model, items: displayedUncategorized)
@@ -458,6 +460,23 @@ struct FocusActivityPage: View {
         }
     }
 
+    private var trendsCard: some View {
+        NidusSettingsSection {
+            VStack(alignment: .leading, spacing: 3) {
+                settingsSectionHeader("Trends")
+                Text("Each category over the kept history: a month by day, a quarter by week.")
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+                if chartsIgnoreFilters { unfilteredNote }
+            }
+        } content: {
+            reserved(displayedTrends != nil, minHeight: 205) {
+                if let displayedTrends { ActivityTrendChart(trends: displayedTrends, calendar: calendar) }
+            }
+            .padding(.vertical, 8)
+        }
+    }
+
     private func open(day: Date) {
         let offset = ActivityPeriod.dayOffset(of: day, from: effectiveNow, calendar: calendar)
         if period != .today { period = .today }
@@ -532,7 +551,9 @@ struct FocusActivityPage: View {
     private func reloadDigest(_ request: ActivityDigestRequest) async {
         guard let recorder = model.controller?.activityRecorder else { return }
         let grid = dayKeys(from: request.start, to: request.end)
+        let trending = period != .today
         let week = ActivityWeek.keys(ending: request.weekEnd, calendar: calendar)
+            + (trending ? ActivityTrends.keys(ending: request.weekEnd, calendar: calendar) : [])
         let shownDays = dayKeys(from: request.shownStart, to: request.end)
         let today = ActivityDayLog.key(for: Date(), calendar: calendar)
         // Today is still being written, and the recorder has the latest of it.
@@ -549,6 +570,10 @@ struct FocusActivityPage: View {
         if !digestLoaded { digestLoaded = true }
         let shown = ActivityWeek(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
         if shown != displayedWeek { displayedWeek = shown }
+        if trending {
+            let trends = ActivityTrends(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
+            if trends != displayedTrends { displayedTrends = trends }
+        }
         let chains = ActivityDrift.top(digest.chains.values)
         if chains != displayedChains { displayedChains = chains }
     }
