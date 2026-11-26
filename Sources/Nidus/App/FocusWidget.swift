@@ -596,7 +596,7 @@ struct FocusWidget: View {
         HStack(alignment: .bottom, spacing: NidusSpacing.md) {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: model.goal.isEmpty ? "Blocking \(model.runningSummary)" : model.goal)
-                    .font(.system(size: model.goal.isEmpty ? 13 : 15, weight: model.goal.isEmpty ? .regular : .medium))
+                    .font(model.goal.isEmpty ? .solanum(.body, weight: .regular) : .solanum(.title, weight: .medium))
                     .foregroundStyle(model.goal.isEmpty ? Solanum.inkMuted : Solanum.ink)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -715,7 +715,7 @@ struct FocusWidget: View {
                 }
                 .padding(.bottom, 8)
             }
-            ProgressTrack(progress: model.breakProgress, tint: .gray)
+            ProgressTrack(progress: model.breakProgress, tint: Solanum.other)
             breakRestrictions
             FocusInboxRow(model: model)
         }
@@ -763,7 +763,7 @@ struct FocusWidget: View {
         Text(verbatim: model.clockText)
             .font(.system(size: size, weight: .light))
             .monospacedDigit()
-            .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
+            .foregroundStyle(Solanum.inkMuted)
             .accessibilityLabel("Break, \(FocusFormat.spoken(model.breakRemaining))")
     }
 
@@ -780,7 +780,7 @@ struct FocusWidget: View {
         Text(verbatim: model.clockText)
             .font(.system(size: size, weight: .light))
             .monospacedDigit()
-            .foregroundStyle(model.isPaused ? AdaptiveColors.surfaceTertiaryText : AdaptiveColors.surfacePrimaryText)
+            .foregroundStyle(model.isPaused ? Solanum.inkMuted : Solanum.ink)
             .accessibilityLabel(model.isOpenEnded
                 ? "Focused for \(FocusFormat.spoken(model.elapsed).replacingOccurrences(of: " left", with: ""))"
                 : FocusFormat.spoken(model.remaining))
@@ -798,7 +798,8 @@ struct FocusWidget: View {
     }
 
     private var progressBar: some View {
-        ProgressTrack(progress: model.progress, tint: model.isPaused ? .gray : FocusPalette.clay)
+        ProgressTrack(progress: model.progress, tint: model.isPaused ? Solanum.other : Solanum.focus,
+                      total: model.engine?.session?.budget)
     }
 }
 
@@ -829,18 +830,25 @@ enum IdleNudge: Equatable, CaseIterable {
 struct ProgressTrack: View {
     let progress: Double
     let tint: Color
+    /// The session's total length. When it changes (time added to a running
+    /// session) the fill glides to its new fraction once; the per-second tick
+    /// moves `progress` alone and is never animated.
+    var total: TimeInterval?
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         GeometryReader { geometry in
             let fraction = min(1, max(0, progress))
             ZStack(alignment: .leading) {
-                Capsule().fill(Solanum.track)
+                Capsule().fill(Solanum.track(contrast))
                 if fraction > 0 {
                     Capsule().fill(tint).frame(width: geometry.size.width * fraction)
                 }
             }
         }
         .frame(height: 6)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.35), value: total)
         .accessibilityHidden(true)
     }
 }

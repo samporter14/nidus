@@ -572,7 +572,7 @@ struct FocusCategoryPage: View {
                 if isWork {
                     Text("Work is for counting time. It is never blocked and never offered when you start a session.")
                         .font(.solanum(.label, weight: .regular))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Solanum.inkMuted)
                 }
                 NidusSettingsCard {
                     NidusControlRow(title: "Name") {
@@ -585,6 +585,10 @@ struct FocusCategoryPage: View {
                         NidusSymbolPicker(selection: symbolBinding)
                     }
                     if !isWork {
+                        // Work is always drawn in work's own colour.
+                        NidusControlRow(title: "Colour", infoTip: CategoryColourPicker.hint) {
+                            CategoryColourPicker(selection: colourBinding)
+                        }
                         NidusControlRow(title: "Counts as",
                                         infoTip: "How Activity reads time here. Work counts as work, Neutral is never drift, Distracting is what drift and the hour grid flag. It doesn't change what a session blocks.") {
                             Picker("Counts as", selection: roleBinding) {
@@ -693,6 +697,15 @@ struct FocusCategoryPage: View {
     private var roleBinding: Binding<FocusCategory.Role> {
         Binding(get: { category?.role ?? .distracting },
                 set: { role in update { $0.role = role } })
+    }
+
+    /// The category's chart hue: its saved one, else the one Activity gives it.
+    private var colourBinding: Binding<Int> {
+        Binding(get: {
+                    if let saved = category?.color, (0..<Solanum.seriesCount).contains(saved) { return saved }
+                    return CategoryPalette.slots(for: model.categories)[categoryID] ?? 0
+                },
+                set: { slot in update { $0.color = slot } })
     }
 
     private var symbolBinding: Binding<String> {

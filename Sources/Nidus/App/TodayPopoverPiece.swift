@@ -265,14 +265,7 @@ private struct TodayRankRow: View {
                     .foregroundStyle(Solanum.inkMuted)
                     .monospacedDigit()
             }
-            GeometryReader { proxy in
-                Capsule().fill(Solanum.track)
-                    .overlay(alignment: .leading) {
-                        Capsule().fill(tint.opacity(0.85))
-                            .frame(width: max(3, proxy.size.width * min(1, item.seconds / max(1, maximum))))
-                    }
-            }
-            .frame(height: 3)
+            SolanumMagnitudeBar(fraction: item.seconds / max(1, maximum), color: tint)
         }
         .frame(maxHeight: .infinity, alignment: .center)
         .accessibilityElement(children: .combine)
