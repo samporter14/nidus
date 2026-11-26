@@ -148,7 +148,9 @@ struct ActivityWeekGlance: View {
                         Text(verbatim: delta.changeText)
                             .foregroundStyle(Solanum.inkMuted)
                             .monospacedDigit()
-                            .frame(width: 66, alignment: .trailing)
+                            .lineLimit(1)
+                            .fixedSize()
+                            .frame(minWidth: 66, alignment: .trailing)
                     }
                 }
                 .font(.solanum(.caption))

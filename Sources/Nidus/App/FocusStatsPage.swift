@@ -51,14 +51,13 @@ struct FocusStatsPage: View {
         }
     }
 
-    /// "Last six months" and its graph, on a Solanum card.
+    /// "Last six months" and its graph, on its section's card (as on Activity).
     private func graphCard(_ stats: FocusStats) -> some View {
         VStack(alignment: .leading, spacing: NidusSpacing.sm) {
             Overline("Last six months")
             ContributionGraph(stats: stats)
         }
         .padding(14)
-        .solanumCard()
     }
 
     @ViewBuilder
@@ -73,7 +72,6 @@ struct FocusStatsPage: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             .padding(.vertical, 6)
-            .solanumCard()
             .listRowBackground(Color.clear)
             .listRowInsets(EdgeInsets())
         }
@@ -162,7 +160,6 @@ struct FocusStatsPage: View {
         }
         .padding(.vertical, 4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .solanumCard()
     }
 
     private func history(_ stats: FocusStats) -> some View {

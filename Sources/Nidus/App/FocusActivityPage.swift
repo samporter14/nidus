@@ -476,7 +476,7 @@ struct FocusActivityPage: View {
             }
             .activitySectionAnchor(.hours, tracker: tracker)
         } content: {
-            reserved(digestLoaded, minHeight: 200) {
+            reserved(digestLoaded, minHeight: 164) {
                 ActivityHourHeatmap(map: displayedHeatmap, calendar: calendar, loadDetail: hourDetail)
             }
             .padding(.vertical, 8)
@@ -520,7 +520,7 @@ struct FocusActivityPage: View {
             }
             .activitySectionAnchor(.drift, tracker: tracker)
         } content: {
-            reserved(displayedChains != nil, minHeight: 120) {
+            reserved(displayedChains != nil, minHeight: 90) {
                 if let displayedChains {
                     ActivityDriftList(chains: displayedChains, categorizer: displayedCategorizer)
                 }
