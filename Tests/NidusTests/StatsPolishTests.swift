@@ -2,7 +2,7 @@ import SwiftUI
 import Testing
 @testable import Nidus
 
-@Suite("Stats polish")
+@MainActor @Suite("Stats polish")
 struct StatsPolishTests {
     private var calendar: Calendar {
         var c = Calendar(identifier: .gregorian)
