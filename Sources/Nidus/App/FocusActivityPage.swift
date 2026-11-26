@@ -130,20 +130,20 @@ struct FocusActivityPage: View {
         NidusSettingsSection {
             VStack(alignment: .leading, spacing: 5) {
                 Text("Activity")
-                    .font(.system(size: 28, weight: .regular, design: .serif))
-                    .foregroundStyle(.primary)
+                    .font(.solanum(.display))
+                    .foregroundStyle(Solanum.ink)
                 Text(model.activityAllDayEnabled ? "A record of your day: what was in front, and when."
                                                  : "A record of what was in front during focus sessions.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.body))
+                    .foregroundStyle(Solanum.inkMuted)
                 if let end = model.activityPauseEnd {
                     HStack(spacing: 8) {
                         Text("Paused until \(end.formatted(date: .omitted, time: .shortened))")
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.solanum(.label))
                             .foregroundStyle(ActivityInk.clay)
                         Button("Resume", action: model.resumeActivity)
                             .buttonStyle(.plain)
-                            .font(.system(size: 12, weight: .medium))
+                            .font(.solanum(.label))
                             .foregroundStyle(ActivityInk.clay)
                             .underline()
                     }
@@ -197,8 +197,8 @@ struct FocusActivityPage: View {
                 }
                 .buttonStyle(.plain)
                 Text(periodLabel)
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption, weight: .medium))
+                    .foregroundStyle(Solanum.inkMuted)
                     .lineLimit(1)
                     .frame(maxWidth: 96)
             }
@@ -207,8 +207,8 @@ struct FocusActivityPage: View {
                 Toggle("During focus only", isOn: $focusOnly)
                     .toggleStyle(.switch)
                     .controlSize(.mini)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                     .padding(.bottom, 2)
             }
@@ -223,12 +223,12 @@ struct FocusActivityPage: View {
                     .foregroundStyle(ActivityInk.clay)
                 Text("No activity in this view")
                     .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .foregroundStyle(Solanum.ink)
                 Text(model.activityAllDayEnabled
                      ? "Nothing was counted in the selected time range and project."
                      : "Activity appears here for recorded focus sessions in the selected time range and project. To see your whole day, turn on Track all day under Tracking.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
                     .multilineTextAlignment(.center)
                     .frame(maxWidth: 320)
             }
@@ -248,8 +248,8 @@ struct FocusActivityPage: View {
             }
             .padding(.top, 8)
             Text(verbatim: ActivityOverviewLine.text(lead: totals.lead, sessions: sessions.count, withinFocus: !allDay))
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.label, weight: .regular))
+                .foregroundStyle(Solanum.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
@@ -267,8 +267,8 @@ struct FocusActivityPage: View {
             HStack(spacing: 6) {
                 Spacer(minLength: 0)
                 Text("Color by")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                 Picker("Color by", selection: Binding(get: { byCategory }, set: { model.activityRibbonByCategory = $0 })) {
                     Text("App").tag(false)
                     Text("Category").tag(true)
@@ -319,8 +319,8 @@ struct FocusActivityPage: View {
     /// Says the chart under it is not narrowed by the filters above.
     private var unfilteredNote: some View {
         Text(ActivityFilterScope.unfilteredCaption)
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+            .font(.solanum(.caption))
+            .foregroundStyle(Solanum.inkMuted)
     }
 
     @ViewBuilder
@@ -330,8 +330,8 @@ struct FocusActivityPage: View {
                 VStack(alignment: .leading, spacing: 3) {
                     settingsSectionHeader("Week at a glance")
                     Text("Seven days by category, against the seven before.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                     if chartsIgnoreFilters { unfilteredNote }
                 }
             } content: {
@@ -353,8 +353,8 @@ struct FocusActivityPage: View {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Hour by hour")
                 Text(period == .today ? "The last four weeks, by weekday and hour." : "This range, by weekday and hour.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                 if chartsIgnoreFilters { unfilteredNote }
             }
         } content: {
@@ -396,8 +396,8 @@ struct FocusActivityPage: View {
                 VStack(alignment: .leading, spacing: 3) {
                     settingsSectionHeader("Drift")
                     Text("Three minutes or more on one thing, then as long on a distraction straight after.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                     if chartsIgnoreFilters { unfilteredNote }
                 }
             } content: {
@@ -435,8 +435,8 @@ struct FocusActivityPage: View {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Daily pattern")
                 Text("Observed time by the app or service in front.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
             NidusSettingsCard {
@@ -450,7 +450,7 @@ struct FocusActivityPage: View {
                         ActivityLegend(color: ActivityInk.series(index), title: item.name)
                     }
                 }
-                .font(.system(size: 10))
+                .font(.solanum(.caption))
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.top, 3)
             }
@@ -464,8 +464,8 @@ struct FocusActivityPage: View {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Project insight")
                 Text("Observed activity across projects in this time range.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
             NidusSettingsCard {
@@ -477,27 +477,27 @@ struct FocusActivityPage: View {
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(item.name)
-                                    .font(.system(size: 12, weight: .medium))
-                                    .foregroundStyle(.primary)
+                                    .font(.solanum(.label))
+                                    .foregroundStyle(Solanum.ink)
                                     .lineLimit(1)
                                 Text(item.lead.map { "Most observed: \($0.name)" } ?? "No observed activity")
-                                    .font(.system(size: 10))
-                                    .foregroundStyle(.secondary)
+                                    .font(.solanum(.caption))
+                                    .foregroundStyle(Solanum.inkMuted)
                                     .lineLimit(1)
                             }
                             Spacer(minLength: 8)
                             VStack(alignment: .trailing, spacing: 3) {
                                 Text(ActivityDuration.string(item.observed))
-                                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                                    .font(.solanum(.caption, weight: .medium, design: .rounded))
                                     .foregroundStyle(ActivityInk.blue)
                                     .monospacedDigit()
                                 Text("\(item.sessionCount) \(item.sessionCount == 1 ? "session" : "sessions")")
-                                    .font(.system(size: 9))
-                                    .foregroundStyle(.tertiary)
+                                    .font(.solanum(.caption))
+                                    .foregroundStyle(Solanum.inkMuted)
                             }
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 9, weight: .semibold))
-                                .foregroundStyle(.tertiary)
+                                .font(.solanum(.caption, weight: .semibold))
+                                .foregroundStyle(Solanum.inkFaint)
                         }
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
@@ -532,8 +532,8 @@ struct FocusActivityPage: View {
             .padding(.vertical, 6)
             if count == 0 {
                 Text(listKind.emptyNote)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.vertical, 6)
             }
@@ -563,7 +563,7 @@ struct FocusActivityPage: View {
                     else { withAnimation(.easeInOut(duration: 0.2)) { expandedList.toggle() } }
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 11, weight: .medium))
+                .font(.solanum(.caption, weight: .medium))
                 .foregroundStyle(ActivityInk.clay)
                 .frame(maxWidth: .infinity, alignment: .trailing)
                 .padding(.top, 3)
@@ -582,26 +582,26 @@ struct FocusActivityPage: View {
         let label = displayedCategorizer.label(of: id == ActivityCategorizer.uncategorizedID ? nil : id)
         return HStack(spacing: 6) {
             Image(systemName: label.symbol)
-                .font(.system(size: 10, weight: .medium))
+                .font(.solanum(.caption, weight: .medium))
                 .foregroundStyle(ActivityInk.clay)
                 .accessibilityHidden(true)
             Text(verbatim: "Only \(label.name)")
-                .font(.system(size: 11, weight: .medium))
+                .font(.solanum(.caption, weight: .medium))
                 .foregroundStyle(ActivityInk.clay)
                 .lineLimit(1)
             Button {
                 categoryFilter = nil
             } label: {
                 Image(systemName: "xmark.circle.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
             }
             .buttonStyle(.plain)
             .help("Show everything again")
             .accessibilityLabel("Clear the \(label.name) filter")
             Text("Figures above cover everything.")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkMuted)
                 .lineLimit(1)
                 .truncationMode(.tail)
         }
@@ -614,8 +614,8 @@ struct FocusActivityPage: View {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Session recaps")
                 Text("Open a session to see its observed activity.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
             NidusSettingsCard {
@@ -625,8 +625,8 @@ struct FocusActivityPage: View {
                         Spacer()
                         Button("Clear") { self.selectedDay = nil }
                     }
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                 }
                 ForEach(Array(rows.prefix(expandedSessions ? rows.count : 12))) { entry in
                     Button { selectedSession = entry } label: {
@@ -642,7 +642,7 @@ struct FocusActivityPage: View {
                         else { withAnimation(.easeInOut(duration: 0.2)) { expandedSessions.toggle() } }
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.solanum(.caption, weight: .medium))
                     .foregroundStyle(ActivityInk.clay)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
@@ -1099,28 +1099,28 @@ private struct ActivityCategoryRow: View {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 9) {
                     Image(systemName: item.symbol)
-                        .font(.system(size: 11))
-                        .foregroundStyle(selected ? ActivityInk.clay : .secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(selected ? ActivityInk.clay : Solanum.inkMuted)
                         .frame(width: 22, alignment: .leading)
                         .accessibilityHidden(true)
                     Text(verbatim: item.name)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.primary)
+                        .font(.solanum(.label))
+                        .foregroundStyle(Solanum.ink)
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 8)
                     Text(item.percentText)
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption, weight: .medium, design: .rounded))
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                     Text(ActivityDuration.string(item.seconds))
-                        .font(.system(size: 11, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption, weight: .medium, design: .rounded))
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                         .frame(minWidth: 52, alignment: .trailing)
                 }
                 GeometryReader { proxy in
-                    Capsule().fill(Color.primary.opacity(0.055))
+                    Capsule().fill(Solanum.track)
                         .overlay(alignment: .leading) {
                             Capsule().fill(ActivityListKind.categories.tint.opacity(0.85))
                                 .frame(width: Swift.max(4, proxy.size.width * min(1, item.share)))
@@ -1154,9 +1154,9 @@ private struct ActivityFigure: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
-            Text(label).font(.system(size: 11)).foregroundStyle(.secondary)
+            Text(label).font(.solanum(.caption)).foregroundStyle(Solanum.inkMuted)
             Text(verbatim: value)
-                .font(.system(size: 28, weight: .regular, design: .serif))
+                .font(.solanum(.display))
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
@@ -1209,7 +1209,7 @@ private struct ActivityDailyChart: View {
                             .frame(height: 85)
                             Text(axisLabel(day.date))
                                 .font(.system(size: period == .month ? 8 : 9, weight: .medium))
-                                .foregroundStyle(selectedDay.map { calendar.isDate($0, inSameDayAs: day.date) } == true ? ActivityInk.clay : Color.secondary)
+                                .foregroundStyle(selectedDay.map { calendar.isDate($0, inSameDayAs: day.date) } == true ? ActivityInk.clay : Solanum.inkMuted)
                                 .lineLimit(1)
                                 .minimumScaleFactor(0.65)
                         }
@@ -1226,8 +1226,8 @@ private struct ActivityDailyChart: View {
                 Spacer()
                 Text("Up to " + ActivityDuration.string(ceiling))
             }
-            .font(.system(size: 9))
-            .foregroundStyle(.tertiary)
+            .font(.solanum(.caption))
+            .foregroundStyle(Solanum.inkFaint)
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Daily observed activity chart")
@@ -1265,7 +1265,7 @@ struct ActivityLegend: View {
     var body: some View {
         HStack(spacing: 4) {
             Circle().fill(color).frame(width: 6, height: 6)
-            Text(title).foregroundStyle(.secondary)
+            Text(title).foregroundStyle(Solanum.inkMuted)
         }
         .accessibilityElement(children: .combine)
     }
@@ -1304,43 +1304,43 @@ private struct ActivityRankRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 9) {
                 Text(String(format: "%02d", rank))
-                    .font(.system(size: 10, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.overline, weight: .medium))
+                    .foregroundStyle(Solanum.inkFaint)
                     .frame(width: 22, alignment: .leading)
                 Text(verbatim: item.name)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .font(.solanum(.label))
+                    .foregroundStyle(Solanum.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
                 if reopen != nil {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.solanum(.caption, weight: .semibold))
                         .foregroundStyle(ActivityInk.clay)
                         .opacity(hovering ? 1 : 0)
                         .accessibilityHidden(true)
                 }
                 Text(ActivityDuration.string(item.seconds))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption, weight: .medium, design: .rounded))
+                    .foregroundStyle(Solanum.inkMuted)
                     .monospacedDigit()
                 if let expansion {
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption, weight: .semibold))
+                        .foregroundStyle(Solanum.inkFaint)
                         .rotationEffect(.degrees(expansion ? 90 : 0))
                         .accessibilityHidden(true)
                 }
             }
             if let subtitle = item.subtitle, !subtitle.isEmpty {
                 Text(verbatim: subtitle)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkFaint)
                     .lineLimit(1)
                     .padding(.leading, 31)
             }
             GeometryReader { proxy in
-                Capsule().fill(Color.primary.opacity(0.055))
+                Capsule().fill(Solanum.track)
                     .overlay(alignment: .leading) {
                         Capsule().fill(tint.opacity(0.85))
                             .frame(width: Swift.max(4, proxy.size.width * min(1, item.seconds / maximum)))
@@ -1370,14 +1370,14 @@ private struct ActivitySessionRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 6) {
                     Text(entry.start.formatted(.dateTime.weekday(.abbreviated).month(.abbreviated).day()))
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(.primary)
+                        .font(.solanum(.caption, weight: .medium))
+                        .foregroundStyle(Solanum.ink)
                     Text(entry.start.formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                     if !hasDetails {
                         Text("APP ONLY")
-                            .font(.system(size: 8, weight: .semibold, design: .rounded))
+                            .font(.solanum(.caption, weight: .semibold, design: .rounded))
                             .tracking(0.4)
                             .foregroundStyle(ActivityInk.blue)
                             .padding(.horizontal, 5)
@@ -1386,22 +1386,22 @@ private struct ActivitySessionRow: View {
                     }
                 }
                 Text(entry.goal.isEmpty ? (entry.projectName ?? "Focus session") : entry.goal)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
                     .lineLimit(1)
             }
             Spacer(minLength: 6)
             VStack(alignment: .trailing, spacing: 3) {
                 Text(ActivityDuration.string(entry.focused))
-                    .font(.system(size: 11, weight: .semibold, design: .rounded))
-                    .foregroundStyle(.primary)
+                    .font(.solanum(.caption, weight: .semibold, design: .rounded))
+                    .foregroundStyle(Solanum.ink)
                 Text("\(ActivityDuration.string(observed)) observed")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkFaint)
             }
             Image(systemName: "chevron.right")
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundStyle(.tertiary)
+                .font(.solanum(.caption, weight: .semibold))
+                .foregroundStyle(Solanum.inkFaint)
                 .padding(.leading, 3)
         }
         .padding(.vertical, 6)
@@ -1440,12 +1440,12 @@ struct ActivitySessionRecap: View {
                 VStack(alignment: .leading, spacing: 17) {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(entry.goal.isEmpty ? (entry.projectName ?? "Focus session") : entry.goal)
-                            .font(.system(size: 28, weight: .regular, design: .serif))
-                            .foregroundStyle(.primary)
+                            .font(.solanum(.display))
+                            .foregroundStyle(Solanum.ink)
                             .fixedSize(horizontal: false, vertical: true)
                         Text(entry.start.formatted(.dateTime.weekday(.wide).month(.wide).day()) + " · " + entry.start.formatted(.dateTime.hour().minute()))
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .font(.solanum(.label, weight: .regular))
+                            .foregroundStyle(Solanum.inkMuted)
                     }
                     HStack(spacing: 0) {
                         ActivityFigure(label: "Focused", value: ActivityDuration.string(entry.focused), color: ActivityInk.clay)
@@ -1462,8 +1462,8 @@ struct ActivitySessionRecap: View {
                     }
                     if !entry.goal.isEmpty {
                         Label(entry.finished.map { $0 ? "Goal finished" : "Goal not finished" } ?? "Goal answer not recorded", systemImage: entry.finished == true ? "checkmark.circle" : "circle")
-                            .font(.system(size: 12))
-                            .foregroundStyle(.secondary)
+                            .font(.solanum(.label, weight: .regular))
+                            .foregroundStyle(Solanum.inkMuted)
                     }
                 }
                 .padding(.horizontal, 24)
@@ -1479,8 +1479,8 @@ struct ActivitySessionRecap: View {
         return VStack(alignment: .leading, spacing: 9) {
             if total > 0 {
                 Text("Where this session went")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label))
+                    .foregroundStyle(Solanum.inkMuted)
                 GeometryReader { proxy in
                     HStack(spacing: 3) {
                         ForEach(Array(services.enumerated()), id: \.element.id) { index, service in
@@ -1511,7 +1511,7 @@ struct ActivitySessionRecap: View {
             if !documents.isEmpty { recapGroup("Documents", rows: documents) }
             if activity.isEmpty {
                 Text("No activity details were observed during this session.")
-                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular)).foregroundStyle(Solanum.inkMuted)
             }
         }
     }
@@ -1519,9 +1519,9 @@ struct ActivitySessionRecap: View {
     private var legacyRecap: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("App-only coverage", systemImage: "info.circle")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(ActivityInk.blue)
+                .font(.solanum(.label)).foregroundStyle(ActivityInk.blue)
             Text("Detailed activity was not recorded for this session. Any available app totals are shown below.")
-                .font(.system(size: 12)).foregroundStyle(.secondary)
+                .font(.solanum(.label, weight: .regular)).foregroundStyle(Solanum.inkMuted)
             recapGroup("Apps observed", rows: legacyApps)
         }
     }
@@ -1571,25 +1571,25 @@ private struct ActivityRecapGroup: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text(title.uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.solanum(.caption, weight: .semibold))
                 .tracking(0.6)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Solanum.inkMuted)
             if rows.isEmpty {
-                Text("No time recorded").font(.system(size: 11)).foregroundStyle(.tertiary)
+                Text("No time recorded").font(.solanum(.caption)).foregroundStyle(Solanum.inkFaint)
             } else {
                 ForEach(expanded ? rows : Array(rows.prefix(Self.collapsedCount))) { row in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(verbatim: row.name).lineLimit(1).truncationMode(.middle)
                             if let subtitle = row.subtitle, !subtitle.isEmpty {
-                                Text(verbatim: subtitle).font(.system(size: 9)).foregroundStyle(.tertiary).lineLimit(1)
+                                Text(verbatim: subtitle).font(.solanum(.caption)).foregroundStyle(Solanum.inkFaint).lineLimit(1)
                             }
                         }
                         Spacer(minLength: 8)
                         Text(ActivityDuration.string(row.seconds)).monospacedDigit()
                     }
-                    .font(.system(size: 12))
-                    .foregroundStyle(.primary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.ink)
                     .padding(.vertical, 3)
                 }
                 if rows.count > Self.collapsedCount {
@@ -1598,14 +1598,14 @@ private struct ActivityRecapGroup: View {
                         else { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
                     }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10, weight: .medium))
+                    .font(.solanum(.caption, weight: .medium))
                     .foregroundStyle(ActivityInk.clay)
                     .frame(maxWidth: .infinity, alignment: .trailing)
                 }
             }
         }
         .padding(12)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Solanum.track, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -1643,8 +1643,8 @@ private struct ActivitySessionTimeline: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Observed timeline")
-                .font(.system(size: 12, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.label))
+                .foregroundStyle(Solanum.inkMuted)
             if let segments = entry.activitySegments {
                 HStack(spacing: 0) {
                     ActivityTimelineMetric(label: "Context switches", value: "\(entry.activitySwitchCount ?? 0)", color: ActivityInk.clay)
@@ -1657,14 +1657,14 @@ private struct ActivitySessionTimeline: View {
                 .padding(.vertical, 4)
                 if entry.activityTimelineTruncated == true {
                     Label("Earlier observations were omitted; metrics describe the retained timeline.", systemImage: "info.circle")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 if segments.isEmpty {
                     Text("No activity intervals were observed during this session.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkFaint)
                 } else {
                     let visible = expanded ? blocks : Array(blocks.prefix(12))
                     VStack(spacing: 0) {
@@ -1680,23 +1680,23 @@ private struct ActivitySessionTimeline: View {
                             expanded.toggle()
                         }
                         .buttonStyle(.plain)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.solanum(.caption, weight: .medium))
                         .foregroundStyle(ActivityInk.clay)
                         .frame(maxWidth: .infinity, alignment: .trailing)
                     }
                 }
             } else {
                 Label("Timeline unavailable for this older session", systemImage: "clock.badge.questionmark")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.solanum(.caption, weight: .medium))
                     .foregroundStyle(ActivityInk.blue)
                 Text("This session has app totals, but no ordered observations were saved. Context switches and uninterrupted stretches cannot be determined.")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(12)
-        .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .background(Solanum.track, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 }
 
@@ -1708,8 +1708,8 @@ private struct ActivityTimelineMetric: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label)
-                .font(.system(size: 8, weight: .medium))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption, weight: .medium))
+                .foregroundStyle(Solanum.inkMuted)
                 .lineLimit(2)
                 .fixedSize(horizontal: false, vertical: true)
             Text(verbatim: value)
@@ -1759,22 +1759,22 @@ private struct ActivityTimelineRow: View {
             VStack(alignment: .leading, spacing: 3) {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text(block.start.formatted(.dateTime.hour().minute()) + "–" + block.end.formatted(.dateTime.hour().minute()))
-                        .font(.system(size: 9, weight: .medium, design: .monospaced))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.overline, weight: .medium))
+                        .foregroundStyle(Solanum.inkFaint)
                     Spacer(minLength: 4)
                     Text(ActivityDuration.string(block.seconds))
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
+                        .font(.solanum(.caption, weight: .medium, design: .rounded))
                         .foregroundStyle(ActivityInk.blue)
                         .monospacedDigit()
                 }
                 Text(block.contextName)
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(.primary)
+                    .font(.solanum(.caption, weight: .medium))
+                    .foregroundStyle(Solanum.ink)
                     .lineLimit(1)
                 if let detail = block.detail {
-                    Text(detail).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(detail).font(.solanum(.caption)).foregroundStyle(Solanum.inkMuted).lineLimit(1)
                 } else if block.firstSegment.site != nil {
-                    Text(block.appName).font(.system(size: 9)).foregroundStyle(.secondary).lineLimit(1)
+                    Text(block.appName).font(.solanum(.caption)).foregroundStyle(Solanum.inkMuted).lineLimit(1)
                 }
             }
             .padding(.bottom, 9)
@@ -1794,8 +1794,8 @@ private struct ActivityTimelineGap: View {
             Text("No observation · \(ActivityDuration.string(end.timeIntervalSince(start))) · \(start.formatted(.dateTime.hour().minute()))–\(end.formatted(.dateTime.hour().minute()))")
             Spacer(minLength: 0)
         }
-        .font(.system(size: 8, weight: .medium))
-        .foregroundStyle(.tertiary)
+        .font(.solanum(.caption, weight: .medium))
+        .foregroundStyle(Solanum.inkFaint)
         .padding(.leading, 18)
         .padding(.bottom, 8)
         .accessibilityElement(children: .combine)

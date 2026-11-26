@@ -212,17 +212,17 @@ struct NextStepRow: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack {
                 Text("Pick up next time")
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.solanum(.label))
                     .foregroundStyle(Solanum.ink)
                 Spacer(minLength: 8)
                 Text(step.isSaved ? "Saved" : "Optional")
-                    .font(.system(size: 11))
+                    .font(.solanum(.caption))
                     .foregroundStyle(Solanum.inkMuted)
             }
             HStack(spacing: NidusSpacing.sm) {
                 TextField("Where will you pick up?", text: Binding(get: { step.text }, set: { step.setText($0) }))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 13))
+                    .font(.solanum(.body))
                     .foregroundStyle(Solanum.ink)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 7)
@@ -245,7 +245,7 @@ struct NextStepRow: View {
             }
             if step.historyIsOff {
                 Text(verbatim: step.historyOffCaption)
-                    .font(.system(size: 11))
+                    .font(.solanum(.caption))
                     .foregroundStyle(AdaptiveColors.surfaceSecondaryText)
                     .lineLimit(1)
             }

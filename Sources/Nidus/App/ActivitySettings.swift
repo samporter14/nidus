@@ -273,7 +273,7 @@ struct ActivityTrackingControls: View {
             .padding(.top, 14)
         } label: {
             Label("Tracking", systemImage: "slider.horizontal.3")
-                .font(.system(size: 14, weight: .medium))
+                .font(.solanum(.title, weight: .medium))
         }
         .tint(FocusPalette.clay)
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in

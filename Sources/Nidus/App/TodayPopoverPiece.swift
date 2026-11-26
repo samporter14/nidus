@@ -76,7 +76,7 @@ struct TodayPopoverPiece: View {
 
     private func note(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12))
+            .font(.solanum(.label, weight: .regular))
             .foregroundStyle(Solanum.inkMuted)
     }
 
@@ -91,13 +91,13 @@ struct TodayPopoverPiece: View {
                         .labelStyle(TrailingIconLabelStyle())
                 }
                 .buttonStyle(.plain)
-                .font(.system(size: 12, weight: .medium))
+                .font(.solanum(.label))
                 .foregroundStyle(Solanum.clayText)
                 .help("Open Activity in Settings")
             }
             if let overview, overview.state == .data {
                 Text(verbatim: Self.totals(overview))
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.solanum(.body, weight: .medium))
                     .foregroundStyle(Solanum.ink)
                     .lineLimit(1)
                     .padding(.leading, 2)
@@ -139,7 +139,7 @@ private struct CategorySplitLine: View {
 
     private func line(_ count: Int) -> some View {
         Text(verbatim: split.text(first: count))
-            .font(.system(size: 12))
+            .font(.solanum(.label, weight: .regular))
             .foregroundStyle(Solanum.inkMuted)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -150,7 +150,7 @@ private struct TrailingIconLabelStyle: LabelStyle {
     func makeBody(configuration: Configuration) -> some View {
         HStack(spacing: 3) {
             configuration.title
-            configuration.icon.font(.system(size: 9, weight: .semibold))
+            configuration.icon.font(.solanum(.caption, weight: .semibold))
         }
     }
 }
@@ -193,7 +193,7 @@ private struct TodayContent: View, Equatable {
         return VStack(alignment: .leading, spacing: 0) {
             if rows.isEmpty {
                 Text(Self.emptyNote(kind))
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.inkMuted)
                     .frame(height: Self.rowHeight, alignment: .leading)
             } else {
@@ -248,25 +248,25 @@ private struct TodayRankRow: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 8) {
                 Text(verbatim: item.name)
-                    .font(.system(size: 12, weight: .medium))
+                    .font(.solanum(.label))
                     .foregroundStyle(Solanum.ink)
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 8)
                 if target != nil {
                     Image(systemName: "arrow.up.right")
-                        .font(.system(size: 9, weight: .semibold))
+                        .font(.solanum(.caption, weight: .semibold))
                         .foregroundStyle(Solanum.clayText)
                         .opacity(hovering ? 1 : 0)
                         .accessibilityHidden(true)
                 }
                 Text(ActivityDuration.string(item.seconds))
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
+                    .font(.solanum(.caption, weight: .medium, design: .rounded))
                     .foregroundStyle(Solanum.inkMuted)
                     .monospacedDigit()
             }
             GeometryReader { proxy in
-                Capsule().fill(Color.primary.opacity(0.055))
+                Capsule().fill(Solanum.track)
                     .overlay(alignment: .leading) {
                         Capsule().fill(tint.opacity(0.85))
                             .frame(width: max(3, proxy.size.width * min(1, item.seconds / max(1, maximum))))

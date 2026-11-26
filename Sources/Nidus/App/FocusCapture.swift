@@ -254,9 +254,9 @@ struct FocusCaptureView: View {
                 SettingsTile(symbol: "tray.and.arrow.down", size: 28)
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Save for later")
-                        .font(.system(size: 14, weight: .medium))
+                        .font(.solanum(.title, weight: .medium))
                     Text("It goes in your inbox. Your session carries on.")
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(.secondary)
                 }
                 .lineLimit(1)
@@ -284,7 +284,7 @@ struct FocusCaptureView: View {
             }
             HStack(spacing: NidusSpacing.sm) {
                 footnote
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
                     .truncationMode(.tail)

@@ -58,7 +58,7 @@ struct WebsiteExceptionsEditor: View {
                 VStack(alignment: .leading, spacing: 2) {
                     settingsSectionHeader("Exceptions")
                     Text(blurb)
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(.secondary)
                 }
             } content: {

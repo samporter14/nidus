@@ -54,15 +54,15 @@ struct ActivityHourHeatmap: View {
     var body: some View {
         if map.isEmpty {
             Text("Nothing was counted here.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkMuted)
         } else {
             VStack(alignment: .leading, spacing: 5) {
                 grid
                 axis
                 Text(verbatim: readout)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .accessibilityHidden(true)
@@ -71,7 +71,7 @@ struct ActivityHourHeatmap: View {
                     ActivityLegend(color: ActivityInk.clay, title: "Distracting")
                     ActivityLegend(color: ActivityInk.series(ActivityInk.quietTint), title: "Everything else")
                 }
-                .font(.system(size: 10))
+                .font(.solanum(.caption))
                 if let selected { panel(selected) }
             }
             .task(id: detailKey) { await reloadDetail() }
@@ -103,16 +103,16 @@ struct ActivityHourHeatmap: View {
             Divider()
             HStack(spacing: 6) {
                 Text(verbatim: name(of: slot))
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.solanum(.caption, weight: .medium))
                 Text(ActivityDuration.string(map[weekday: slot.weekday, hour: slot.hour].total))
-                    .font(.system(size: 10, weight: .medium, design: .rounded))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption, weight: .medium, design: .rounded))
+                    .foregroundStyle(Solanum.inkMuted)
                     .monospacedDigit()
                 Spacer(minLength: 8)
                 Button("Clear") { selected = nil }
                     .buttonStyle(.plain)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
             }
             if let shown {
                 HStack(alignment: .top, spacing: 16) {
@@ -127,18 +127,18 @@ struct ActivityHourHeatmap: View {
     private func column(_ title: String, items: [ActivityHourDetail.Item]) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkFaint)
             ForEach(items) { item in
                 HStack(spacing: 6) {
                     Text(verbatim: item.name)
-                        .font(.system(size: 11))
+                        .font(.solanum(.caption))
                         .lineLimit(1)
                         .truncationMode(.middle)
                     Spacer(minLength: 8)
                     Text(ActivityDuration.string(item.seconds))
-                        .font(.system(size: 10, weight: .medium, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption, weight: .medium, design: .rounded))
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                 }
                 .accessibilityElement(children: .ignore)
@@ -154,8 +154,8 @@ struct ActivityHourHeatmap: View {
             VStack(alignment: .leading, spacing: gap) {
                 ForEach(rows, id: \.self) { weekday in
                     Text(verbatim: calendar.shortWeekdaySymbols[weekday])
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption, weight: .medium))
+                        .foregroundStyle(Solanum.inkFaint)
                         .frame(height: rowHeight)
                 }
             }
@@ -239,8 +239,8 @@ struct ActivityHourHeatmap: View {
             let width = (proxy.size.width - labelWidth) / CGFloat(columns.count)
             ForEach(columns.filter { $0 % 3 == 0 }, id: \.self) { hour in
                 Text(verbatim: Self.hourName(hour, calendar: calendar))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.overline, weight: .medium))
+                    .foregroundStyle(Solanum.inkFaint)
                     .fixedSize()
                     .position(x: labelWidth + (CGFloat(hour - columns[0]) + 0.5) * width, y: 6)
             }
@@ -341,19 +341,19 @@ struct ActivityDrillList: View {
     private func row(_ item: ActivityDrill, indent: CGFloat, expansion: Bool?, key: String) -> some View {
         let line = HStack(spacing: 6) {
             Text(verbatim: item.name)
-                .font(.system(size: 11))
-                .foregroundStyle(item.id == ActivityDrill.unnamedID ? .secondary : .primary)
+                .font(.solanum(.caption))
+                .foregroundStyle(item.id == ActivityDrill.unnamedID ? Solanum.inkMuted : Solanum.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
             Spacer(minLength: 8)
             Text(ActivityDuration.string(item.seconds))
-                .font(.system(size: 10, weight: .medium, design: .rounded))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption, weight: .medium, design: .rounded))
+                .foregroundStyle(Solanum.inkMuted)
                 .monospacedDigit()
             if let expansion {
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption, weight: .semibold))
+                    .foregroundStyle(Solanum.inkFaint)
                     .rotationEffect(.degrees(expansion ? 90 : 0))
                     .accessibilityHidden(true)
             }
@@ -377,8 +377,8 @@ struct ActivityDrillList: View {
     private func more(_ count: Int, indent: CGFloat) -> some View {
         if count > Self.rowLimit {
             Text("and \(count - Self.rowLimit) more")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkFaint)
                 .padding(.leading, indent)
                 .padding(.vertical, 3)
         }

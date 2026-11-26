@@ -22,15 +22,15 @@ struct ActivityWeekGlance: View {
     var body: some View {
         if week.isEmpty {
             Text("Nothing was counted in these seven days.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkMuted)
         } else {
             VStack(alignment: .leading, spacing: 8) {
                 chart
                 labels
                 Text(verbatim: readout)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .accessibilityHidden(true)
@@ -102,11 +102,11 @@ struct ActivityWeekGlance: View {
             ForEach(week.days) { day in
                 VStack(spacing: 1) {
                     Text(verbatim: name(of: day))
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(.tertiary)
+                        .font(.solanum(.caption, weight: .medium))
+                        .foregroundStyle(Solanum.inkFaint)
                     Text(day.parts.isEmpty ? "\u{2013}" : ActivityDuration.string(day.seconds))
-                        .font(.system(size: 9, design: .rounded))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption, design: .rounded))
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                         .lineLimit(1)
                         .minimumScaleFactor(0.8)
@@ -123,27 +123,27 @@ struct ActivityWeekGlance: View {
                 HStack(spacing: 6) {
                     Circle().fill(ActivityInk.series(delta.tint)).frame(width: 6, height: 6)
                     Text(verbatim: delta.name)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(Solanum.ink)
                         .lineLimit(1)
                     Spacer(minLength: 8)
                     Text(ActivityDuration.string(delta.thisWeek))
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Solanum.inkMuted)
                         .monospacedDigit()
                     if week.hasLastWeek {
                         Text(verbatim: delta.changeText)
-                            .foregroundStyle(.tertiary)
+                            .foregroundStyle(Solanum.inkMuted)
                             .monospacedDigit()
                             .frame(width: 66, alignment: .trailing)
                     }
                 }
-                .font(.system(size: 11))
+                .font(.solanum(.caption))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(description(of: delta))
             }
             if !week.hasLastWeek {
                 Text("Nothing to compare with yet: the seven days before are empty.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkFaint)
             }
         }
     }

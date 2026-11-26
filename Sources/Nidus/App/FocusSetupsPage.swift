@@ -19,7 +19,7 @@ struct FocusSetupsPage: View {
             NidusSettingsSection {
                 // The tab is already called Setups.
                 Text("Start a saved session in one click, from the popover or the right-click menu.")
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(.secondary)
             } content: {
                 NidusSettingsCard {
@@ -102,7 +102,7 @@ struct FocusSetupPage: View {
                     VStack(alignment: .leading, spacing: 2) {
                         settingsSectionHeader("Blocking")
                         Text("Pick one or more categories.")
-                            .font(.system(size: 12))
+                            .font(.solanum(.label, weight: .regular))
                             .foregroundStyle(.secondary)
                     }
                 } content: {

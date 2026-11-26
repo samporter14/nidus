@@ -53,8 +53,8 @@ struct ActivityDayRibbon: View {
                     }
                 }
             }
-            .font(.system(size: 10))
-            .foregroundStyle(.secondary)
+            .font(.solanum(.caption))
+            .foregroundStyle(Solanum.inkMuted)
             .frame(maxWidth: .infinity, minHeight: 12, maxHeight: 12, alignment: .leading)
             .clipped()
             .accessibilityHidden(true)
@@ -68,8 +68,8 @@ struct ActivityDayRibbon: View {
             track
             axis
             Text(verbatim: readout)
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkMuted)
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,7 +121,7 @@ struct ActivityDayRibbon: View {
                         Spacer(minLength: 0)
                         if !compact, width >= nameWidth {
                             Text(verbatim: bar.name)
-                                .font(.system(size: 9))
+                                .font(.solanum(.caption))
                                 .foregroundStyle(ActivityInk.clay)
                                 .lineLimit(1)
                         }
@@ -203,8 +203,8 @@ struct ActivityDayRibbon: View {
             ForEach(ribbon.ticks(calendar: calendar), id: \.self) { tick in
                 let x = proxy.size.width * ribbon.position(of: tick)
                 Text(tick.formatted(.dateTime.hour()))
-                    .font(.system(size: 9, weight: .medium, design: .monospaced))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.overline, weight: .medium))
+                    .foregroundStyle(Solanum.inkFaint)
                     .fixedSize()
                     .position(x: min(max(x, 16), proxy.size.width - 16), y: 6)
             }
@@ -220,7 +220,7 @@ struct ActivityDayRibbon: View {
                     .lineLimit(1)
             }
         }
-        .font(.system(size: 10))
+        .font(.solanum(.caption))
         .minimumScaleFactor(0.8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.top, 3)

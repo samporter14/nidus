@@ -15,8 +15,8 @@ struct ActivityDriftList: View {
     var body: some View {
         if chains.isEmpty {
             Text("No drift in this range.")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.caption))
+                .foregroundStyle(Solanum.inkMuted)
         } else {
             VStack(alignment: .leading, spacing: 5) {
                 ForEach(chains) { chain in
@@ -25,17 +25,17 @@ struct ActivityDriftList: View {
                             .fill(ActivityInk.series(categorizer.tint(of: chain.category)))
                             .frame(width: 6, height: 6)
                         Text(verbatim: "\(chain.origin) \u{2192} \(chain.target)")
-                            .foregroundStyle(.primary)
+                            .foregroundStyle(Solanum.ink)
                             .lineLimit(1)
                             .truncationMode(.middle)
                         Spacer(minLength: 8)
                         Text(verbatim: "\(chain.times), \(ActivityDuration.string(chain.seconds))")
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Solanum.inkMuted)
                             .monospacedDigit()
                             .lineLimit(1)
                             .fixedSize()
                     }
-                    .font(.system(size: 11))
+                    .font(.solanum(.caption))
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("From \(chain.origin) to \(chain.target), \(chain.times), \(ActivityDuration.string(chain.seconds)), \(categorizer.label(of: chain.category).name)")
                 }

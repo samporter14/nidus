@@ -44,7 +44,7 @@ struct FocusSchedulesPage: View {
             } header: {
                 // The tab is already called Schedules.
                 Text("Start a session by itself, on the days and times you pick. A card shows a minute before, with Skip.")
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(.secondary)
             } footer: {
                 Text("Schedules only run while Nidus is running and your Mac is awake. If it wakes or opens inside a window, a session starts then, unless less than 5 minutes are left. A schedule that starts during a session or a break is skipped.")
@@ -103,7 +103,7 @@ struct FocusScheduleRow: View {
             .accessibilityLabel(title)
 
             Image(systemName: "chevron.right")
-                .font(.system(size: 12, weight: .semibold))
+                .font(.solanum(.label, weight: .semibold))
                 .foregroundStyle(.tertiary)
                 .accessibilityHidden(true)
         }
@@ -152,7 +152,7 @@ struct FocusSchedulePage: View {
                         Text(schedule.mode == .block
                              ? "Pick the categories to block."
                              : "Pick the categories to allow. Everything else is blocked.")
-                            .font(.system(size: 12))
+                            .font(.solanum(.label, weight: .regular))
                             .foregroundStyle(.secondary)
                     }
                 } content: {
@@ -354,7 +354,7 @@ private struct DayToggleStyle: ToggleStyle {
             configuration.isOn.toggle()
         } label: {
             configuration.label
-                .font(.system(size: 12, weight: .semibold))
+                .font(.solanum(.label, weight: .semibold))
                 .foregroundStyle(configuration.isOn ? Color.white : Color.primary)
                 .frame(width: 28, height: 28)
                 .background(

@@ -98,11 +98,11 @@ struct ProtectionStatusLine: View {
         Button { feedback.showingFixes = true } label: {
             HStack(alignment: .firstTextBaseline, spacing: 5) {
                 Image(systemName: status.isComplete ? "checkmark.shield" : "exclamationmark.shield")
-                    .font(.system(size: 11, weight: .medium))
+                    .font(.solanum(.caption, weight: .medium))
                     .foregroundStyle(status.isComplete ? AnyShapeStyle(.tertiary) : AnyShapeStyle(Solanum.clayText))
                     .accessibilityHidden(true)
                 Text(verbatim: status.line)
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(status.isComplete ? AnyShapeStyle(.secondary) : AnyShapeStyle(Solanum.ink))
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)

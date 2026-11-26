@@ -15,7 +15,7 @@ struct Overline: View {
 
     var body: some View {
         Text(text.uppercased())
-            .font(.system(size: 11, design: .monospaced))
+            .font(.solanum(.overline))
             .tracking(0.9)
             .foregroundStyle(Solanum.inkFaint)
             .padding(.leading, 2)
@@ -123,11 +123,11 @@ struct SettingsRow<Trailing: View>: View {
         HStack(spacing: 16) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.solanum(.title, weight: .medium))
                     .foregroundStyle(Solanum.ink)
                 if let hint {
                     Text(hint)
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(Solanum.inkMuted)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -172,7 +172,7 @@ struct SolanumSegmented<Value: Hashable, Label: View>: View {
                 let on = option == selection
                 Button { selection = option } label: {
                     label(option)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.solanum(.body, weight: .medium))
                         .foregroundStyle(on ? Solanum.ink : Solanum.inkMuted)
                         .padding(.horizontal, 14)
                         .frame(minHeight: 24)
@@ -204,7 +204,7 @@ struct SolanumButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(size: 13, weight: .medium))
+            .font(.solanum(.body, weight: .medium))
             .foregroundStyle(isEnabled ? Solanum.ink : Solanum.inkFaint)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)

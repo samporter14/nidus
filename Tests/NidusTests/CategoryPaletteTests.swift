@@ -32,6 +32,20 @@ struct CategoryPaletteTests {
         }
     }
 
+    @Test func addingACategoryNeverRepaintsTheShownOnes() {
+        // "zzz" is worked out first; then a category whose id sorts before it
+        // and hashes to the same slot arrives. Without `keeping`, the newcomer
+        // would take zzz's slot.
+        let zzz = category("zzz")
+        let shown = CategoryPalette.fillingColors(of: [zzz])
+        let rival = (0..<500).map { "a\($0)" }.first { CategoryPalette.slot(forKey: $0) == CategoryPalette.slot(forKey: "zzz") }!
+        let unsaved = CategoryPalette.slots(for: [zzz, category(rival)])
+        #expect(unsaved["zzz"] != shown[0].color) // the hazard is real
+        let saved = CategoryPalette.fillingColors(of: [zzz, category(rival)], keeping: [zzz])
+        #expect(saved[0].color == shown[0].color)
+        #expect(saved[1].color != shown[0].color)
+    }
+
     @Test func upToEightCategoriesNeverShareAHue() {
         let list = (0..<8).map { category("category-\($0)") }
         let slots = CategoryPalette.slots(for: list)

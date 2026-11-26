@@ -51,9 +51,19 @@ enum CategoryPalette {
 
     /// The categories with every colour written down: what Settings saves,
     /// so a colour worked out once stays put however the list changes later.
-    static func fillingColors(of categories: [FocusCategory]) -> [FocusCategory] {
-        let resolved = slots(for: categories)
-        return categories.map { category in
+    ///
+    /// `previous` is the list as it was before this change: a category that
+    /// already wore a colour there (saved or worked out) keeps it, so adding
+    /// a category never repaints the ones already shown.
+    static func fillingColors(of categories: [FocusCategory], keeping previous: [FocusCategory] = []) -> [FocusCategory] {
+        let before = slots(for: previous)
+        let kept = categories.map { category -> FocusCategory in
+            var category = category
+            if valid(category.color) == nil, let slot = before[category.id] { category.color = slot }
+            return category
+        }
+        let resolved = slots(for: kept)
+        return kept.map { category in
             var category = category
             if valid(category.color) == nil { category.color = resolved[category.id] }
             return category

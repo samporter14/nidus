@@ -490,7 +490,7 @@ struct BrickOfferCard: View {
                 Spacer(minLength: 0)
             }
             Text("Choose your goal, setup, and duration.")
-                .font(.system(size: 13))
+                .font(.solanum(.body))
                 .foregroundStyle(Solanum.inkMuted)
             HStack(spacing: 8) {
                 Spacer(minLength: 0)
@@ -515,10 +515,10 @@ struct BrickPopoverRow: View {
                     SolanumTile(symbol: "iphone.gen3", size: 34)
                     VStack(alignment: .leading, spacing: 2) {
                         Text("From your phone")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.solanum(.body, weight: .semibold))
                             .foregroundStyle(Solanum.ink)
                         Text("Ready to focus?")
-                            .font(.system(size: 12))
+                            .font(.solanum(.label, weight: .regular))
                             .foregroundStyle(Solanum.inkMuted)
                             .lineLimit(2)
                     }

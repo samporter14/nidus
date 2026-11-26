@@ -755,9 +755,12 @@ extension NidusModel {
         objectWillChange.send()
     }
 
+    /// Every category with its chart colour written down (CategoryPalette):
+    /// a save keeps the colours the list already showed, so adding,
+    /// removing or reordering categories never repaints the others.
     var categories: [FocusCategory] {
-        get { preferenceList(Key.categories, default: FocusCategory.presets) }
-        set { setPreference(newValue, Key.categories) }
+        get { CategoryPalette.fillingColors(of: preferenceList(Key.categories, default: FocusCategory.presets)) }
+        set { setPreference(CategoryPalette.fillingColors(of: newValue, keeping: categories), Key.categories) }
     }
 
     /// What counts as Work in Activity. Kept apart from `categories` so no

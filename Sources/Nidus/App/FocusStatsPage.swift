@@ -44,7 +44,7 @@ struct FocusStatsPage: View {
             Text(model.recordsHistory
                  ? "Your first session will show up here."
                  : "History is off. Turn it on below to see your sessions here.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Solanum.inkMuted)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, NidusSpacing.md)
         }
@@ -97,8 +97,8 @@ struct FocusStatsPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 settingsSectionHeader("Where you focused")
                 Text("The apps in front while a session ran.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
             NidusSettingsCard {
@@ -120,8 +120,8 @@ struct FocusStatsPage: View {
             VStack(alignment: .leading, spacing: 2) {
                 settingsSectionHeader("History")
                 Text("Kept on this Mac only. Nothing is sent anywhere.")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
             }
         } content: {
             NidusSettingsCard {
@@ -155,16 +155,16 @@ struct FocusStatsPage: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(label)
                 .font(.callout)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Solanum.inkMuted)
             Text(verbatim: value)
                 .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(.primary)
+                .foregroundStyle(Solanum.ink)
                 .lineLimit(1)
                 .minimumScaleFactor(0.7)
             if let caption {
                 Text(verbatim: caption)
                     .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Solanum.inkMuted)
             }
         }
         .padding(.horizontal, 12)
@@ -254,8 +254,8 @@ struct ContributionGraph: View {
                 // column, a weekday beside each row, then the days by column.
                 ForEach(0..<stats.weeks.count, id: \.self) { index in
                     Text(verbatim: month(index))
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                         .lineLimit(1)
                         .fixedSize()
                 }
@@ -263,8 +263,8 @@ struct ContributionGraph: View {
                     // Every other row, starting with the second, as GitHub does:
                     // Mon, Wed, Fri when weeks start on Sunday.
                     Text(verbatim: row % 2 == 1 ? weekday(row) : "")
-                        .font(.system(size: 9))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.caption))
+                        .foregroundStyle(Solanum.inkMuted)
                         .lineLimit(1)
                 }
                 ForEach(Array(stats.weeks.enumerated()), id: \.offset) { _, week in
@@ -285,8 +285,8 @@ struct ContributionGraph: View {
                 }
                 Text("More").padding(.leading, 2)
             }
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
+            .font(.solanum(.caption))
+            .foregroundStyle(Solanum.inkMuted)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)

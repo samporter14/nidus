@@ -571,7 +571,7 @@ struct FocusCategoryPage: View {
             if let category {
                 if isWork {
                     Text("Work is for counting time. It is never blocked and never offered when you start a session.")
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(.secondary)
                 }
                 NidusSettingsCard {
@@ -636,7 +636,7 @@ struct FocusCategoryPage: View {
                         Text(isWork
                              ? "Each one also covers its subdomains, so github.com includes gist.github.com. Add a path, like github.com/my-lab, to count only that part of it."
                              : "Each one also covers its subdomains, so youtube.com includes m.youtube.com. Add a path, like youtube.com/shorts, to block only that part of it.")
-                            .font(.system(size: 12))
+                            .font(.solanum(.label, weight: .regular))
                             .foregroundStyle(.secondary)
                     }
                 } content: {
@@ -745,7 +745,7 @@ struct FocusLaunchAppsPage: View {
                 VStack(alignment: .leading, spacing: 2) {
                     settingsSectionHeader("Apps to open")
                     Text("Opened when a session starts, the first one in front. A session never blocks the apps it opened.")
-                        .font(.system(size: 12))
+                        .font(.solanum(.label, weight: .regular))
                         .foregroundStyle(.secondary)
                 }
             } content: {
@@ -916,7 +916,7 @@ struct ActivityOverridesPage: View {
     var body: some View {
         NidusSettingsPage {
             Text("Choose \"Count as\" on an app or website in Activity. It changes how time is counted, never what a session blocks.")
-                .font(.system(size: 12))
+                .font(.solanum(.label, weight: .regular))
                 .foregroundStyle(.secondary)
             let items = model.activityOverrides.items
             NidusSettingsCard {

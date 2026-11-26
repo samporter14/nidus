@@ -152,7 +152,7 @@ struct SetupDraftRow: View {
                     .buttonStyle(.borderless)
                     .accessibilityLabel("Cancel changes for this session")
             }
-            .font(.system(size: 12))
+            .font(.solanum(.label, weight: .regular))
             .foregroundStyle(Solanum.clayText)
             .help("Your saved setup stays unchanged. Adjust this session's goal, length, categories or project in the composer.")
         }

@@ -63,8 +63,8 @@ struct FocusWidget: View {
                 .foregroundStyle(Solanum.ink)
             if model.isStrict || (model.composerStrict && !model.isActive && !model.isOnBreak) {
                 Image(systemName: "lock.fill")
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundStyle(.tertiary)
+                    .font(.solanum(.caption, weight: .semibold))
+                    .foregroundStyle(Solanum.inkFaint)
                     .help(model.isStrict ? "Strict session: no snooze or pause" : "Strict mode is on")
                     .accessibilityLabel(model.isStrict ? "Strict session" : "Strict mode on")
             }
@@ -72,8 +72,8 @@ struct FocusWidget: View {
             // Inside a sequence: where it stands, in one line.
             if let line = model.sequenceLine {
                 Text(verbatim: line)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
                     .lineLimit(1)
                     .truncationMode(.tail)
                     .accessibilityLabel("Sequence. " + line.replacingOccurrences(of: " \u{00B7} ", with: ", "))
@@ -118,12 +118,12 @@ struct FocusWidget: View {
             SetupDraftRow(model: model)
             lengthRow
             if let draft = model.customLengthDraft {
-                customLengthCaption(draft).font(.system(size: 12))
+                customLengthCaption(draft).font(.solanum(.label, weight: .regular))
             }
             startRow
             if let problem = model.startProblem {
                 Label(problem, systemImage: "exclamationmark.circle")
-                    .font(.system(size: 12))
+                    .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.inkMuted)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityLabel("Session did not start. " + problem)
@@ -209,7 +209,7 @@ struct FocusWidget: View {
             HStack(spacing: 4) {
                 Text("More")
                 Image(systemName: "chevron.down")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.solanum(.caption, weight: .semibold))
                     .rotationEffect(.degrees(moreOpen ? 180 : 0))
             }
             .frame(minHeight: 27)
@@ -234,7 +234,7 @@ struct FocusWidget: View {
         let summary = model.composerSelectionSummary
         Label(model.composerMode == .allow ? "Only \(summary) allowed" : "Blocks \(summary)",
               systemImage: model.composerMode == .allow ? "checkmark.shield" : "nosign")
-            .font(.system(size: 11))
+            .font(.solanum(.caption))
             .foregroundStyle(Solanum.inkMuted)
             .lineLimit(1)
             .truncationMode(.tail)
@@ -287,7 +287,7 @@ struct FocusWidget: View {
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .font(.system(size: 12))
+        .font(.solanum(.label, weight: .regular))
         .foregroundStyle(Solanum.clayText)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Length from the goal: \(length). The goal is saved as \(clause.goal).")
@@ -303,15 +303,15 @@ struct FocusWidget: View {
             .help("Save this length and these categories as a setup")
             Button(action: model.dismissSetupSuggestion) {
                 Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.solanum(.caption, weight: .semibold))
             }
             .help("Don\u{2019}t suggest this again")
             .accessibilityLabel("Don\u{2019}t suggest saving this setup again")
         }
         .buttonStyle(.borderless)
         .controlSize(.small)
-        .font(.system(size: 12))
-        .foregroundStyle(.secondary)
+        .font(.solanum(.label, weight: .regular))
+        .foregroundStyle(Solanum.inkMuted)
     }
 
     /// Below the save-a-setup line: a site or app that keeps pulling attention
@@ -319,8 +319,8 @@ struct FocusWidget: View {
     private var blockDriftSuggestion: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(verbatim: model.driftSuggestion?.message ?? "")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+                .font(.solanum(.label, weight: .regular))
+                .foregroundStyle(Solanum.inkMuted)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: NidusSpacing.sm) {
                 Button("Add", action: model.acceptDriftSuggestion)
@@ -330,7 +330,7 @@ struct FocusWidget: View {
             }
             .buttonStyle(.borderless)
             .controlSize(.small)
-            .font(.system(size: 12))
+            .font(.solanum(.label, weight: .regular))
         }
         .accessibilityElement(children: .contain)
     }
@@ -355,7 +355,7 @@ struct FocusWidget: View {
             }
         } label: {
             Image(systemName: "clock.arrow.circlepath")
-                .font(.system(size: 14))
+                .font(.solanum(.title, weight: .regular))
                 .foregroundStyle(Solanum.inkMuted)
                 .frame(width: 30, height: 30)
         }
@@ -390,7 +390,7 @@ struct FocusWidget: View {
                 // The arrow only when there is no Return hint: one mark, not two.
                 if !(startsOnReturn && !blocksNothing) {
                     Image(systemName: "arrow.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .font(.solanum(.label, weight: .semibold))
                 }
                 Spacer(minLength: 0)
             }
@@ -403,7 +403,7 @@ struct FocusWidget: View {
             .overlay(alignment: .trailing) {
                 if startsOnReturn && !blocksNothing {
                     Image(systemName: "return")
-                        .font(.system(size: 11, weight: .medium))
+                        .font(.solanum(.caption, weight: .medium))
                         .opacity(0.55)
                         .accessibilityHidden(true)
                 }
@@ -481,7 +481,7 @@ struct FocusWidget: View {
                 .accessibilityLabel("Custom length")
             Button(action: model.cancelCustomLength) {
                 Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.tertiary)
+                    .foregroundStyle(Solanum.inkFaint)
             }
             .buttonStyle(.borderless)
             .help("Keep \(model.lengthLabel)")
@@ -508,12 +508,12 @@ struct FocusWidget: View {
     private func customLengthCaption(_ draft: CustomLengthDraft) -> some View {
         switch draft.caption() {
         case .hint(let text):
-            Text(verbatim: text).foregroundStyle(.secondary)
+            Text(verbatim: text).foregroundStyle(Solanum.inkMuted)
         case .preview(let text):
-            Text(verbatim: "\(text) · Return to set").foregroundStyle(.secondary)
+            Text(verbatim: "\(text) · Return to set").foregroundStyle(Solanum.inkMuted)
         case .problem(let text):
             Label {
-                Text(verbatim: text).foregroundStyle(.secondary)
+                Text(verbatim: text).foregroundStyle(Solanum.inkMuted)
             } icon: {
                 Image(systemName: "exclamationmark.circle").foregroundStyle(.orange)
             }
@@ -597,15 +597,15 @@ struct FocusWidget: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(verbatim: model.goal.isEmpty ? "Blocking \(model.runningSummary)" : model.goal)
                     .font(.system(size: model.goal.isEmpty ? 13 : 15, weight: model.goal.isEmpty ? .regular : .medium))
-                    .foregroundStyle(model.goal.isEmpty ? .secondary : .primary)
+                    .foregroundStyle(model.goal.isEmpty ? Solanum.inkMuted : Solanum.ink)
                     .lineLimit(1)
                     .truncationMode(.tail)
                 // When it ends (or began), and how often something was
                 // blocked. What is blocked is a tooltip: it never changes
                 // during a session, and a goal-less one already says it above.
                 Text(verbatim: model.runningLine)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
+                    .font(.solanum(.label, weight: .regular))
+                    .foregroundStyle(Solanum.inkMuted)
                     .lineLimit(1)
                     .help(model.goal.isEmpty ? "" : "Blocking \(model.runningSummary)")
                     .accessibilityLabel(model.runningLine.replacingOccurrences(of: " · ", with: ", "))
@@ -619,7 +619,7 @@ struct FocusWidget: View {
                         model.addTime(minutes: NidusModel.addTimeMinutes(optionHeld: NSEvent.modifierFlags.contains(.option)))
                     } label: {
                         Text("+5")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(.solanum(.body, weight: .semibold))
                             .monospacedDigit()
                     }
                     .buttonStyle(.bordered).buttonBorderShape(.circle).controlSize(.large)
@@ -698,8 +698,8 @@ struct FocusWidget: View {
             HStack(alignment: .bottom, spacing: NidusSpacing.md) {
                 VStack(alignment: .leading, spacing: 0) {
                     Text(verbatim: breakNextLine)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.secondary)
+                        .font(.solanum(.body))
+                        .foregroundStyle(Solanum.inkMuted)
                         .lineLimit(1)
                     breakClock(size: 44)
                 }
@@ -740,8 +740,8 @@ struct FocusWidget: View {
             } icon: {
                 Image(systemName: "nosign").frame(width: 14)
             }
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
+            .font(.solanum(.label, weight: .regular))
+            .foregroundStyle(Solanum.inkMuted)
             .accessibilityElement(children: .combine)
         }
         if let reminder = model.breakReminder {
@@ -752,8 +752,8 @@ struct FocusWidget: View {
             } icon: {
                 Image(systemName: NidusSymbols.rest).frame(width: 14)
             }
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
+            .font(.solanum(.label, weight: .regular))
+            .foregroundStyle(Solanum.inkMuted)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Reminder: \(reminder)")
         }
@@ -834,7 +834,7 @@ struct ProgressTrack: View {
         GeometryReader { geometry in
             let fraction = min(1, max(0, progress))
             ZStack(alignment: .leading) {
-                Capsule().fill(Color.primary.opacity(0.1))
+                Capsule().fill(Solanum.track)
                 if fraction > 0 {
                     Capsule().fill(tint).frame(width: geometry.size.width * fraction)
                 }
