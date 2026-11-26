@@ -107,6 +107,41 @@ extension NidusModel {
         add(18.35, 12, messages)
         recorder.store.enqueue(.write(log))
     }
+
+    /// A fictional coding day for today, for the projects render: one
+    /// project in Xcode and a terminal, another in VS Code. Replaces the
+    /// seeded today, so it runs after every other Activity render.
+    func seedCodingDay() {
+        guard Demo.isActive, let recorder = controller?.activityRecorder else { return }
+        let xcode = (ActivityProjectTitle.xcodeID, "Xcode"), terminal = (ActivityProjectTitle.terminalID, "Terminal")
+        let code = ("com.microsoft.VSCode", "Visual Studio Code"), safari = ("com.apple.Safari", "Safari")
+        let word = ("com.microsoft.Word", "Microsoft Word")
+        let date = Calendar.current.startOfDay(for: Date())
+        var log = ActivityDayLog(day: ActivityDayLog.key(for: date, calendar: .current))
+        let sinceMidnight = Date().timeIntervalSince(date) / 3600
+        let squeeze = min(1, max(0.2, (sinceMidnight - 0.5) / 19))
+        var run = 0
+        func add(_ hour: Double, _ minutes: Double, _ app: (String, String), site: String? = nil, title: String? = nil) {
+            let start = date.addingTimeInterval(hour * squeeze * 3600)
+            let end = min(start.addingTimeInterval(minutes * squeeze * 60), Date())
+            guard end > start else { return }
+            run += 1
+            log.add(FocusActivitySegment(start: start, end: end, appID: app.0, appName: app.1, site: site, title: title, continuity: run))
+        }
+        add(8.5, 70, xcode, title: "Plate Reader")
+        add(9.7, 20, terminal, title: "Plate Reader")
+        add(10.1, 25, safari, site: "developer.apple.com", title: "A fictional API page")
+        add(10.6, 55, code, title: "analysis-scripts")
+        add(11.6, 15, terminal, title: "analysis-scripts")
+        add(13.0, 40, word, title: "Specific Aims")
+        add(13.8, 65, xcode, title: "Plate Reader")
+        add(15.0, 35, code, title: "lab-website")
+        add(15.7, 12, terminal)
+        recorder.store.enqueue(.write(log))
+        recorder.store.flush()
+        controller?.bumpActivityDayVersion()
+        objectWillChange.send()
+    }
 }
 
 extension RenderSurfaces {
@@ -150,6 +185,57 @@ extension RenderSurfaces {
         await shoot(NidusSettingsPage { ActivitySortCard(model: model, items: unsorted) }, width: 640, height: 420,
                     name: "activity-sort-uncategorized", in: directory)
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
+        await renderCategoryTargets(model: model, in: directory)
+        await renderActivityTrends(model: model, in: directory)
+        // Coding time by project (0.7.1): last, as it replaces the seeded today.
+        model.seedCodingDay()
+        await shoot(FocusActivityPage(model: model, initialListKind: .documents), width: 640, height: 2900,
+                    name: "activity-projects", in: directory)
+        await shoot(FocusActivityPage(model: model, initialListKind: .apps), width: 640, height: 2900,
+                    name: "activity-projects-apps", in: directory)
+    }
+}
+
+extension RenderSurfaces {
+    /// The Trends card: a month and a quarter over ninety fictional days, a
+    /// history only eighteen days long, and none at all.
+    static func renderActivityTrends(model: NidusModel, in directory: URL) async {
+        let calendar = Calendar.current
+        let categorizer = ActivityCategorizer(categories: model.categories, work: model.workGroup)
+        let today = calendar.startOfDay(for: Date())
+        let ids = [ActivityCategorizer.workID] + model.categories.map(\.id) + [ActivityCategorizer.uncategorizedID]
+        func history(days: Int) -> [String: [String: TimeInterval]] {
+            var result: [String: [String: TimeInterval]] = [:]
+            for back in 0..<days {
+                guard let date = calendar.date(byAdding: .day, value: -back, to: today) else { continue }
+                let weekend = calendar.isDateInWeekend(date)
+                let drift = 1 + 0.25 * sin(Double(back) / 9)
+                var row: [String: TimeInterval] = [:]
+                for (offset, id) in ids.enumerated() {
+                    let base = offset == 0 ? (weekend ? 0.8 : 4.6) : 1.4 / Double(offset + 1)
+                    let wave = 1 + 0.35 * sin(Double(back) / 4 + Double(offset) * 1.7)
+                    // Work swells over the quarter while the social categories ease off.
+                    let slope = offset == 0 ? 1 - Double(back) / 400 : 1 + Double(back) / 300
+                    row[id] = 3600 * max(0, base * wave * slope * drift * (weekend && offset > 0 ? 1.3 : 1))
+                }
+                result[ActivityDayLog.key(for: date, calendar: calendar)] = row
+            }
+            return result
+        }
+        func card(_ byDay: [String: [String: TimeInterval]], _ span: ActivityTrend.Span) -> some View {
+            let trends = ActivityTrends(ending: today, byDay: byDay, categorizer: categorizer, calendar: calendar)
+            return NidusSettingsPage {
+                NidusSettingsSection {
+                    settingsSectionHeader("Trends")
+                } content: {
+                    ActivityTrendChart(trends: trends, calendar: calendar, span: span).padding(.vertical, 8)
+                }
+            }
+        }
+        await shoot(card(history(days: 90), .month), width: 640, height: 330, name: "activity-trend-month", in: directory)
+        await shoot(card(history(days: 90), .quarter), width: 640, height: 330, name: "activity-trend-quarter", in: directory)
+        await shoot(card(history(days: 18), .quarter), width: 640, height: 330, name: "activity-trend-short", in: directory)
+        await shoot(card([:], .month), width: 640, height: 330, name: "activity-trend-empty", in: directory)
     }
 }
 
@@ -211,5 +297,6 @@ extension RenderSurfaces {
         await shoot(popover(), width: 440, name: "running", in: directory)
         model.runHarnessScenario("break")
         await shoot(popover(), width: 440, name: "break", in: directory)
+        await renderCategoryTargetPopover(model: model, in: directory)
     }
 }

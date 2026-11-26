@@ -106,6 +106,11 @@ struct TodayPopoverPiece: View {
                 CategorySplitLine(split: split)
                     .padding(.leading, 2)
             }
+            if let target = overview?.target, overview?.state == .data {
+                CategoryTargetLine(progress: target)
+                    .padding(.leading, 2)
+                    .padding(.top, 2)
+            }
         }
     }
 

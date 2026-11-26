@@ -56,6 +56,7 @@ struct FocusActivityPage: View {
     @State private var digestCache = ActivityDigestCache()
     @State private var displayedHeatmap = ActivityHeatmap()
     @State private var displayedWeek: ActivityWeek?
+    @State private var displayedTrends: ActivityTrends?
     @State private var displayedChains: [ActivityDriftChain]?
     /// Whether the week, hour and drift digest has arrived: until it has,
     /// their cards hold their height as an empty track.
@@ -117,6 +118,7 @@ struct FocusActivityPage: View {
                         dailyPattern(scope.totals, sessions: rangeSessions)
                     }
                     weekGlance
+                    if period != .today { trendsCard }
                     hourHeatmap
                     drift
                     ActivitySortCard(model: model, items: displayedUncategorized)
@@ -281,7 +283,23 @@ struct FocusActivityPage: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 12)
                 .padding(.bottom, 8)
+            let targets = targetRows(allDay: allDay)
+            if !targets.isEmpty {
+                CategoryTargetList(rows: targets)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 10)
+            }
         }
+    }
+
+    /// Daily targets for the range shown: the day's own time, or the average
+    /// over the days of a week or month that have any tracked time. Not for a
+    /// view cut to focus or a project, whose totals are narrower than a day.
+    private func targetRows(allDay: Bool) -> [CategoryTargetProgress] {
+        guard allDay else { return [] }
+        let days = period == .today ? 1 : CategoryTarget.trackedDays(displayedScope.totals.trackedDays, in: requestedInterval,
+                                                                     now: effectiveNow, calendar: calendar)
+        return CategoryTargetProgress.rows(totals: displayedCategories, categorizer: displayedCategorizer, days: days)
     }
 
     private func dayRibbon(_ scope: ActivityScope, sessions: [SessionEntry]) -> some View {
@@ -458,6 +476,24 @@ struct FocusActivityPage: View {
         }
     }
 
+    private var trendsCard: some View {
+        NidusSettingsSection {
+            VStack(alignment: .leading, spacing: 3) {
+                settingsSectionHeader("Trends")
+                Text("Each category over the kept history: a month by day, a quarter by week.")
+                    .font(.solanum(.caption))
+                    .foregroundStyle(Solanum.inkMuted)
+                if chartsIgnoreFilters { unfilteredNote }
+            }
+        } content: {
+            reserved(displayedTrends != nil, minHeight: 205) {
+                if let displayedTrends { ActivityTrendChart(trends: displayedTrends, calendar: calendar) }
+            }
+            .padding(.vertical, 8)
+        }
+        .activitySectionAnchor(.trends, tracker: tracker)
+    }
+
     private func open(day: Date) {
         let offset = ActivityPeriod.dayOffset(of: day, from: effectiveNow, calendar: calendar)
         if period != .today { period = .today }
@@ -532,7 +568,9 @@ struct FocusActivityPage: View {
     private func reloadDigest(_ request: ActivityDigestRequest) async {
         guard let recorder = model.controller?.activityRecorder else { return }
         let grid = dayKeys(from: request.start, to: request.end)
+        let trending = period != .today
         let week = ActivityWeek.keys(ending: request.weekEnd, calendar: calendar)
+            + (trending ? ActivityTrends.keys(ending: request.weekEnd, calendar: calendar) : [])
         let shownDays = dayKeys(from: request.shownStart, to: request.end)
         let today = ActivityDayLog.key(for: Date(), calendar: calendar)
         // Today is still being written, and the recorder has the latest of it.
@@ -549,11 +587,20 @@ struct FocusActivityPage: View {
         if !digestLoaded { digestLoaded = true }
         let shown = ActivityWeek(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
         if shown != displayedWeek { displayedWeek = shown }
+        if trending {
+            let trends = ActivityTrends(ending: request.weekEnd, byDay: digest.byDay, categorizer: categorizer, calendar: calendar)
+            if trends != displayedTrends { displayedTrends = trends }
+        }
         let chains = ActivityDrift.top(digest.chains.values)
         if chains != displayedChains { displayedChains = chains }
     }
 
-    private func dailyPattern(_ totals: ActivityTotals, sessions: [SessionEntry]) -> some View {
+    private func dailyPattern(_ allTotals: ActivityTotals, sessions: [SessionEntry]) -> some View {
+        // Cut to one category that has a daily target, the bars are that
+        // category's own time, with its target as a line.
+        let goal = categoryFilter.flatMap { id in displayedCategorizer.targets.first { $0.id == id }?.target }
+        let cut = goal == nil ? nil : displayedFiltered
+        let totals = cut ?? allTotals
         let colors = totals.serviceColors
         let parts = totals.services.map { item in
             ActivityDailyBars.Part(id: item.id == "__other__" ? "__other__" : item.name, name: item.name,
@@ -562,7 +609,8 @@ struct FocusActivityPage: View {
         return NidusSettingsSection {
             VStack(alignment: .leading, spacing: 3) {
                 settingsSectionHeader("Daily pattern")
-                Text("Observed time by the app or service in front.")
+                Text(cut == nil ? "Observed time by the app or service in front."
+                     : "Only \(displayedCategorizer.label(of: categoryFilter).name), by the app or service in front.")
                     .font(.solanum(.label, weight: .regular))
                     .foregroundStyle(Solanum.inkMuted)
             }
@@ -571,7 +619,8 @@ struct FocusActivityPage: View {
             NidusSettingsCard {
                 ActivityDailyBars(buckets: totals.chartBuckets, period: period,
                                   anchor: period.anchor(offset: periodOffset, from: effectiveNow, calendar: calendar),
-                                  calendar: calendar, parts: parts, selectedDay: $selectedDay)
+                                  calendar: calendar, parts: parts, selectedDay: $selectedDay,
+                                  target: cut == nil ? nil : goal)
                     .padding(.top, 6)
                 HStack(spacing: 14) {
                     ForEach(parts) { part in
@@ -938,7 +987,7 @@ enum ActivityListKind: String, CaseIterable, Identifiable {
         switch self {
         case .apps: return "No apps were counted here."
         case .websites: return "No websites here. Allow website access browser by browser under Tracking."
-        case .documents: return "No documents here. Allow window-title access under Tracking."
+        case .documents: return "No documents or coding projects here. Allow window-title access under Tracking."
         case .categories: return "Nothing to sort into categories here."
         }
     }
@@ -1060,6 +1109,8 @@ struct ActivityTotals {
     /// What's inside each app, by app id.
     var appDetails: [String: [ActivityDrill]] = [:]
     var chartBuckets: [Date: [String: TimeInterval]] = [:]
+    /// The days (their starts) with any time counted.
+    var trackedDays: Set<Date> { Set(chartBuckets.filter { $0.value.values.contains { $0 > 0 } }.keys) }
 
     var lead: ActivityRank? { services.first }
     init(sessions: [SessionEntry], calendar: Calendar = .current) {
@@ -1095,6 +1146,8 @@ struct ActivityTotals {
         var documentApps: [String: String] = [:]
         var documentSites: [String: String] = [:]
         var documentAppNames: [String: String] = [:]
+        var projectAppSeconds: [String: [String: TimeInterval]] = [:]
+        var projectAppIDs: [String: [String: String]] = [:]
         var siteApps: [String: (id: String, name: String)] = [:]
         var appNames: [String: String] = [:]
         var serviceSeconds: [String: TimeInterval] = [:]
@@ -1114,14 +1167,27 @@ struct ActivityTotals {
             if let title = ActivityTimeline.documentName(appID: item.appID, title: item.title, site: item.site),
                !title.isEmpty {
                 let key = Self.documentKey(appID: item.appID, site: item.site, title: title)
-                let source = [item.site, item.appName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
                 documentSeconds[key, default: 0] += item.seconds
                 documentTitles[key] = title
-                documentSources[key] = source
-                documentApps[key] = item.appID
-                documentAppNames[key] = item.appName
-                documentSites[key] = item.site
+                if ActivityProjectTitle.isProjectApp(item.appID) {
+                    // One project across Xcode, VS Code and a terminal.
+                    projectAppSeconds[key, default: [:]][item.appName, default: 0] += item.seconds
+                    projectAppIDs[key, default: [:]][item.appName] = item.appID
+                } else {
+                    documentSources[key] = [item.site, item.appName].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · ")
+                    documentApps[key] = item.appID
+                    documentAppNames[key] = item.appName
+                    documentSites[key] = item.site
+                }
             }
+        }
+        for (key, byApp) in projectAppSeconds {
+            // Named after its apps, longest first; it counts as the app it
+            // had the most time in.
+            let ordered = byApp.sorted { $0.value == $1.value ? $0.key < $1.key : $0.value > $1.value }.map(\.key)
+            documentSources[key] = "Project · " + ordered.joined(separator: ", ")
+            documentAppNames[key] = ordered.first
+            documentApps[key] = ordered.first.flatMap { projectAppIDs[key]?[$0] }
         }
         apps = Self.ranked(appSeconds, names: appNames)
         appDetails = ActivityDrill.tree(rows.map(\.row))
@@ -1152,8 +1218,11 @@ struct ActivityTotals {
         }
     }
 
-    private static func documentKey(appID: String, site: String?, title: String) -> String {
-        "\(appID)\u{1F}\(site ?? "")\u{1F}\(title)"
+    /// A document is its app's, site's and title's; a coding project is its
+    /// name alone, whichever coding app it was open in.
+    static func documentKey(appID: String, site: String?, title: String) -> String {
+        if ActivityProjectTitle.isProjectApp(appID) { return "project\u{1F}\(title)" }
+        return "\(appID)\u{1F}\(site ?? "")\u{1F}\(title)"
     }
 
     /// Gives sites and documents the last address each was seen at, from

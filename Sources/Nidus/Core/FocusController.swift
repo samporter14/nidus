@@ -338,6 +338,15 @@ final class FocusController: ObservableObject {
         history.flush()
     }
 
+    /// Writes what is still queued (history saves in the background, and so
+    /// does the Activity day) without stopping anything: called as Nidus
+    /// quits and as the Mac logs out or powers off, so a session that ended a
+    /// moment before is on disk even if the process is then killed.
+    func flushPendingSaves() {
+        history.flush()
+        activityRecorder.store.flush()
+    }
+
     func endSnooze(_ item: String) { engine.endSnooze(item) }
 
     // MARK: Away

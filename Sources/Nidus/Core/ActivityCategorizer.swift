@@ -58,6 +58,8 @@ struct ActivityCategorizer: Sendable {
         let symbol: String
         let apps: Set<String>
         let role: FocusCategory.Role
+        /// Its daily target in seconds, if it has one (CategoryTarget).
+        let target: TimeInterval?
         /// Its chart hue (CategoryPalette); the Work group has none, it wears
         /// work's own colour.
         var slot: Int?
@@ -69,6 +71,7 @@ struct ActivityCategorizer: Sendable {
             name = category.name
             symbol = category.symbol
             role = category.id == ActivityCategorizer.workID ? .work : category.role
+            target = CategoryTarget.valid(category.dailyTarget)
             apps = Set(category.apps.map(\.bundleID))
             rule = category.websites.isEmpty
                 ? nil
@@ -143,6 +146,12 @@ struct ActivityCategorizer: Sendable {
 
     /// True when time in the group counts as a distraction.
     func isDistracting(group id: String?) -> Bool { role(forGroup: id) == .distracting }
+
+    /// The groups that have a daily target, Work first and then the categories
+    /// in order, with the target in seconds.
+    var targets: [(id: String, target: TimeInterval)] {
+        groups.compactMap { group in group.target.map { (id: group.id, target: $0) } }
+    }
 
     /// The same, as a group.
     func group(appID: String?, site: String?, url: String? = nil) -> ActivityGroup {
