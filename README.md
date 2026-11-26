@@ -5,7 +5,7 @@
 **Block the apps and websites that pull you away, for as long as you say.** A
 Solanum product.
 
-<img src="docs/popover-idle.png" width="440" alt="The Nidus popover under the menu bar: a goal field reading What are you working on?, three setups (Deep work, Writing, Reading), a 25 minute length, the Social and Video categories, a clay Start button, and Today 1 hr 10 min, 6-day streak">
+<img src="docs/popover-idle.png" width="440" alt="The Nidus popover under the menu bar: New session, a goal field reading What are you working on?, a 25 minute length, a clay Start focus button, More, Blocks Social, Video, and Today: nothing counted yet">
 
 **Install in one line**: paste into Terminal (Apple silicon, macOS 27):
 
@@ -72,7 +72,7 @@ and the categories to block, and press Start. Until the session ends:
   during a strict session, and comes back if it's killed; see
   [Strict sessions](#strict-sessions).
 
-  <img src="docs/popover-running.png" width="440" alt="The popover during a session: Write the launch post, until 9:37 PM, blocked 2 times, 25:00 left, with pause, +5 and stop buttons">
+  <img src="docs/popover-running.png" width="440" alt="The popover during a session: Focusing, Update Specific Aims, until 12:04 PM, 25:00 with pause, +5 and stop buttons, a progress track, Save a thought, and Today with an empty timeline">
 - **A card says what happened**, at the top of your screen: what was blocked,
   a snooze about to run out, and how the session went.
 
@@ -162,7 +162,7 @@ and the categories to block, and press Start. Until the session ends:
   messaging, video, news and mail are ready to use, and you can make your
   own.
 
-<img src="docs/settings.png" width="420" alt="Nidus Settings on its Blocking tab, with toolbar tabs for General, Blocking, Setups, Schedules, Stats and About, the blocking choices, and the categories"> <img src="docs/stats.png" width="420" alt="The Stats tab: 2 hr 27 min this week, a 6-day streak, 76 sessions, six months of focus as a graph, and the most blocked app">
+<img src="docs/settings.png" width="420" alt="Nidus Settings on its Blocking tab, with toolbar tabs for General, Blocking, Setups, Schedules, Activity, Stats and About, the blocking choices, and the categories"> <img src="docs/stats.png" width="420" alt="The Stats tab: 5 hr 37 min this week, a 4-day streak, 94 sessions, six months of focus as a clay graph, time focused, longest streak and session, and goals finished">
 
 ### Breaks that keep things blocked
 
