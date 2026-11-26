@@ -185,6 +185,7 @@ extension RenderSurfaces {
         await shoot(NidusSettingsPage { ActivitySortCard(model: model, items: unsorted) }, width: 640, height: 420,
                     name: "activity-sort-uncategorized", in: directory)
         await shootWindow(settings, page: "activity", name: "activity-window", in: directory)
+        await renderCategoryTargets(model: model, in: directory)
         await renderActivityTrends(model: model, in: directory)
         // Coding time by project (0.7.1): last, as it replaces the seeded today.
         model.seedCodingDay()
@@ -296,5 +297,6 @@ extension RenderSurfaces {
         await shoot(popover(), width: 440, name: "running", in: directory)
         model.runHarnessScenario("break")
         await shoot(popover(), width: 440, name: "break", in: directory)
+        await renderCategoryTargetPopover(model: model, in: directory)
     }
 }

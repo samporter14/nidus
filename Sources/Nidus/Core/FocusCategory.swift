@@ -33,6 +33,10 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
     /// `CategoryPalette.count` slots. nil until one is chosen or worked out
     /// (CategoryPalette.slots), so a list saved before 0.7 still loads. 0.7.
     var color: Int? = nil
+    /// How long a day in this category is aimed for, in seconds. nil: no
+    /// target. Only Activity and the Today views read it; it never affects
+    /// blocking. See `CategoryTarget`. 0.7.1.
+    var dailyTarget: TimeInterval? = nil
 
     /// How Activity reads time in a category. Work is the Work group and any
     /// category the user sets to work; neutral time is never drift.
@@ -74,7 +78,7 @@ struct FocusCategory: Codable, Hashable, Sendable, Identifiable {
 }
 
 extension FocusCategory {
-    enum CodingKeys: String, CodingKey { case id, name, symbol, apps, websites, websiteExceptions, role, color }
+    enum CodingKeys: String, CodingKey { case id, name, symbol, apps, websites, websiteExceptions, role, color, dailyTarget }
 
     /// 0.3's fields as before; the exceptions on their own, so a category
     /// saved before 0.4 (or one exception written wrongly) still loads.
@@ -88,6 +92,7 @@ extension FocusCategory {
         websiteExceptions = c.decodeLossy([WebsiteException].self, forKey: .websiteExceptions)
         role = c.decodeTolerant(Role.self, forKey: .role) ?? Role.fallback(forID: id)
         color = CategoryPalette.valid(c.decodeTolerant(Int.self, forKey: .color))
+        dailyTarget = CategoryTarget.valid(c.decodeTolerant(TimeInterval.self, forKey: .dailyTarget))
     }
 }
 

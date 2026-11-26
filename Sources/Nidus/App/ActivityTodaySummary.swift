@@ -66,6 +66,7 @@ enum ActivityTodaySummary {
         if let dayInterval {
             today.focus = focusSpans(sessions, in: dayInterval)
             today.top = top(groupSeconds, categorizer: categorizer)
+            today.target = target(groupSeconds, categorizer: categorizer)
         }
         return today
     }
@@ -104,6 +105,15 @@ enum ActivityTodaySummary {
         }
         return all.sorted { ($0.1, $1.0.name) > ($1.1, $0.0.name) }
             .prefix(WidgetToday.topLimit).map(\.0)
+    }
+
+    /// The first group with a daily target (Work first), and how much of it
+    /// today has. nil when no category has one.
+    static func target(_ seconds: [String?: TimeInterval], categorizer: ActivityCategorizer) -> WidgetToday.Target? {
+        guard let first = categorizer.targets.first else { return nil }
+        let label = categorizer.label(of: first.id)
+        return WidgetToday.Target(name: label.name, seconds: Int((seconds[first.id] ?? 0).rounded()),
+                                  target: Int(first.target.rounded()), tint: categorizer.tint(of: first.id))
     }
 
     // MARK: Bands
