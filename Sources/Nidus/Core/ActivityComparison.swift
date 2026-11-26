@@ -54,10 +54,14 @@ enum ActivityComparison {
     }
 
     /// The quiet line under a figure. `format` writes a length of time.
-    static func phrase(value: TimeInterval, history: [TimeInterval], weekday: String,
+    /// `inProgress` is a day that hasn't ended (today): it can already be
+    /// more than usual, or about usual, but "less" would only mean the day
+    /// isn't over, so it says nothing.
+    static func phrase(value: TimeInterval, history: [TimeInterval], weekday: String, inProgress: Bool = false,
                        format: (TimeInterval) -> String) -> String? {
         switch verdict(value: value, history: history) {
         case nil: return nil
+        case .less? where inProgress: return nil
         case .about?: return "about your usual \(weekday)"
         case .more(let seconds)?: return "\(format(seconds)) more than your usual \(weekday)"
         case .less(let seconds)?: return "\(format(seconds)) less than your usual \(weekday)"

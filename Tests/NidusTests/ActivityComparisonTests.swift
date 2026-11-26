@@ -105,4 +105,12 @@ import Testing
         #expect(ActivitySection.shown(for: .week).contains(.bars))
         #expect(!ActivitySection.shown(for: .month).contains(.day))
     }
+
+    @Test func aDayInProgressNeverReadsLess() {
+        let history: [TimeInterval] = [3600, 3600, 3600]
+        let format = { (s: TimeInterval) in "\(Int(s / 60)) min" }
+        #expect(ActivityComparison.phrase(value: 600, history: history, weekday: "Tuesday", inProgress: true, format: format) == nil)
+        #expect(ActivityComparison.phrase(value: 600, history: history, weekday: "Tuesday", format: format) == "50 min less than your usual Tuesday")
+        #expect(ActivityComparison.phrase(value: 7200, history: history, weekday: "Tuesday", inProgress: true, format: format) == "60 min more than your usual Tuesday")
+    }
 }

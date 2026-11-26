@@ -340,11 +340,12 @@ struct FocusActivityPage: View {
         let day = requestedInterval.start
         guard period == .today, comparisonHistory.day == day else { return (nil, nil) }
         let weekday = ActivityComparison.weekdayName(of: day, calendar: calendar)
+        let inProgress = requestedInterval.end > Date()
         let observed = allDay
-            ? ActivityComparison.phrase(value: totals.observed, history: comparisonHistory.observed, weekday: weekday,
+            ? ActivityComparison.phrase(value: totals.observed, history: comparisonHistory.observed, weekday: weekday, inProgress: inProgress,
                                         format: ActivityDuration.string)
             : nil
-        let focused = ActivityComparison.phrase(value: totals.focused, history: comparisonHistory.focused, weekday: weekday,
+        let focused = ActivityComparison.phrase(value: totals.focused, history: comparisonHistory.focused, weekday: weekday, inProgress: inProgress,
                                                 format: ActivityDuration.string)
         return (observed, focused)
     }
@@ -1035,10 +1036,6 @@ enum ActivityDuration {
 enum ActivityInk {
     /// Focus, and only focus.
     static let clay = Solanum.focus
-    /// Transitional, for ActivityHourHeatmap until it reads `Solanum.work`
-    /// itself; nothing here uses it.
-    @available(*, deprecated, message: "Use Solanum.work")
-    static let sage = Solanum.work
     /// The tint for time that belongs to no one thing.
     nonisolated static let quietTint = ActivityTint.quiet
     /// A tint (ActivityTint, or a palette slot) as a colour.
