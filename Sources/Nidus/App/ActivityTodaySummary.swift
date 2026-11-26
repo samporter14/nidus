@@ -26,19 +26,28 @@ enum ActivityTodaySummary {
         }
     }
 
-    static func build(log: ActivityDayLog, categorizer: ActivityCategorizer, calendar: Calendar = .current) -> WidgetToday {
+    /// `sessions` are the focus sessions to mark (any day: only the part inside
+    /// today's counts); `now` places the day when the log has no stretch.
+    static func build(log: ActivityDayLog, categorizer: ActivityCategorizer, sessions: [SessionEntry] = [],
+                      now: Date? = nil, calendar: Calendar = .current) -> WidgetToday {
         var kinds: [String: WidgetToday.Kind] = [:]
+        var groups: [String: String?] = [:]
+        var groupSeconds: [String?: TimeInterval] = [:]
         var seconds: [WidgetToday.Kind: TimeInterval] = [:]
         var runs: [Run] = []
         runs.reserveCapacity(log.stretches.count)
         for stretch in log.stretches where stretch.end > stretch.start {
             let key = stretch.appID + "\u{1}" + (stretch.url ?? stretch.site ?? "")
             let kind: WidgetToday.Kind
-            if let known = kinds[key] {
+            let id: String?
+            if let known = kinds[key], let knownGroup = groups[key] {
                 kind = known
+                id = knownGroup
             } else {
                 // Neutral time folds into "other", so the widget's JSON is unchanged.
                 let group = categorizer.category(appID: stretch.appID, site: stretch.site, url: stretch.url)
+                id = group
+                groups[key] = .some(group)
                 switch categorizer.role(forGroup: group) {
                 case .work?: kind = .work
                 case .distracting?: kind = .distracting
@@ -47,14 +56,54 @@ enum ActivityTodaySummary {
                 kinds[key] = kind
             }
             seconds[kind, default: 0] += stretch.seconds
+            groupSeconds[id, default: 0] += stretch.seconds
             runs.append(Run(start: stretch.start, end: stretch.end, kind: kind, seconds: stretch.seconds))
         }
         func whole(_ kind: WidgetToday.Kind) -> Int { Int((seconds[kind] ?? 0).rounded()) }
         var today = WidgetToday(day: log.day, work: whole(.work), distracting: whole(.distracting), other: whole(.other))
-        if let first = runs.first, let day = calendar.dateInterval(of: .day, for: first.start) {
-            today.bands = bands(runs, in: day)
+        let dayInterval = (runs.first?.start ?? now).flatMap { calendar.dateInterval(of: .day, for: $0) }
+        if let dayInterval, !runs.isEmpty { today.bands = bands(runs, in: dayInterval) }
+        if let dayInterval {
+            today.focus = focusSpans(sessions, in: dayInterval)
+            today.top = top(groupSeconds, categorizer: categorizer)
         }
         return today
+    }
+
+    // MARK: Focus and categories
+
+    /// Focus sessions' time inside the day, joined where they touch, in minutes.
+    static func focusSpans(_ sessions: [SessionEntry], in day: DateInterval) -> [WidgetToday.Span] {
+        let inside = sessions.compactMap { entry -> (Double, Double)? in
+            let start = max(0, entry.start.timeIntervalSince(day.start))
+            let end = min(day.duration, entry.end.timeIntervalSince(day.start))
+            return end > start ? (start / 60, end / 60) : nil
+        }.sorted { $0.0 < $1.0 }
+        var joined: [(Double, Double)] = []
+        for span in inside {
+            if let last = joined.last, span.0 <= last.1 {
+                joined[joined.count - 1].1 = max(last.1, span.1)
+            } else {
+                joined.append(span)
+            }
+        }
+        return joined.suffix(WidgetToday.spanLimit).map {
+            WidgetToday.Span(startMinute: Int($0.0), endMinute: max(Int($0.0) + 1, Int($0.1.rounded(.up))))
+        }
+    }
+
+    /// The biggest categories by time, biggest first (ties by name), under
+    /// the names and tints the app's charts use. A category that rounds to no
+    /// minutes isn't listed.
+    static func top(_ seconds: [String?: TimeInterval], categorizer: ActivityCategorizer) -> [WidgetToday.Category] {
+        let all = seconds.compactMap { id, time -> (WidgetToday.Category, TimeInterval)? in
+            let minutes = Int((time / 60).rounded())
+            guard minutes > 0 else { return nil }
+            return (WidgetToday.Category(name: categorizer.label(of: id).name, minutes: minutes,
+                                         tint: categorizer.tint(of: id)), time)
+        }
+        return all.sorted { ($0.1, $1.0.name) > ($1.1, $0.0.name) }
+            .prefix(WidgetToday.topLimit).map(\.0)
     }
 
     // MARK: Bands
