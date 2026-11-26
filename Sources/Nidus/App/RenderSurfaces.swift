@@ -53,7 +53,7 @@ enum RenderSurfaces {
         if arguments.contains("--render-popover-surfaces") {
             Task { @MainActor in
                 if arguments.contains("--measure-popover") {
-                    await measurePopover(model: model)
+                    await measurePopover(model: model, settings: settings)
                     model.deactivate()
                     NSApp.terminate(nil)
                     return
