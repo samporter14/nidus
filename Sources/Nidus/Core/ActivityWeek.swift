@@ -66,7 +66,7 @@ struct ActivityWeek: Equatable, Sendable {
     init(ending last: Date, byDay: [String: [String: TimeInterval]], categorizer: ActivityCategorizer, calendar: Calendar) {
         let name = { (id: String) in categorizer.label(of: id).name }
         let rank = { (id: String) -> Int in categorizer.order(of: id) ?? Int.max }
-        let tint = { (id: String) -> Int in categorizer.order(of: id) ?? ActivityInk.quietTint }
+        let tint = { (id: String) -> Int in categorizer.tint(of: id) }
         let all = Self.dates(ending: last, count: Self.length * 2, calendar: calendar)
             .map { (date: $0, key: ActivityDayLog.key(for: $0, calendar: calendar)) }
         let earlier = all.prefix(Self.length), shown = all.suffix(Self.length)

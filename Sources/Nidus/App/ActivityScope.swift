@@ -254,7 +254,7 @@ struct ActivityRibbon {
                          name: name, detail: detail.isEmpty ? (stretch.title == nil ? nil : stretch.appName) : detail)
         }
         if case .category(let categorizer) = colorBy {
-            tints = series.map { $0.id == Self.otherID ? ActivityInk.quietTint : (categorizer.order(of: $0.id) ?? ActivityInk.quietTint) }
+            tints = series.map { $0.id == Self.otherID ? ActivityTint.quiet : categorizer.tint(of: $0.id) }
             let names = series.map(\.name)
             blocks = ActivityRibbonBands.merged(blocks) { index in names.indices.contains(index) ? names[index] : "Other" }
         }

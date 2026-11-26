@@ -904,30 +904,26 @@ enum ActivityDuration {
     }
 }
 
+/// The Activity charts' colours, read from Solanum's palette
+/// (SolanumTokens.swift): one meaning per colour.
 enum ActivityInk {
-    static let clay = FocusPalette.clay
-    static let blue = Color(light: Color(.sRGB, red: 0.36, green: 0.55, blue: 0.70, opacity: 1), dark: Color(.sRGB, red: 0.53, green: 0.69, blue: 0.81, opacity: 1))
-    static let sage = Color(light: Color(.sRGB, red: 0.48, green: 0.62, blue: 0.52, opacity: 1), dark: Color(.sRGB, red: 0.63, green: 0.76, blue: 0.65, opacity: 1))
+    /// Focus, and only focus.
+    static let clay = Solanum.focus
+    /// Transitional names, kept until every chart reads Solanum directly.
+    static let blue = Solanum.inkMuted
+    static let sage = Solanum.work
     /// The tint for time that belongs to no one thing.
-    nonisolated static let quietTint = -1
-    static func series(_ index: Int) -> Color {
-        if index < 0 { return Color.primary.opacity(0.28) }
-        switch index % 5 {
-        case 0: return blue
-        case 1: return sage
-        case 2: return clay
-        case 3: return Color(light: Color(.sRGB, red: 0.68, green: 0.57, blue: 0.42, opacity: 1), dark: Color(.sRGB, red: 0.82, green: 0.71, blue: 0.54, opacity: 1))
-        default: return Color(light: Color(.sRGB, red: 0.57, green: 0.54, blue: 0.67, opacity: 1), dark: Color(.sRGB, red: 0.72, green: 0.68, blue: 0.82, opacity: 1))
+    nonisolated static let quietTint = ActivityTint.quiet
+    /// A tint (ActivityTint, or a palette slot) as a colour.
+    static func series(_ tint: Int) -> Color {
+        switch tint {
+        case ActivityTint.work: return Solanum.work
+        case ..<0: return Solanum.other
+        default: return Solanum.series(tint)
         }
     }
-}
-
-private extension Color {
-    init(light: Color, dark: Color) {
-        self.init(nsColor: NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua ? NSColor(dark) : NSColor(light)
-        })
-    }
+    /// An app's colour: the same hue for the same app everywhere.
+    static func app(_ key: String) -> Color { Solanum.series(ActivityTint.app(key)) }
 }
 
 struct ActivityTotals {

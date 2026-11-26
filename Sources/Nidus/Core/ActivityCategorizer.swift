@@ -58,6 +58,9 @@ struct ActivityCategorizer: Sendable {
         let symbol: String
         let apps: Set<String>
         let role: FocusCategory.Role
+        /// Its chart hue (CategoryPalette); the Work group has none, it wears
+        /// work's own colour.
+        var slot: Int?
         /// nil when the group lists no websites.
         let rule: WebsiteRule?
 
@@ -80,7 +83,13 @@ struct ActivityCategorizer: Sendable {
     init(categories: [FocusCategory], work: FocusCategory, overrides: ActivityOverrides = ActivityOverrides()) {
         var work = work
         work.id = Self.workID
-        groups = ([work] + categories.filter { $0.id != Self.workID }).map(Group.init)
+        let others = categories.filter { $0.id != Self.workID }
+        let slots = CategoryPalette.slots(for: others)
+        groups = [Group(work)] + others.map { category in
+            var group = Group(category)
+            group.slot = slots[category.id]
+            return group
+        }
         self.overrides = overrides
     }
 
@@ -188,6 +197,16 @@ struct ActivityCategorizer: Sendable {
     /// which unlike its rank doesn't change from day to day.
     func order(of id: String) -> Int? {
         groups.firstIndex { $0.id == id }
+    }
+
+    /// The tint a group is drawn in (ActivityInk.series): the Work group
+    /// wears work's colour, a category its palette slot, anything else
+    /// (Uncategorized, Other, a removed category) the quiet tint. Unlike
+    /// `order(of:)` this never changes when the list is reordered.
+    func tint(of id: String?) -> Int {
+        guard let id, let group = groups.first(where: { $0.id == id }) else { return ActivityTint.quiet }
+        if group.id == Self.workID { return ActivityTint.work }
+        return group.slot ?? ActivityTint.quiet
     }
 
     /// The name and symbol of a group by its id; nil is Uncategorized.

@@ -22,7 +22,7 @@ struct ActivityDriftList: View {
                 ForEach(chains) { chain in
                     HStack(spacing: 6) {
                         Circle()
-                            .fill(ActivityInk.series(categorizer.order(of: chain.category) ?? ActivityInk.quietTint))
+                            .fill(ActivityInk.series(categorizer.tint(of: chain.category)))
                             .frame(width: 6, height: 6)
                         Text(verbatim: "\(chain.origin) \u{2192} \(chain.target)")
                             .foregroundStyle(.primary)

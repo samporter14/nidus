@@ -69,6 +69,7 @@ mkdir -p "$WIDGET/Contents/MacOS"
 xcrun swiftc -O -parse-as-library -application-extension -module-name NidusWidget \
     -target "$(uname -m)-apple-macos27.0" -sdk "$(xcrun --sdk macosx --show-sdk-path)" \
     "$ROOT/Widget/NidusWidget.swift" "$ROOT/Sources/Nidus/Core/WidgetSnapshot.swift" \
+    "$ROOT/Sources/Nidus/App/SolanumTokens.swift" \
     -o "$WIDGET/Contents/MacOS/NidusWidget"
 cp "$ROOT/Widget/Info.plist" "$WIDGET/Contents/Info.plist"
 VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
