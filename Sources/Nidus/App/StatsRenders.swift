@@ -84,6 +84,7 @@ extension NidusModel {
         guard Demo.isActive, let history = controller?.history else { return }
         history.clear()
         SampleHistory.entries().forEach(history.append)
+        controller?.historyDidChange()
         objectWillChange.send()
     }
 
