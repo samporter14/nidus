@@ -106,6 +106,17 @@ import Testing
         #expect(!ActivitySection.shown(for: .month).contains(.day))
     }
 
+    @Test func trendsIsAJumpInTheWeekAndMonthOnly() {
+        #expect(!ActivitySection.shown(for: .today).contains(.trends))
+        for period in [ActivityPeriod.week, .month] {
+            let shown = ActivitySection.shown(for: period)
+            // In page order: after the week glance, before the hour grid.
+            #expect(shown.firstIndex(of: .trends) == shown.firstIndex(of: .week).map { $0 + 1 })
+            #expect(shown.firstIndex(of: .hours) == shown.firstIndex(of: .trends).map { $0 + 1 })
+        }
+        #expect(ActivitySection.trends.title == "Trends")
+    }
+
     @Test func aDayInProgressNeverReadsLess() {
         let history: [TimeInterval] = [3600, 3600, 3600]
         let format = { (s: TimeInterval) in "\(Int(s / 60)) min" }

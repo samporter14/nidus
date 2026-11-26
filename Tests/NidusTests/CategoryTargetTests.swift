@@ -119,6 +119,44 @@ struct CategoryTargetTests {
         #expect(CategoryTarget.elapsedDays(in: week, now: monday.addingTimeInterval(-86_400), calendar: calendar) == 1)
     }
 
+    @Test func anAverageDaySkipsDaysWithNothingTracked() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC")!
+        let monday = calendar.date(from: DateComponents(year: 2026, month: 3, day: 2))!
+        let week = DateInterval(start: monday, duration: 7 * 86_400)
+        let day = { (n: Int) in monday.addingTimeInterval(Double(n) * 86_400) }
+        let fridayNoon = day(4).addingTimeInterval(12 * 3600)
+        // Tracked Monday, Wednesday and Friday (Friday at 3 pm, any hour counts);
+        // Sunday is still ahead and last Sunday is outside the week.
+        let tracked: Set<Date> = [day(0), day(2), day(4).addingTimeInterval(15 * 3600), day(6), day(-1)]
+        #expect(CategoryTarget.trackedDays(tracked, in: week, now: fridayNoon, calendar: calendar) == 3)
+        #expect(CategoryTarget.trackedDays(tracked, in: week, now: day(30), calendar: calendar) == 4)
+        #expect(CategoryTarget.trackedDays([], in: week, now: fridayNoon, calendar: calendar) == 1)
+
+        // 6 h of Work over three tracked days of five is 2 h a day, not 1 h 12 m.
+        var work = FocusCategory.workSeed
+        work.dailyTarget = 2 * 3600
+        let categorizer = ActivityCategorizer(categories: [], work: work)
+        let total = ActivityCategoryTotal(id: ActivityCategorizer.workID, name: "Work", symbol: "briefcase",
+                                          seconds: 6 * 3600, share: 1)
+        let days = CategoryTarget.trackedDays(tracked, in: week, now: fridayNoon, calendar: calendar)
+        let row = CategoryTargetProgress.rows(totals: [total], categorizer: categorizer, days: days).first
+        #expect(row?.done == TimeInterval(2 * 3600))
+        #expect(row?.isMet == true)
+        #expect(row?.isAverage == true)
+    }
+
+    @Test func totalsKnowWhichDaysHadTime() {
+        let monday = Date(timeIntervalSinceReferenceDate: 794_102_400)
+        let rows: [(day: Date, row: FocusActivity)] = [
+            (monday, FocusActivity(appID: "a", appName: "A", seconds: 600)),
+            (monday.addingTimeInterval(2 * 86_400), FocusActivity(appID: "b", appName: "B", seconds: 60)),
+            (monday.addingTimeInterval(86_400), FocusActivity(appID: "c", appName: "C", seconds: 0)),
+        ]
+        let totals = ActivityTotals(rows: rows, focused: 0)
+        #expect(totals.trackedDays == [monday, monday.addingTimeInterval(2 * 86_400)])
+    }
+
     @Test func rowsListEveryTargetedGroupWorkFirstEvenWithNoTime() {
         var work = FocusCategory.workSeed
         work.dailyTarget = 4 * 3600

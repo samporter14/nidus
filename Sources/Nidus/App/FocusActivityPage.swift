@@ -293,11 +293,12 @@ struct FocusActivityPage: View {
     }
 
     /// Daily targets for the range shown: the day's own time, or the average
-    /// day in a week or month. Not for a view cut to focus or a project, whose
-    /// totals are narrower than a day.
+    /// over the days of a week or month that have any tracked time. Not for a
+    /// view cut to focus or a project, whose totals are narrower than a day.
     private func targetRows(allDay: Bool) -> [CategoryTargetProgress] {
         guard allDay else { return [] }
-        let days = period == .today ? 1 : CategoryTarget.elapsedDays(in: requestedInterval, now: effectiveNow, calendar: calendar)
+        let days = period == .today ? 1 : CategoryTarget.trackedDays(displayedScope.totals.trackedDays, in: requestedInterval,
+                                                                     now: effectiveNow, calendar: calendar)
         return CategoryTargetProgress.rows(totals: displayedCategories, categorizer: displayedCategorizer, days: days)
     }
 
@@ -490,6 +491,7 @@ struct FocusActivityPage: View {
             }
             .padding(.vertical, 8)
         }
+        .activitySectionAnchor(.trends, tracker: tracker)
     }
 
     private func open(day: Date) {
@@ -1107,6 +1109,8 @@ struct ActivityTotals {
     /// What's inside each app, by app id.
     var appDetails: [String: [ActivityDrill]] = [:]
     var chartBuckets: [Date: [String: TimeInterval]] = [:]
+    /// The days (their starts) with any time counted.
+    var trackedDays: Set<Date> { Set(chartBuckets.filter { $0.value.values.contains { $0 > 0 } }.keys) }
 
     var lead: ActivityRank? { services.first }
     init(sessions: [SessionEntry], calendar: Calendar = .current) {

@@ -10,7 +10,7 @@
 import SwiftUI
 
 enum ActivitySection: String, CaseIterable, Identifiable, Hashable {
-    case overview, day, bars, week, hours, drift, apps, sessions
+    case overview, day, bars, week, trends, hours, drift, apps, sessions
     var id: String { rawValue }
 
     var title: String {
@@ -19,6 +19,7 @@ enum ActivitySection: String, CaseIterable, Identifiable, Hashable {
         case .day: return "Day"
         case .bars: return "Bars"
         case .week: return "Week"
+        case .trends: return "Trends"
         case .hours: return "Hours"
         case .drift: return "Drift"
         case .apps: return "Apps"
@@ -29,7 +30,9 @@ enum ActivitySection: String, CaseIterable, Identifiable, Hashable {
     /// The sections a period shows, top to bottom. A day has its ribbon; a
     /// week or a month has the daily bars instead.
     static func shown(for period: ActivityPeriod) -> [ActivitySection] {
-        [.overview, period == .today ? .day : .bars, .week, .hours, .drift, .apps, .sessions]
+        // Trends is a card of the week and month views only.
+        period == .today ? [.overview, .day, .week, .hours, .drift, .apps, .sessions]
+                         : [.overview, .bars, .week, .trends, .hours, .drift, .apps, .sessions]
     }
 
     /// The section in view: the last whose top has reached `threshold`, or

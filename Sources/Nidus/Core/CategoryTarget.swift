@@ -69,6 +69,16 @@ enum CategoryTarget {
         let apart = calendar.dateComponents([.day], from: first, to: last).day ?? 0
         return max(1, apart + 1)
     }
+
+    /// The days an average day is worked out over: the days of `interval`,
+    /// up to `now`, that have any tracked time. A day with tracking off, or
+    /// the Mac away, isn't a day spent short of the target. At least one.
+    static func trackedDays(_ tracked: Set<Date>, in interval: DateInterval, now: Date, calendar: Calendar = .current) -> Int {
+        let first = calendar.startOfDay(for: interval.start)
+        let last = calendar.startOfDay(for: min(interval.end.addingTimeInterval(-1), max(now, interval.start)))
+        let days = Set(tracked.map { calendar.startOfDay(for: $0) }).filter { first <= $0 && $0 <= last }
+        return max(1, days.count)
+    }
 }
 
 /// One targeted category's day (or average day), for the rows in Activity and
