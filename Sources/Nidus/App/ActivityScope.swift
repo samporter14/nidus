@@ -190,13 +190,13 @@ struct ActivityRibbon {
     var blocks: [Block]
     var focus: [Focus]
     var series: [ActivityRank]
-    /// A color for each entry of `series`, and one past the end for Other. A
-    /// category keeps its color from day to day, whatever its rank.
+    /// A tint for each entry of `series`, Other included. A category or an app
+    /// keeps its tint from day to day, whatever its rank.
     private var tints: [Int] = []
     var isEmpty: Bool { blocks.isEmpty && focus.isEmpty }
 
     func tint(ofSeries index: Int) -> Int {
-        tints.indices.contains(index) ? tints[index] : index
+        tints.indices.contains(index) ? tints[index] : ActivityTint.quiet
     }
 
     init(stretches: [FocusActivitySegment], sessions: [SessionEntry], live: Focus? = nil, day: DateInterval, now: Date,
@@ -253,7 +253,10 @@ struct ActivityRibbon {
             return Block(id: stretch.id, start: stretch.start, end: stretch.end, series: lookup[seriesKey(of: stretch)] ?? Self.namedSeries,
                          name: name, detail: detail.isEmpty ? (stretch.title == nil ? nil : stretch.appName) : detail)
         }
-        if case .category(let categorizer) = colorBy {
+        switch colorBy {
+        case .app:
+            tints = series.map { $0.id == Self.otherID ? ActivityTint.quiet : ActivityTint.app($0.id) }
+        case .category(let categorizer):
             tints = series.map { $0.id == Self.otherID ? ActivityTint.quiet : categorizer.tint(of: $0.id) }
             let names = series.map(\.name)
             blocks = ActivityRibbonBands.merged(blocks) { index in names.indices.contains(index) ? names[index] : "Other" }

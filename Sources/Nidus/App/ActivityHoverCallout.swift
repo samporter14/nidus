@@ -34,6 +34,44 @@ struct ActivityCallout: Equatable {
     }
 }
 
+extension ActivityCallout {
+    /// Rows shown before the rest fold into "N more".
+    static let rowLimit = 5
+
+    /// The longest `rowLimit` items first, each with its minutes, and a
+    /// footnote for what didn't fit.
+    static func ranked(title: String, items: [(id: String, name: String, seconds: TimeInterval, color: Color?)],
+                       empty: String = "Nothing counted") -> ActivityCallout {
+        let sorted = items.filter { $0.seconds > 0 }
+            .sorted { $0.seconds == $1.seconds ? $0.name < $1.name : $0.seconds > $1.seconds }
+        guard !sorted.isEmpty else { return ActivityCallout(title: title, rows: [], footnote: empty) }
+        let rows = sorted.prefix(rowLimit).map {
+            Row(id: $0.id, name: $0.name, value: ActivityDuration.string($0.seconds), color: $0.color)
+        }
+        let rest = sorted.count - rows.count
+        return ActivityCallout(title: title, rows: rows, footnote: rest > 0 ? "\(rest) more" : nil)
+    }
+
+    /// "9:40–10:15 AM": a range in the calendar's own clock.
+    static func timeRange(_ start: Date, _ end: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateIntervalFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: start, to: max(start, end))
+    }
+
+    /// "9–10 AM": whole hours, no minutes.
+    static func hourRange(_ start: Date, calendar: Calendar = .current) -> String {
+        let formatter = DateIntervalFormatter()
+        formatter.calendar = calendar
+        formatter.timeZone = calendar.timeZone
+        formatter.dateTemplate = "j"
+        return formatter.string(from: start, to: start.addingTimeInterval(3600))
+    }
+}
+
 struct ActivityHoverCalloutView: View {
     let callout: ActivityCallout
     @Environment(\.colorSchemeContrast) private var contrast
